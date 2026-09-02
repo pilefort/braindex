@@ -55,10 +55,13 @@ func TestLoad_UnknownKey(t *testing.T) {
 	}
 }
 
-// 壊れた JSON はエラー。
-func TestLoad_BadJSON(t *testing.T) {
-	p := write(t, `{"root": `)
-	if _, _, err := Load(p); err == nil {
+// 壊れた JSON と、オブジェクトの後ろに続く余分な内容はエラー。
+func TestLoad_BadJSONAndTrailing(t *testing.T) {
+	if _, _, err := Load(write(t, `{"root": `)); err == nil {
 		t.Errorf("不正な JSON でエラーになっていない")
+	}
+	_, _, err := Load(write(t, `{"root": "."} trailing-garbage`))
+	if err == nil || !strings.Contains(err.Error(), "末尾") {
+		t.Errorf("末尾の余分な内容でエラーになっていない: %v", err)
 	}
 }
