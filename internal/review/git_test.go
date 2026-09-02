@@ -315,6 +315,14 @@ func TestInRepo(t *testing.T) {
 	}
 }
 
+// PATH に git が無ければ ok=false(差分ファイルの節を飛ばす材料)。
+func TestLookGit_Missing(t *testing.T) {
+	t.Setenv("PATH", "")
+	if g, ok := LookGit(); ok {
+		t.Errorf("PATH が空なのに見つかった: %q", g.path)
+	}
+}
+
 func TestWriteChangesSection(t *testing.T) {
 	c := Changes{
 		Since:     "2026-08-19",
