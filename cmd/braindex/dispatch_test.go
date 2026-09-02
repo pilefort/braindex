@@ -60,13 +60,18 @@ func TestDispatch_IndexFlags(t *testing.T) {
 		t.Errorf("使い方が出ていない: %s", se.String())
 	}
 
+	// 誤りのときは索引を書かない。-out を渡すのは、書いてしまった場合にカレント(パッケージのディレクトリ)を汚さないため。
 	se.Reset()
-	if code := dispatch([]string{"-no-such-flag"}, &so, &se); code != 1 {
+	bad := filepath.Join(t.TempDir(), "bad.md")
+	if code := dispatch([]string{"-root", root, "-out", bad, "-no-such-flag"}, &so, &se); code != 1 {
 		t.Errorf("不正なフラグの exit=%d want 1", code)
 	}
 	se.Reset()
-	if code := dispatch([]string{"-root", root, "extra-arg"}, &so, &se); code != 1 {
+	if code := dispatch([]string{"-root", root, "-out", bad, "extra-arg"}, &so, &se); code != 1 {
 		t.Errorf("余分な引数の exit=%d want 1", code)
+	}
+	if _, err := os.Stat(bad); err == nil {
+		t.Errorf("不正なフラグ・余分な引数なのに索引 %s が書かれた", bad)
 	}
 }
 
@@ -76,8 +81,13 @@ func TestDispatch_HelpListsCommands(t *testing.T) {
 	register(&command{name: "zz-a", summary: "1 番目", run: func([]string, io.Writer, io.Writer) int { return 0 }})
 	t.Cleanup(func() { delete(commands, "zz-a"); delete(commands, "zz-b") })
 	var so, se bytes.Buffer
-	dispatch([]string{"-h"}, &so, &se)
+	if code := dispatch([]string{"-h"}, &so, &se); code != 0 {
+		t.Errorf("-h の exit=%d want 0", code)
+	}
 	s := se.String()
+	if !strings.Contains(s, "コマンド:") {
+		t.Errorf("コマンドの見出しが無い: %s", s)
+	}
 	ia, ib := strings.Index(s, "zz-a"), strings.Index(s, "zz-b")
 	if ia < 0 || ib < 0 || ia > ib {
 		t.Errorf("コマンドの一覧が名前順でない: %s", s)
