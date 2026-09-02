@@ -52,15 +52,26 @@ func TestRetroExtract_Out(t *testing.T) {
 }
 
 // 既定の出力先は OS の一時ディレクトリの braindex-retro(リポには書かない)。
+// テストは OS の一時ディレクトリをテスト専用の場所に差し替える(利用者が実ログから書き出した既定の置き場を、架空ログで上書きしないため)。
 func TestRetroExtract_DefaultOut(t *testing.T) {
 	fixUTC(t)
+	tmp := t.TempDir()
+	for _, k := range []string{"TMPDIR", "TMP", "TEMP"} { // Unix は TMPDIR、Windows は TMP → TEMP の順に見る
+		t.Setenv(k, tmp)
+	}
+	if got := os.TempDir(); got != tmp {
+		t.Fatalf("os.TempDir() が差し替わらない: want=%q got=%q", tmp, got)
+	}
 	code, so, _ := execRetroExtract(t, "-sessions", retroTestdata, "-since", "2026-08-15")
 	if code != 2 {
 		t.Fatalf("exit=%d want 2\n%s", code, so)
 	}
-	want := "braindex retro extract: 1 セッション・発話 3・訂正 1 → " + filepath.Join(os.TempDir(), "braindex-retro") + "\n"
+	want := "braindex retro extract: 1 セッション・発話 3・訂正 1 → " + filepath.Join(tmp, "braindex-retro") + "\n"
 	if so != want {
 		t.Errorf("要約:\n want=%q\n  got=%q", want, so)
+	}
+	if _, err := os.Stat(filepath.Join(tmp, "braindex-retro", "index.tsv")); err != nil {
+		t.Errorf("テスト専用の一時ディレクトリに index.tsv が無い: %v", err)
 	}
 }
 
