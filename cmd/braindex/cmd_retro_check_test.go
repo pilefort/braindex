@@ -14,7 +14,7 @@ func execRetroCheck(t *testing.T, args ...string) (code int, stdout, stderr stri
 	return code, so.String(), se.String()
 }
 
-// 窓に aaaa1111 の 3 発話(訂正 1・33.3%)が入り、既定の閾値 10% を超える → 1 行出して 3。
+// 窓に aaaa1111 の 3 発話(訂正 1・33.3%)が入り、既定の閾値 8% を超える → 1 行出して 3。
 func TestRetroCheck_Over(t *testing.T) {
 	fixUTC(t)
 	code, so, se := execRetroCheck(t, "-sessions", retroTestdata, "-date", "2026-09-01")
