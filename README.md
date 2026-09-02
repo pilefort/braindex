@@ -124,7 +124,7 @@ Karpathy の LLM wiki 型（2026-04・`raw/` の素材から LLM が `wiki/` の
 
 ```sh
 go install github.com/pilefort/braindex/cmd/braindex@latest   # CLI を入れる
-mkdir brain && cd brain && braindex init                       # hub リポの骨格を展開(既存ファイルは上書きしない)
+mkdir hub && cd hub && braindex init                           # hub リポの骨格を展開(既存ファイルは上書きしない)
 braindex                                                       # 索引 index/catalog.md を生成
 ```
 
