@@ -7,13 +7,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // Meta は 1 ファイルから抽出した索引メタ情報。
 type Meta struct {
 	Title   string
-	Date    string // "YYYY-MM-DD"。mtime フォールバック時のみ "~YYYY-MM-DD"
+	Date    string // "YYYY-MM-DD"。ファイル名にも本文にも無ければ ""(日付なし。mtime には頼らない)
 	Summary string
 }
 
@@ -25,12 +24,12 @@ var (
 	fn8Re = regexp.MustCompile(`20\d{6}`)
 )
 
-// Extract は name(ファイル名)・content(本文)・mtime(フォールバック用)・kind から Meta を作る。
-func Extract(name string, content []byte, mtime time.Time, kind string) Meta {
+// Extract は name(ファイル名)・content(本文)・kind から Meta を作る。
+func Extract(name string, content []byte, kind string) Meta {
 	lines := splitLines(content)
 	m := Meta{
 		Title: extractTitle(lines, name),
-		Date:  extractDate(name, lines, mtime),
+		Date:  extractDate(name, lines),
 	}
 	if kind == "decisions" {
 		m.Summary = summarizeDecisions(lines)
@@ -69,15 +68,16 @@ func extractTitle(lines []string, name string) string {
 	return strings.TrimSuffix(name, ".md")
 }
 
-// extractDate は ファイル名 → 本文先頭 10 行 → mtime の優先順で日付を決める。
-func extractDate(name string, lines []string, mtime time.Time) string {
+// extractDate は ファイル名 → 本文先頭 10 行 の優先順で日付を決める。どちらにも無ければ ""。
+// mtime にはフォールバックしない(git は mtime を保存しないので、clone ごとに索引が変わってしまう)。
+func extractDate(name string, lines []string) string {
 	if d := dateFromFilename(name); d != "" {
 		return d
 	}
 	if d := dateFromContent(lines); d != "" {
 		return d
 	}
-	return "~" + mtime.Format("2006-01-02")
+	return ""
 }
 
 func dateFromFilename(name string) string {

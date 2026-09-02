@@ -30,17 +30,12 @@ func Build(cfg scan.Config, genDate string) (Result, error) {
 	res := Result{Warnings: warnings}
 	entries := make([]render.Entry, 0, len(files))
 	for _, f := range files {
-		info, err := os.Stat(f.Abs)
-		if err != nil {
-			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: %s", f.Rel, scan.DescribeErr(err)))
-			continue
-		}
 		content, err := os.ReadFile(f.Abs)
 		if err != nil {
 			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: %s", f.Rel, scan.DescribeErr(err)))
 			continue
 		}
-		m := extract.Extract(filepath.Base(f.Abs), content, info.ModTime(), f.Kind)
+		m := extract.Extract(filepath.Base(f.Abs), content, f.Kind)
 		entries = append(entries, render.Entry{
 			Repo:    f.Repo,
 			Date:    m.Date,
