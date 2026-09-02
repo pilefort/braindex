@@ -21,7 +21,7 @@ var retroLoc = time.Local
 func init() {
 	register(&command{
 		name:    "retro",
-		summary: "セッションログの訂正率を測る(stats)・閾値超えを知らせる(check)。本文はどこにも書かず送らない",
+		summary: "セッションログの訂正率を測る(stats)・閾値超えを知らせる(check)・ダイジェストを一時ディレクトリに書く(extract)。本文は送らない",
 		run:     runRetro,
 	})
 }
@@ -29,11 +29,12 @@ func init() {
 func retroUsage(w io.Writer) {
 	fmt.Fprintln(w, "使い方: braindex retro <サブコマンド> [フラグ]")
 	fmt.Fprintln(w, "  Claude Code のセッションログ(既定 ~/.claude/projects)を読み、人間の発話のうち訂正(辞書照合)の割合を出す。")
-	fmt.Fprintln(w, "  判定は決定論で、発話の本文はどこにも書かず送らない。")
+	fmt.Fprintln(w, "  判定は決定論で、本文はどこにも送らない。本文を書くのは extract だけで、書き先は OS の一時ディレクトリ(リポには書かない)。")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "サブコマンド:")
 	fmt.Fprintln(w, "  stats   発話数・訂正数・率を、プロジェクト別／週別／セッション内位置の区間別の表で出す")
 	fmt.Fprintln(w, "  check   直近の窓の訂正率を閾値と比べて 1 行出す。超えたら終了コード 3(hook やスケジューラが分岐できる)")
+	fmt.Fprintln(w, "  extract セッションごとの md ダイジェストと index.tsv を OS の一時ディレクトリに書く(レトロスペクティブ本体の材料)")
 	fmt.Fprintln(w, "  各サブコマンドの -h で詳細")
 }
 
@@ -48,6 +49,8 @@ func runRetro(args []string, stdout, stderr io.Writer) int {
 		return runRetroStats(args[1:], stdout, stderr)
 	case "check":
 		return runRetroCheck(args[1:], stdout, stderr)
+	case "extract":
+		return runRetroExtract(args[1:], stdout, stderr)
 	case "-h", "-help", "--help", "help":
 		retroUsage(stderr)
 		return 0
@@ -110,35 +113,17 @@ func runRetroStats(args []string, stdout, stderr io.Writer) int {
 			return fail(fmt.Errorf("-by は project / week / position のどれか(コンマ区切り可): %q", b))
 		}
 	}
-	if o.since != "" && o.windowDays != 0 {
-		return fail(errors.New("-since と -window-days は同時に使えない"))
-	}
-	if o.windowDays < 0 {
-		return fail(errors.New("-window-days は 0 以上"))
-	}
 	today, err := retroToday(o.date)
+	if err != nil {
+		return fail(err)
+	}
+	w, label, err := retroWindow(o.since, o.windowDays, today)
 	if err != nil {
 		return fail(err)
 	}
 	env, err := loadRetroEnv(o.config, o.sessions)
 	if err != nil {
 		return fail(err)
-	}
-
-	// 窓: -since > -window-days > 全期間
-	var w retro.Window
-	label := "全期間"
-	switch {
-	case o.since != "":
-		d, err := time.ParseInLocation("2006-01-02", o.since, retroLoc)
-		if err != nil {
-			return fail(fmt.Errorf("-since は YYYY-MM-DD で指定する: %q", o.since))
-		}
-		w.Since = d
-		label = o.since + " 以降"
-	case o.windowDays > 0:
-		w = retro.Recent(today, o.windowDays, retroLoc)
-		label = fmt.Sprintf("%s 以降(%d 日)", w.Since.In(retroLoc).Format("2006-01-02"), o.windowDays)
 	}
 
 	ss, warns, err := sessions.Dir{Path: env.sessionsDir}.Sessions(sessions.Options{Since: w.Since})
@@ -274,6 +259,139 @@ func runRetroCheck(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return 0
+}
+
+// retroExtractOptions は braindex retro extract のコマンドライン。
+type retroExtractOptions struct {
+	config     string // -config
+	sessions   string // -sessions
+	date       string // -date。今日の固定
+	since      string // -since
+	windowDays int    // -window-days
+	out        string // -out。出力先(既定: OS の一時ディレクトリの braindex-retro)
+}
+
+// runRetroExtract は braindex retro extract を実行する。
+// セッションごとの md(窓の中の人間の発話・直前のアシスタント本文 300 字・訂正と感情の印)と index.tsv を出力先に書く。
+// 既定の出力先は OS の一時ディレクトリ(セッションログには機微が含まれるので、リポには書かない)。
+func runRetroExtract(args []string, stdout, stderr io.Writer) int {
+	var o retroExtractOptions
+	fs := flag.NewFlagSet("braindex retro extract", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.StringVar(&o.config, "config", "", "設定ファイルのパス(既定: カレントの braindex.json。無ければ既定値で動く)")
+	fs.StringVar(&o.sessions, "sessions", "", "セッションログの置き場(既定: 設定 retro.sessions_dir → ~/.claude/projects)")
+	fs.StringVar(&o.date, "date", "", "今日として使う日付 YYYY-MM-DD(既定: 実行日)。-window-days の基準")
+	fs.StringVar(&o.since, "since", "", "この日以降の発話だけを書く YYYY-MM-DD(既定: 全期間)")
+	fs.IntVar(&o.windowDays, "window-days", 0, "直近 N 日の発話だけを書く(-since と同時には使えない)")
+	fs.StringVar(&o.out, "out", "", "出力先ディレクトリ(既定: OS の一時ディレクトリの braindex-retro)")
+	fs.Usage = func() {
+		fmt.Fprintln(stderr, "使い方: braindex retro extract [-config braindex.json] [-sessions DIR] [-since YYYY-MM-DD | -window-days N] [-out DIR]")
+		fmt.Fprintln(stderr, "  セッションごとの md ダイジェスト(sessions/<プロジェクト>/<開始日時>_<ID>.md)と index.tsv を書く。")
+		fmt.Fprintln(stderr, "  ダイジェストは、窓の中の人間の発話ごとに「直前のアシスタント本文 300 字 → 発話(2000 字まで)」。")
+		fmt.Fprintln(stderr, "  訂正辞書に当たった発話には ★、感情辞書に当たった発話には ☆ を見出しに付ける。")
+		fmt.Fprintln(stderr, "  出力先の sessions/ と index.tsv は実行のたびに書き直す(前回の分は消える。出力先の他のファイルは触らない)。")
+		fmt.Fprintln(stderr, "  既定の出力先は OS の一時ディレクトリ。セッションログには機微が含まれるので、リポの中に -out を向けるときは自己責任で。")
+		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗(何も書かない) / 2 警告つきで完了(読めないログを飛ばした)")
+		fmt.Fprintln(stderr)
+		fmt.Fprintln(stderr, "フラグ:")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 1
+	}
+	fail := func(err error) int {
+		fmt.Fprintln(stderr, "braindex retro extract:", err)
+		return 1
+	}
+	if fs.NArg() > 0 {
+		return fail(fmt.Errorf("引数 %q は受け付けない(フラグだけを渡す)", fs.Args()))
+	}
+	today, err := retroToday(o.date)
+	if err != nil {
+		return fail(err)
+	}
+	w, label, err := retroWindow(o.since, o.windowDays, today)
+	if err != nil {
+		return fail(err)
+	}
+	env, err := loadRetroEnv(o.config, o.sessions)
+	if err != nil {
+		return fail(err)
+	}
+	outDir := o.out
+	if outDir == "" {
+		outDir = filepath.Join(os.TempDir(), "braindex-retro")
+	}
+
+	ss, warns, err := sessions.Dir{Path: env.sessionsDir}.Sessions(sessions.Options{Since: w.Since})
+	if err != nil {
+		return fail(err)
+	}
+	for _, wn := range warns {
+		fmt.Fprintln(stderr, "braindex retro extract: 警告:", wn)
+	}
+	res := retro.Extract(retro.Input{
+		Sessions:    ss,
+		Window:      w,
+		WindowLabel: label,
+		Corrections: env.dicts,
+		Sentiment:   retro.Sentiment(),
+		Loc:         retroLoc,
+		Home:        env.home,
+	})
+	// 前回の出力を消してから書く(出力先が常に今回の窓だけになる。決定 2026-09-03)。消すのは自分が書く sessions/ と index.tsv だけ
+	if err := os.RemoveAll(filepath.Join(outDir, "sessions")); err != nil {
+		return fail(err)
+	}
+	if err := os.Remove(filepath.Join(outDir, "index.tsv")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fail(err)
+	}
+	for _, f := range res.Files {
+		p := filepath.Join(outDir, filepath.FromSlash(f.RelPath))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return fail(err)
+		}
+		if err := os.WriteFile(p, f.Content, 0o644); err != nil {
+			return fail(err)
+		}
+	}
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return fail(err)
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "index.tsv"), res.Index, 0o644); err != nil {
+		return fail(err)
+	}
+	fmt.Fprintf(stdout, "braindex retro extract: %d セッション・発話 %d・訂正 %d → %s\n", res.Sessions, res.UserTurns, res.CorrectionTurns, outDir)
+	if len(warns) > 0 {
+		fmt.Fprintf(stderr, "braindex retro extract: 警告 %d 件(終了コード 2)\n", len(warns))
+		return 2
+	}
+	return 0
+}
+
+// retroWindow は -since / -window-days から窓と表示用の見出しを決める(-since > -window-days > 全期間)。
+func retroWindow(since string, windowDays int, today time.Time) (retro.Window, string, error) {
+	if since != "" && windowDays != 0 {
+		return retro.Window{}, "", errors.New("-since と -window-days は同時に使えない")
+	}
+	if windowDays < 0 {
+		return retro.Window{}, "", errors.New("-window-days は 0 以上")
+	}
+	switch {
+	case since != "":
+		d, err := time.ParseInLocation("2006-01-02", since, retroLoc)
+		if err != nil {
+			return retro.Window{}, "", fmt.Errorf("-since は YYYY-MM-DD で指定する: %q", since)
+		}
+		return retro.Window{Since: d}, since + " 以降", nil
+	case windowDays > 0:
+		w := retro.Recent(today, windowDays, retroLoc)
+		return w, fmt.Sprintf("%s 以降(%d 日)", w.Since.In(retroLoc).Format("2006-01-02"), windowDays), nil
+	}
+	return retro.Window{}, "全期間", nil
 }
 
 // retroToday は -date(YYYY-MM-DD・retroLoc の 0 時)か、無ければ今。
