@@ -32,12 +32,12 @@ func Build(cfg scan.Config, genDate string) (Result, error) {
 	for _, f := range files {
 		info, err := os.Stat(f.Abs)
 		if err != nil {
-			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: %v", f.Rel, err))
+			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: %s", f.Rel, scan.DescribeErr(err)))
 			continue
 		}
 		content, err := os.ReadFile(f.Abs)
 		if err != nil {
-			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: %v", f.Rel, err))
+			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: %s", f.Rel, scan.DescribeErr(err)))
 			continue
 		}
 		m := extract.Extract(filepath.Base(f.Abs), content, info.ModTime(), f.Kind)

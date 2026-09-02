@@ -81,8 +81,8 @@ func TestBuild_UnreadableFileWarns(t *testing.T) {
 	if res.Entries != 1 || !strings.Contains(string(res.Catalog), "ok.md") {
 		t.Errorf("読める方だけ載るべき: entries=%d\n%s", res.Entries, res.Catalog)
 	}
-	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "bad.md") {
-		t.Errorf("警告 1 件(bad.md)を期待: %q", res.Warnings)
+	if len(res.Warnings) != 1 || !strings.HasPrefix(res.Warnings[0], "r/docs/notes/bad.md: ") || strings.Count(res.Warnings[0], "bad.md") != 1 {
+		t.Errorf("警告 1 件「r/docs/notes/bad.md: <理由>」(パスを繰り返さない)を期待: %q", res.Warnings)
 	}
 }
 

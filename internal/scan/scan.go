@@ -89,7 +89,11 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 
 		// docs/decisions.md(notes_dirs より先に拾い、種別 decisions を優先する)
 		decPath := filepath.Join(repoDir, "docs", "decisions.md")
-		if fi, err := os.Stat(decPath); err == nil && !fi.IsDir() && !hasArchiveSeg(decPath) {
+		if fi, err := os.Stat(decPath); err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				warn("%s: %s", relSlash(rootAbs, decPath), DescribeErr(err)) // 無いのは正常、読めないのは警告
+			}
+		} else if !fi.IsDir() && !hasArchiveSeg(decPath) {
 			files = append(files, mkFile(rootAbs, name, "decisions", decPath))
 			seen[decPath] = true
 		}
@@ -132,16 +136,17 @@ func collectNotes(rootAbs, repo, notesDir, label string, warn warnFunc) []File {
 	info, err := os.Stat(notesDir)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
-			warn("%s: %v", notesDir, err)
+			warn("%s: %s", relSlash(rootAbs, notesDir), DescribeErr(err))
 		}
 		return out
 	}
 	if !info.IsDir() {
+		warn("%s: ディレクトリではない", relSlash(rootAbs, notesDir))
 		return out
 	}
 	filepath.WalkDir(notesDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			warn("%s: %v", path, err) // 読めないものは警告して飛ばす
+			warn("%s: %s", relSlash(rootAbs, path), DescribeErr(err)) // 読めないものは警告して飛ばす
 			return nil
 		}
 		if d.IsDir() {
@@ -155,7 +160,7 @@ func collectNotes(rootAbs, repo, notesDir, label string, warn warnFunc) []File {
 		}
 		rel, err := filepath.Rel(notesDir, path)
 		if err != nil {
-			warn("%s: %v", path, err)
+			warn("%s: %s", relSlash(rootAbs, path), DescribeErr(err))
 			return nil
 		}
 		out = append(out, mkFile(rootAbs, repo, kindFromRel(rel, label), path))
@@ -170,7 +175,7 @@ func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 	base := filepath.Join(rootAbs, ex.Repo, filepath.FromSlash(ex.Path))
 	var out []File
 	if info, err := os.Stat(base); err != nil {
-		warn("extra %s/%s: %v", ex.Repo, ex.Path, err)
+		warn("extra %s/%s: %s", ex.Repo, ex.Path, DescribeErr(err))
 		return out
 	} else if !info.IsDir() {
 		warn("extra %s/%s: ディレクトリではない", ex.Repo, ex.Path)
@@ -187,7 +192,7 @@ func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 	if ex.Recursive {
 		filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
-				warn("%s: %v", path, err)
+				warn("%s: %s", relSlash(rootAbs, path), DescribeErr(err))
 				return nil
 			}
 			if d.IsDir() {
@@ -204,7 +209,7 @@ func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 
 	des, err := os.ReadDir(base)
 	if err != nil {
-		warn("%s: %v", base, err)
+		warn("%s: %s", relSlash(rootAbs, base), DescribeErr(err))
 		return out
 	}
 	for _, de := range des {
@@ -242,16 +247,21 @@ func kindFromRel(rel, label string) string {
 }
 
 func mkFile(rootAbs, repo, kind, absPath string) File {
+	return File{
+		Repo: repo,
+		Kind: kind,
+		Rel:  relSlash(rootAbs, absPath),
+		Abs:  absPath,
+	}
+}
+
+// relSlash は絶対パスを root 相対・スラッシュ区切りにする(catalog の Path と同じ形。警告のパスにも使う)。
+func relSlash(rootAbs, absPath string) string {
 	rel, err := filepath.Rel(rootAbs, absPath)
 	if err != nil {
 		rel = absPath
 	}
-	return File{
-		Repo: repo,
-		Kind: kind,
-		Rel:  filepath.ToSlash(rel),
-		Abs:  absPath,
-	}
+	return filepath.ToSlash(rel)
 }
 
 func isMarkdown(name string) bool {
@@ -275,4 +285,17 @@ func hasArchiveSeg(path string) bool {
 		}
 	}
 	return false
+}
+
+// DescribeErr は警告向けにエラーを短く言い直す。*fs.PathError はパスを繰り返さないよう Err だけにし、
+// 存在しない場合は OS ごとの文言でなく「存在しない」にする。
+func DescribeErr(err error) string {
+	if errors.Is(err, fs.ErrNotExist) {
+		return "存在しない"
+	}
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return pe.Err.Error()
+	}
+	return err.Error()
 }

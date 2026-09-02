@@ -1,6 +1,11 @@
 package scan
 
 import (
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -179,8 +184,8 @@ func TestScan_WarningsAndErrors(t *testing.T) {
 	if len(files) == 0 {
 		t.Errorf("警告があっても自動規則の結果は返すべき")
 	}
-	if len(warns) != 1 || !strings.Contains(warns[0], "no-such-dir") {
-		t.Errorf("警告 1 件(起点のパス入り)を期待: %q", warns)
+	if len(warns) != 1 || warns[0] != "extra ext/no-such-dir: 存在しない" {
+		t.Errorf("警告 1 件「extra ext/no-such-dir: 存在しない」(パスを繰り返さない・OS の文言を出さない)を期待: %q", warns)
 	}
 
 	if _, _, err := Scan(Config{Root: ""}); err == nil {
@@ -198,4 +203,73 @@ func sortedKeys(m map[string]string) string {
 	}
 	sort.Strings(ks)
 	return strings.Join(ks, "\n ")
+}
+
+// docs/decisions.md の Stat が権限エラー等で失敗したら警告にする(存在しないのは正常で警告しない)。
+func TestScan_DecisionsStatErrorWarns(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Getuid() == 0 {
+		t.Skip("chmod 000 で読めなくする方法が使えない環境")
+	}
+	root := t.TempDir()
+	docs := filepath.Join(root, "r", "docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(docs, "decisions.md"), []byte("# d\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(docs, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(docs, 0o755) })
+	_, warns, err := Scan(Config{Root: root})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if !containsSub(warns, "r/docs/decisions.md") {
+		t.Errorf("decisions.md の警告が無い: %q", warns)
+	}
+}
+
+// notes_dir がディレクトリでなくファイルなら警告(規約外の状態)。パスは root 相対・スラッシュ区切り。
+func TestScan_NotesDirIsFileWarns(t *testing.T) {
+	root := t.TempDir()
+	docs := filepath.Join(root, "r", "docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(docs, "notes"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, warns, err := Scan(Config{Root: root})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(warns) != 1 || warns[0] != "r/docs/notes: ディレクトリではない" {
+		t.Errorf("警告 1 件「r/docs/notes: ディレクトリではない」を期待: %q", warns)
+	}
+}
+
+// DescribeErr はパスを繰り返さず、存在しないは日本語の定型にする。
+func TestDescribeErr(t *testing.T) {
+	_, err := os.Stat(filepath.Join(t.TempDir(), "nope"))
+	if got := DescribeErr(err); got != "存在しない" {
+		t.Errorf("ErrNotExist: got %q", got)
+	}
+	pe := &fs.PathError{Op: "open", Path: "/some/path", Err: errors.New("boom")}
+	if got := DescribeErr(pe); got != "boom" {
+		t.Errorf("PathError: got %q", got)
+	}
+	if got := DescribeErr(errors.New("plain")); got != "plain" {
+		t.Errorf("plain: got %q", got)
+	}
+}
+
+func containsSub(ss []string, sub string) bool {
+	for _, s := range ss {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }
