@@ -1,0 +1,2 @@
+{"type":"user","message":{"role":"user","content":"時刻なしの発話"},"uuid":"u1"}
+{"type":"assistant","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"はい"}]},"uuid":"a1"}
