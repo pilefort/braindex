@@ -50,9 +50,31 @@ func TestRetroCheck_Quiet(t *testing.T) {
 	if code != 2 || so != "" || se != "" {
 		t.Errorf("quiet で超えない: exit=%d stdout=%q stderr=%q", code, so, se)
 	}
-	code, so, _ = execRetroCheck(t, "-sessions", retroTestdata, "-date", "2026-09-01", "-quiet")
-	if code != 3 || !strings.HasPrefix(so, "braindex retro check: 直近 14 日の訂正率 33.3%") {
-		t.Errorf("quiet で超える: exit=%d stdout=%q", code, so)
+	// 超えたときは 1 行だけ。testdata には警告(JSON でない行)があるが、-quiet では stderr にも出さない
+	code, so, se = execRetroCheck(t, "-sessions", retroTestdata, "-date", "2026-09-01", "-quiet")
+	if code != 3 || !strings.HasPrefix(so, "braindex retro check: 直近 14 日の訂正率 33.3%") || se != "" {
+		t.Errorf("quiet で超える: exit=%d stdout=%q stderr=%q", code, so, se)
+	}
+}
+
+// 設定 retro.threshold が 1 を超えていたら、率が届くことは無いので設定の誤りとして 1(フラグの -threshold と同じ範囲)。
+// 範囲の検査は設定の読み込み(retro.Settings.Validate)で行うので、フラグで有効な値を与えても設定の誤りは誤りのまま。
+func TestRetroCheck_ConfigThresholdOutOfRange(t *testing.T) {
+	fixUTC(t)
+	dir := t.TempDir()
+	abs, err := filepath.Abs(retroTestdata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "braindex.json"), `{"retro": {"sessions_dir": `+jsonString(abs)+`, "threshold": 1.5}}`)
+	code, so, se := execRetroCheck(t, "-config", filepath.Join(dir, "braindex.json"), "-date", "2026-09-01")
+	if code != 1 || so != "" || !strings.Contains(se, "retro.threshold") {
+		t.Errorf("exit=%d want 1 stdout=%q stderr=%q", code, so, se)
+	}
+	// フラグで有効な値を与えても、設定の誤りは読み込み時に止まる
+	code, _, se = execRetroCheck(t, "-config", filepath.Join(dir, "braindex.json"), "-date", "2026-09-01", "-threshold", "0.5")
+	if code != 1 || !strings.Contains(se, "retro.threshold") {
+		t.Errorf("フラグで上書き: exit=%d want 1 stderr=%q", code, se)
 	}
 }
 

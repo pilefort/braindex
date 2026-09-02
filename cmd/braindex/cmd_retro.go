@@ -21,7 +21,7 @@ var retroLoc = time.Local
 func init() {
 	register(&command{
 		name:    "retro",
-		summary: "セッションログの訂正率を測る(stats)・閾値超えを知らせる(check)。本文はどこにも書かず送らない",
+		summary: "セッションログの訂正率を測る(stats)・閾値超えを知らせる(check)・ダイジェストを一時ディレクトリに書く(extract)。本文は送らない",
 		run:     runRetro,
 	})
 }
@@ -29,7 +29,7 @@ func init() {
 func retroUsage(w io.Writer) {
 	fmt.Fprintln(w, "使い方: braindex retro <サブコマンド> [フラグ]")
 	fmt.Fprintln(w, "  Claude Code のセッションログ(既定 ~/.claude/projects)を読み、人間の発話のうち訂正(辞書照合)の割合を出す。")
-	fmt.Fprintln(w, "  判定は決定論で、発話の本文はどこにも書かず送らない。")
+	fmt.Fprintln(w, "  判定は決定論で、本文はどこにも送らない。本文を書くのは extract だけで、書き先は OS の一時ディレクトリ(リポには書かない)。")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "サブコマンド:")
 	fmt.Fprintln(w, "  stats   発話数・訂正数・率を、プロジェクト別／週別／セッション内位置の区間別の表で出す")
@@ -180,9 +180,10 @@ func runRetroCheck(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "使い方: braindex retro check [-config braindex.json] [-sessions DIR] [-date YYYY-MM-DD] [-window-days N] [-threshold 0.1] [-quiet]")
 		fmt.Fprintln(stderr, "  直近の窓(既定 14 日)の訂正率を閾値(既定 10%)と比べて 1 行出す。本文は出さない。")
 		fmt.Fprintln(stderr, "  組み込みの例:")
-		fmt.Fprintln(stderr, "    Claude Code の hook(SessionStart)に braindex retro check -quiet を置くと、超えたときだけ 1 行がセッションに入る")
+		fmt.Fprintln(stderr, "    Claude Code の hook(SessionStart)に braindex retro check -quiet || true を置くと、超えたときだけ 1 行がセッションに入る")
 		fmt.Fprintln(stderr, "    cron / タスクスケジューラで週 1 回回し、終了コード 3 のときだけ通知コマンドへつなぐ")
 		fmt.Fprintln(stderr, "  終了コード: 0 閾値以下 / 1 失敗 / 2 閾値以下だが警告つき(読めないログを飛ばした) / 3 閾値超え(警告があっても 3)")
+		fmt.Fprintln(stderr, "  終了コード 3 は hook 以外(スケジューラ等)向け。Claude Code の hook は終了コード 0 の stdout だけを文脈に入れるので、hook では || true で 0 に落とす")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
 		fs.PrintDefaults()
@@ -288,6 +289,7 @@ func runRetroExtract(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "  セッションごとの md ダイジェスト(sessions/<プロジェクト>/<開始日時>_<ID>.md)と index.tsv を書く。")
 		fmt.Fprintln(stderr, "  ダイジェストは、窓の中の人間の発話ごとに「直前のアシスタント本文 300 字 → 発話(2000 字まで)」。")
 		fmt.Fprintln(stderr, "  訂正辞書に当たった発話には ★、感情辞書に当たった発話には ☆ を見出しに付ける。")
+		fmt.Fprintln(stderr, "  出力先の sessions/ と index.tsv は実行のたびに書き直す(前回の分は消える。出力先の他のファイルは触らない)。")
 		fmt.Fprintln(stderr, "  既定の出力先は OS の一時ディレクトリ。セッションログには機微が含まれるので、リポの中に -out を向けるときは自己責任で。")
 		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗(何も書かない) / 2 警告つきで完了(読めないログを飛ばした)")
 		fmt.Fprintln(stderr)
@@ -340,6 +342,13 @@ func runRetroExtract(args []string, stdout, stderr io.Writer) int {
 		Loc:         retroLoc,
 		Home:        env.home,
 	})
+	// 前回の出力を消してから書く(出力先が常に今回の窓だけになる。決定 2026-09-03)。消すのは自分が書く sessions/ と index.tsv だけ
+	if err := os.RemoveAll(filepath.Join(outDir, "sessions")); err != nil {
+		return fail(err)
+	}
+	if err := os.Remove(filepath.Join(outDir, "index.tsv")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fail(err)
+	}
 	for _, f := range res.Files {
 		p := filepath.Join(outDir, filepath.FromSlash(f.RelPath))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -426,6 +435,9 @@ func loadRetroEnv(cfgPath, sessionsFlag string) (retroEnv, error) {
 		baseDir = filepath.Dir(cfgPath)
 	}
 	env.home, _ = os.UserHomeDir() // 取れなければ "" のまま("~" の展開と表示の置換をしないだけ)
+	if err := fc.Retro.Validate(); err != nil {
+		return env, err
+	}
 	s := fc.Retro.WithDefaults()
 	env.settings = s
 
