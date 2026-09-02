@@ -196,6 +196,31 @@ func TestScan_WarningsAndErrors(t *testing.T) {
 	}
 }
 
+// archive の判定はルート相対パスに掛ける。root 自体が archive という名前のディレクトリの下にあっても、
+// その中のノートは索引に載る(原型は絶対パス全体で判定していたので全件除外されていた)。
+func TestScan_ArchiveJudgedOnRootRelativePath(t *testing.T) {
+	files, _, err := Scan(Config{Root: "testdata/archive/root"})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	got := map[string]string{}
+	for _, f := range files {
+		got[f.Rel] = f.Kind
+	}
+	want := map[string]string{
+		"repo-x/docs/notes/keep.md": "notes",
+		"repo-x/docs/decisions.md":  "decisions",
+	}
+	for rel, kind := range want {
+		if got[rel] != kind {
+			t.Errorf("欠落 or 種別違い: %s want=%q got=%q", rel, kind, got[rel])
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("件数不一致: want=%d got=%d\n got=%s", len(want), len(got), sortedKeys(got))
+	}
+}
+
 func sortedKeys(m map[string]string) string {
 	ks := make([]string, 0, len(m))
 	for k := range m {

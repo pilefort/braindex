@@ -5,7 +5,7 @@
 //     notes_dirs は braindex.json で複数指定でき、既定は ["docs/notes"](2026-09-02。wiki/ 派を受け入れるため。
 //     規約の名前は docs のまま)。同じファイルが複数の指定から拾われたら先に書いた指定のラベルで 1 回だけ
 //   - D/docs/decisions.md があれば 1 エントリ(種別 decisions。notes_dirs に含まれていても decisions が勝つ)
-//   - パスセグメントに archive を含むものは除外
+//   - root 相対パスのセグメントに archive を含むものは除外(root 自身のパスは見ない)
 //   - docs/ を持たないディレクトリは自然にスキップ
 //
 // 例外規則(braindex.json の extra): 指定リポの起点から *.md を収集(リポ直下・research/・projects/ 等の規約外の置き場)。
@@ -93,9 +93,11 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 			if !errors.Is(err, fs.ErrNotExist) {
 				warn("%s: %s", relSlash(rootAbs, decPath), DescribeErr(err)) // 無いのは正常、読めないのは警告
 			}
-		} else if !fi.IsDir() && !hasArchiveSeg(decPath) {
-			files = append(files, mkFile(rootAbs, name, "decisions", decPath))
-			seen[decPath] = true
+		} else if !fi.IsDir() {
+			if f := mkFile(rootAbs, name, "decisions", decPath); !hasArchiveSeg(f.Rel) {
+				files = append(files, f)
+				seen[decPath] = true
+			}
 		}
 
 		// notes_dirs の各 N について D/N/**/*.md
@@ -155,7 +157,7 @@ func collectNotes(rootAbs, repo, notesDir, label string, warn warnFunc) []File {
 			}
 			return nil
 		}
-		if !isMarkdown(d.Name()) || hasArchiveSeg(path) {
+		if !isMarkdown(d.Name()) {
 			return nil
 		}
 		rel, err := filepath.Rel(notesDir, path)
@@ -163,7 +165,9 @@ func collectNotes(rootAbs, repo, notesDir, label string, warn warnFunc) []File {
 			warn("%s: %s", relSlash(rootAbs, path), DescribeErr(err))
 			return nil
 		}
-		out = append(out, mkFile(rootAbs, repo, kindFromRel(rel, label), path))
+		if f := mkFile(rootAbs, repo, kindFromRel(rel, label), path); !hasArchiveSeg(f.Rel) {
+			out = append(out, f)
+		}
 		return nil
 	})
 	return out
@@ -183,10 +187,12 @@ func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 	}
 
 	add := func(path, name, kind string) {
-		if !isMarkdown(name) || excluded(name, ex.Exclude) || hasArchiveSeg(path) {
+		if !isMarkdown(name) || excluded(name, ex.Exclude) {
 			return
 		}
-		out = append(out, mkFile(rootAbs, ex.Repo, kind, path))
+		if f := mkFile(rootAbs, ex.Repo, kind, path); !hasArchiveSeg(f.Rel) {
+			out = append(out, f)
+		}
 	}
 
 	if ex.Recursive {
@@ -277,9 +283,10 @@ func excluded(name string, list []string) bool {
 	return false
 }
 
-// hasArchiveSeg はパスのいずれかのセグメントが archive かを判定する。
-func hasArchiveSeg(path string) bool {
-	for _, seg := range strings.Split(filepath.ToSlash(path), "/") {
+// hasArchiveSeg は root 相対パス(スラッシュ区切り)のいずれかのセグメントが archive かを判定する。
+// 絶対パスに掛けると root 自身が archive ディレクトリの下にあるとき全件除外されるので、必ず相対パスを渡す。
+func hasArchiveSeg(rel string) bool {
+	for _, seg := range strings.Split(filepath.ToSlash(rel), "/") {
 		if seg == "archive" {
 			return true
 		}
