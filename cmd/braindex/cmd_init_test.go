@@ -106,3 +106,42 @@ func TestInit_BadArgs(t *testing.T) {
 		t.Errorf("init -h: exit=%d stderr=%s", code, se.String())
 	}
 }
+
+// braindex init -repo <dir> は各プロジェクトのリポ側の骨格だけを置く(hub 用の README や braindex.json は作らない)。
+func TestInit_Repo(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "repo-a")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"init", "-repo", dir}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d want 0\nstderr=%s", code, se.String())
+	}
+	for _, p := range []string{"docs/decisions.md", "docs/notes/common/.gitkeep", "docs/notes/project/.gitkeep", "work/APPROVALS.md", "work/TODO.md"} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(p))); err != nil {
+			t.Errorf("作られていない: %s", p)
+		}
+	}
+	for _, p := range []string{"README.md", "braindex.json", "CLAUDE.md"} {
+		if _, err := os.Stat(filepath.Join(dir, p)); err == nil {
+			t.Errorf("repo には作らないはず: %s", p)
+		}
+	}
+	if !strings.Contains(so.String(), "作成: docs/decisions.md") {
+		t.Errorf("stdout に作成の記録が無い: %s", so.String())
+	}
+	// 展開したリポは既定の規約どおりなので、hub から設定なしで索引される
+	hub := filepath.Join(filepath.Dir(dir), "hub")
+	writeFile(t, filepath.Join(dir, "docs", "notes", "project", "n.md"), "# N\n\n結論: n\n記録日: 2026-01-02\n")
+	so.Reset()
+	se.Reset()
+	if code := dispatch([]string{"init", hub}, &so, &se); code != 0 {
+		t.Fatalf("init hub exit=%d\n%s", code, se.String())
+	}
+	so.Reset()
+	se.Reset()
+	if code := dispatch([]string{"-config", filepath.Join(hub, "braindex.json"), "-date", "2026-01-03"}, &so, &se); code != 0 {
+		t.Fatalf("generate exit=%d\n%s", code, se.String())
+	}
+	b, _ := os.ReadFile(filepath.Join(hub, "index", "catalog.md"))
+	if !strings.Contains(string(b), "repo-a/docs/notes/project/n.md") || !strings.Contains(string(b), "repo-a/docs/decisions.md") {
+		t.Errorf("init -repo で作ったリポが索引されていない:\n%s", b)
+	}
+}

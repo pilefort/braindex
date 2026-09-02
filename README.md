@@ -118,9 +118,9 @@ Karpathy の LLM wiki 型（2026-04・`raw/` の素材から LLM が `wiki/` の
 | `CONTRIBUTING.md` | 開発の決まり（テスト・決定性・持ち込まないもの） |
 | `docs/` `work/` | 作者の設計メモと作業状態。git 管理外（`.gitignore`。2026-09-02 決定） |
 
-## セットアップ（予定）
+## セットアップ
 
-取り込んだらすぐ使える状態にする。3 手で hub リポが動く。
+3 手で hub リポが動く。
 
 ```sh
 go install github.com/pilefort/braindex/cmd/braindex@latest   # CLI を入れる
@@ -128,7 +128,8 @@ mkdir brain && cd brain && braindex init                       # hub リポの�
 braindex                                                       # 索引 index/catalog.md を生成
 ```
 
-`braindex init --repo` は各プロジェクトのリポに `docs/notes/{common,project}/`・`docs/decisions.md`・`work/` の骨格を置く。
+`braindex init -repo <dir>` は各プロジェクトのリポに `docs/notes/{common,project}/`・`docs/decisions.md`・`work/{APPROVALS,TODO}.md` の骨格を置く。
+どちらも既存ファイルは上書きしないので、再実行しても安全。hub には週次レビューのスキル（`.claude/skills/braindex-review/SKILL.md`）も入る。
 
 ## ライセンス
 
