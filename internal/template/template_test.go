@@ -111,7 +111,9 @@ func TestInstall_Partial(t *testing.T) {
 	}
 }
 
-// 雛形の本文は LF のみ(CRLF を持ち込まない)。個人識別子・原型固有の語を含まない。
+// 雛形の本文は LF のみ(CRLF を持ち込まない)。絶対パス・原型固有の語を含まない。
+// 個人識別子(ユーザー名・実在リポ名)そのものはこのテストにも書かない(CLAUDE.md「してはいけないこと」)。
+// それらは公開前チェックリストの grep で見る。
 func TestFiles_Hygiene(t *testing.T) {
 	files, err := Files(KindHub)
 	if err != nil {
@@ -122,7 +124,7 @@ func TestFiles_Hygiene(t *testing.T) {
 		if strings.Contains(s, "\r") {
 			t.Errorf("CRLF を含む: %s", f.Path)
 		}
-		for _, bad := range []string{"C:/Users", "brain-review"} {
+		for _, bad := range []string{"C:/", "C:\\", "/Users/", "/home/", "brain-review"} {
 			if strings.Contains(s, bad) {
 				t.Errorf("%s に %q が含まれる", f.Path, bad)
 			}
