@@ -107,6 +107,16 @@ func TestParse_AliasesAndCRLF(t *testing.T) {
 	}
 }
 
+// 選択肢の「案 -- 得失」と同じく、私の案の「A -- 理由」も区切りとして読む
+// (区切りが理由の先頭に残らない)。
+func TestParse_RecommendDoubleHyphen(t *testing.T) {
+	md := "# 承認待ち\n\n## 1. 題\n\n**選択肢:**\n- A. 案 1 -- 得\n- B. 案 2 -- 損\n**私の案:** A -- 理由\n"
+	it := Parse([]byte(md)).Items[0]
+	if it.Recommended != "A" || it.Reason != "理由" {
+		t.Errorf("推奨 = %q 理由 = %q", it.Recommended, it.Reason)
+	}
+}
+
 // 桁あふれする番号は捨てて出現順に振り直す(自前の桁計算だと巨大な値がそのまま N に入る)。
 func TestParse_HeadingNumberOverflow(t *testing.T) {
 	d := Parse([]byte("# 承認待ち\n\n## 99999999999999999999. 題\n"))

@@ -64,7 +64,8 @@ var (
 	headRe  = regexp.MustCompile(`^##\s+(?:(\d+)\s*[.．、)）]\s*)?(.+?)\s*$`)
 	fieldRe = regexp.MustCompile(`^\*\*([^*]+?)\s*[:：]?\s*\*\*\s*[:：]?\s*(.*)$`)
 	optRe   = regexp.MustCompile(`^\s*[-*+]\s+(?:([A-Za-z0-9])\s*[.．:：)）]\s*)?(.+?)\s*$`)
-	recRe   = regexp.MustCompile(`^([A-Za-z0-9])(?:\s*[.．:：)）]|\s+[—―–-]|\s*$)\s*(.*)$`)
+	// 私の案「A — 理由」「A. 理由」「A -- 理由」「A」。区切りは理由に残さない
+	recRe = regexp.MustCompile(`^([A-Za-z0-9])(?:\s*[.．:：)）]|\s+(?:[—―–]|--?)|\s*$)\s*(.*)$`)
 	// 「案 — 得失」の区切り。全角ダッシュ類か、空白で挟んだ --
 	optSplitRe = regexp.MustCompile(`\s*[—―–]\s*|\s+--\s+`)
 )
