@@ -181,10 +181,15 @@ func collectNotes(rootAbs, repo, notesDir, label string, warn warnFunc) []File {
 }
 
 // collectExtra は例外規則に従ってファイルを収集する。
-// 起点が無い・読めないのは設定の誤りなので警告する(自動規則の notesDir 不在とは違う)。
+// 起点が無い・読めない・archive の下にあるのは設定の誤りなので警告する(自動規則の notesDir 不在とは違う)。
 func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 	base := filepath.Join(rootAbs, ex.Repo, filepath.FromSlash(ex.Path))
 	var out []File
+	// 起点自体が archive セグメントの下なら、archive の除外規則で全件落ちる。設定の誤りなので無言にしない
+	if hasArchiveSeg(path.Join(ex.Repo, ex.Path)) {
+		warn("extra %s/%s: パスに archive を含むので全件除外(載せるなら archive の外に置く)", ex.Repo, ex.Path)
+		return out
+	}
 	if info, err := os.Stat(base); err != nil {
 		warn("extra %s/%s: %s", ex.Repo, ex.Path, DescribeErr(err))
 		return out

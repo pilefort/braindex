@@ -271,6 +271,41 @@ func TestScan_ExtraExcludeGlob(t *testing.T) {
 	}
 }
 
+// extra の起点が archive セグメントの下にあると、archive の除外規則で全件が落ちる。
+// 設定の誤りなので無言で 0 件にせず警告する(起点が無い・読めない場合と同じ扱い)。
+func TestScan_ExtraUnderArchiveWarns(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range []string{"r/archive/old/a.md", "archive/notes/b.md"} {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("# "+rel+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases := []struct {
+		desc string
+		rule ExtraRule
+	}{
+		{"起点のパスに archive", ExtraRule{Repo: "r", Path: "archive/old", Recursive: true, Kind: "old"}},
+		{"リポ名が archive", ExtraRule{Repo: "archive", Path: "notes", Kind: "n"}},
+	}
+	for _, c := range cases {
+		files, warnings, err := Scan(Config{Root: root, Extra: []ExtraRule{c.rule}})
+		if err != nil {
+			t.Fatalf("[%s] Scan: %v", c.desc, err)
+		}
+		if len(files) != 0 {
+			t.Errorf("[%s] archive 配下なのに拾っている: %v", c.desc, files)
+		}
+		want := "extra " + c.rule.Repo + "/" + c.rule.Path
+		if len(warnings) != 1 || !strings.Contains(warnings[0], want) || !strings.Contains(warnings[0], "archive") {
+			t.Errorf("[%s] 警告に %q と archive を含む 1 件を期待: %v", c.desc, want, warnings)
+		}
+	}
+}
+
 func sortedKeys(m map[string]string) string {
 	ks := make([]string, 0, len(m))
 	for k := range m {
