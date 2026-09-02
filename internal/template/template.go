@@ -85,7 +85,7 @@ func Install(dst string, kind Kind) (Result, error) {
 			res.Skipped = append(res.Skipped, f.Path)
 			continue
 		} else if !errors.Is(err, fs.ErrNotExist) {
-			return res, fmt.Errorf("%s: %w", target, err)
+			return res, err // PathError がパスを持つので包み直さない
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return res, err

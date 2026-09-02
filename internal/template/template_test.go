@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -109,6 +110,32 @@ func TestInstall_Partial(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dst, "index")); err == nil {
 		t.Errorf("index/ は braindex 実行時に作るので雛形には含めない")
+	}
+}
+
+// 既存確認(Lstat)が「無い」以外の理由で失敗したとき、エラー文に対象のパスが 2 回出ない
+// (os の PathError が既にパスを持つので、包み直すと二重になる)。
+func TestInstall_LstatErrorMentionsPathOnce(t *testing.T) {
+	var dst string
+	if runtime.GOOS == "windows" {
+		// ファイル名に使えない '<' を含む展開先: Lstat が ERROR_INVALID_NAME(ErrNotExist ではない)で失敗する
+		dst = filepath.Join(t.TempDir(), "a<b")
+	} else {
+		// docs を通常ファイルにする: docs/conventions.md の Lstat が ENOTDIR(ErrNotExist ではない)で失敗する
+		dst = filepath.Join(t.TempDir(), "hub")
+		if err := os.MkdirAll(dst, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dst, "docs"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := Install(dst, KindHub)
+	if err == nil {
+		t.Fatal("エラーになっていない")
+	}
+	if n := strings.Count(err.Error(), dst); n != 1 {
+		t.Errorf("エラー文に展開先のパスが %d 回出る(1 回のはず): %v", n, err)
 	}
 }
 
