@@ -23,6 +23,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          # 依存が無く go.sum も無いので、モジュールキャッシュの復元は毎回「見つからない」の警告になる。切る
+          cache: false
 
       - name: gofmt
         shell: bash
