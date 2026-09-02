@@ -93,9 +93,16 @@ func TestRun_MissingRootFails(t *testing.T) {
 // -config で明示した設定ファイルが無ければ失敗する(既定パスの不在とは区別する)。
 func TestRun_ExplicitConfigMissingFails(t *testing.T) {
 	var so, se bytes.Buffer
-	code := run(options{config: filepath.Join(t.TempDir(), "nope.json"), root: makeRoot(t)}, &so, &se)
+	out := filepath.Join(t.TempDir(), "c.md")
+	code := run(options{config: filepath.Join(t.TempDir(), "nope.json"), root: makeRoot(t), out: out}, &so, &se)
 	if code != 1 {
 		t.Errorf("exit=%d want 1", code)
+	}
+	if !strings.Contains(se.String(), "nope.json") {
+		t.Errorf("stderr に見つからなかった設定ファイル名が無い: %s", se.String())
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Errorf("失敗時に索引を書いてしまった")
 	}
 }
 
@@ -115,8 +122,15 @@ func TestRun_UnknownConfigKeyFails(t *testing.T) {
 // -date は YYYY-MM-DD だけを受け付ける。
 func TestRun_BadDateFails(t *testing.T) {
 	var so, se bytes.Buffer
-	if code := run(options{root: makeRoot(t), out: filepath.Join(t.TempDir(), "c.md"), date: "2026/01/03"}, &so, &se); code != 1 {
+	out := filepath.Join(t.TempDir(), "c.md")
+	if code := run(options{root: makeRoot(t), out: out, date: "2026/01/03"}, &so, &se); code != 1 {
 		t.Errorf("exit=%d want 1", code)
+	}
+	if !strings.Contains(se.String(), "-date") || !strings.Contains(se.String(), "2026/01/03") {
+		t.Errorf("stderr にフラグ名と渡した値が無い: %s", se.String())
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Errorf("失敗時に索引を書いてしまった")
 	}
 }
 
@@ -209,5 +223,33 @@ func TestRun_NoConfigNoRootMentionsConfigName(t *testing.T) {
 	}
 	if !strings.Contains(se.String(), defaultConfig) {
 		t.Errorf("stderr に既定の設定ファイル名 %s が無い: %s", defaultConfig, se.String())
+	}
+}
+
+// 既定の設定ファイルはカレントの braindex.json(-config 無しで拾い、出力の既定はその隣の index/catalog.md)。
+func TestRun_DefaultConfigInCwd(t *testing.T) {
+	root := makeRoot(t)
+	hub := t.TempDir()
+	writeFile(t, filepath.Join(hub, defaultConfig), `{"root": "`+filepath.ToSlash(root)+`"}`)
+	t.Chdir(hub)
+	runOK(t, options{date: "2026-01-03"})
+	if _, err := os.Stat(filepath.Join(hub, "index", "catalog.md")); err != nil {
+		t.Errorf("既定の出力先 index/catalog.md が無い: %v", err)
+	}
+}
+
+// -out の相対パスはカレント基準(設定ファイルのディレクトリ基準ではない)。
+func TestRun_OutRelativeToCwd(t *testing.T) {
+	root := makeRoot(t)
+	cwd := t.TempDir()
+	cfg := filepath.Join(t.TempDir(), "sub", "braindex.json")
+	writeFile(t, cfg, `{"root": "`+filepath.ToSlash(root)+`"}`)
+	t.Chdir(cwd)
+	runOK(t, options{config: cfg, out: "here.md", date: "2026-01-03"})
+	if _, err := os.Stat(filepath.Join(cwd, "here.md")); err != nil {
+		t.Errorf("カレント基準の here.md が無い: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(cfg), "here.md")); err == nil {
+		t.Errorf("設定ファイルのディレクトリに書いてしまった")
 	}
 }
