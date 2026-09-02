@@ -25,11 +25,22 @@ Windows のタスクスケジューラなら `schtasks /Create /SC WEEKLY /D MON
 `braindex` が定期実行の環境の PATH に無ければ、`go install` の出力先（`GOBIN`。無ければ `GOPATH/bin`、既定はホームの `go/bin`）のフルパスで書く。
 既にある下書きは上書きしない。
 
+## 振り返り（訂正率）
+
+`braindex retro check` が、直近 14 日のセッションログ（Claude Code の `~/.claude/projects`）で「エージェントの振る舞いへの訂正」の割合を
+閾値（既定 10%）と比べ、超えていれば 1 行と終了コード 3 で知らせる。判定は辞書照合の決定論で、発話の本文はどこにも書かず送らない。
+超えたら、スキル `retro`（`.claude/skills/retro/SKILL.md`）の手順で `braindex retro extract` のダイジェスト（OS の一時ディレクトリに出る）を読み、
+所見と規約への反映案を `docs/notes/retro-YYYY-MM-DD.md` に残す。数値は `braindex retro stats -by project,week,position` の表を貼る。
+
+組み込みは 2 通り。Claude Code の hook（`SessionStart`）に `braindex retro check -quiet` を置けば、超えたときだけ 1 行がセッションに入る。
+定期実行なら週 1 回 `braindex retro check` を回し、終了コード 3 のときだけ通知コマンドへつなぐ。窓・閾値・辞書は `braindex.json` の `retro` 節。
+
 ## 地図
 
 | 場所 | 何が入るか |
 |---|---|
 | `index/catalog.md` | 索引。`braindex` が生成する。手で編集しない |
-| `braindex.json` | 走査の設定: `root`・`notes_dirs`・`extra`。週次レビューの設定（記録の置き場と閾値）: `review` |
+| `braindex.json` | 走査の設定: `root`・`notes_dirs`・`extra`。週次レビューの設定（記録の置き場と閾値）: `review`。振り返りの設定（窓・閾値・辞書）: `retro` |
 | `docs/` | 蓄積するもの: `overview.md`・`glossary.md`・`decisions.md`・`notes/`・`conventions.md` |
 | `work/` | 揮発するもの: `APPROVALS.md`（判断待ち）・`TODO.md`・`review/`（週次レビューの記録） |
+| `.claude/skills/` | Claude Code のスキル: `braindex-review`（週次レビューの判断）・`retro`（振り返り） |
