@@ -64,10 +64,12 @@ func (r *testRepo) remove(rel string) {
 	}
 }
 
-// commit は作業ツリーの全変更を date(YYYY-MM-DD)の正午 UTC でコミットする。
+// commit は作業ツリーの全変更を date(YYYY-MM-DD)のローカル時刻の正午でコミットする。
+// --since / --until は git がローカル時刻で解釈するので、正午なら TZ に依らずその日の中に入る
+// (UTC 正午に固定すると UTC+12 以上の TZ では前日扱いになり、--until=<日> 23:59:59 から漏れる)。
 func (r *testRepo) commit(date, msg string) {
 	r.t.Helper()
-	r.date = date + "T12:00:00+00:00"
+	r.date = date + "T12:00:00" // 時差の接尾辞なし＝ローカル時刻
 	r.run("add", "-A")
 	r.run("commit", "-q", "-m", msg)
 }
