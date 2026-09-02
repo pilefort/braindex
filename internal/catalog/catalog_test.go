@@ -90,8 +90,14 @@ func TestBuild_UnreadableFileWarns(t *testing.T) {
 }
 
 func TestBuild_Deterministic(t *testing.T) {
-	a, _ := Build(e2eConfig(), "2026-08-07")
-	b, _ := Build(e2eConfig(), "2026-08-07")
+	a, err := Build(e2eConfig(), "2026-08-07")
+	if err != nil {
+		t.Fatalf("Build(1 回目): %v", err)
+	}
+	b, err := Build(e2eConfig(), "2026-08-07")
+	if err != nil {
+		t.Fatalf("Build(2 回目): %v", err)
+	}
 	if string(a.Catalog) != string(b.Catalog) {
 		t.Errorf("2 回生成でバイト不一致(決定性違反)")
 	}
@@ -119,8 +125,9 @@ func TestBuild_DeterministicAcrossMtime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build(b): %v", err)
 	}
-	if !strings.Contains(string(ra.Catalog), "style.md") {
-		t.Fatalf("日付なしノートが載っていない")
+	undated := "|  | guides | 書き方の指針 | 本文 | ext/docs/guides/style.md |"
+	if !strings.Contains(string(ra.Catalog), undated) {
+		t.Fatalf("日付なしノートが空欄の行として載っていない:%s", ra.Catalog)
 	}
 	if !bytes.Equal(ra.Catalog, rb.Catalog) {
 		t.Errorf("mtime が違うだけで出力が変わった(決定性違反):%s---%s", ra.Catalog, rb.Catalog)
@@ -135,7 +142,10 @@ func copyTree(t *testing.T, src string) string {
 		if err != nil {
 			return err
 		}
-		rel, _ := filepath.Rel(src, p)
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
 		target := filepath.Join(dst, rel)
 		if d.IsDir() {
 			return os.MkdirAll(target, 0o755)
