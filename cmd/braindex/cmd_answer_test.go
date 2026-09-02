@@ -1,0 +1,146 @@
+package main
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/pilefort/braindex/internal/mdhtml"
+)
+
+// 置き場所と「開く」をテスト用に差し替える。開いた先のパスを返す。
+func stubAnswer(t *testing.T) (dir string, opened *[]string) {
+	t.Helper()
+	dir = filepath.Join(t.TempDir(), "answers")
+	var o []string
+	origDir, origOpen := answersDir, openInBrowser
+	answersDir = func() string { return dir }
+	openInBrowser = func(p string) error { o = append(o, p); return nil }
+	t.Cleanup(func() { answersDir, openInBrowser = origDir, origOpen })
+	return dir, &o
+}
+
+// md を渡すと一時置き場に <同名>.html を書き、既定ブラウザで開く。中身は mdhtml.Page と同じ。BOM は落とす。
+func TestAnswer_WriteAndOpen(t *testing.T) {
+	dir, opened := stubAnswer(t)
+	src := filepath.Join(t.TempDir(), "memo.md")
+	writeFile(t, src, "\uFEFF# 題名\n\n本文\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"answer", src}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d want 0\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	out := filepath.Join(dir, "memo.html")
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != mdhtml.Page("# 題名\n\n本文\n", "題名") {
+		t.Error("HTML の中身が mdhtml.Page と違う(BOM が残っている?)")
+	}
+	if !strings.Contains(so.String(), "書いた "+out) {
+		t.Errorf("書いたパスの報告が無い: %s", so.String())
+	}
+	if len(*opened) != 1 || (*opened)[0] != out {
+		t.Errorf("開いた先が違う: %v", *opened)
+	}
+}
+
+// -out で出力先を指定できる。-no-open なら開かない。
+func TestAnswer_OutNoOpen(t *testing.T) {
+	_, opened := stubAnswer(t)
+	src := filepath.Join(t.TempDir(), "a.md")
+	writeFile(t, src, "x\n")
+	out := filepath.Join(t.TempDir(), "sub", "b.html")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"answer", "-no-open", "-out", out, src}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d want 0\n%s", code, se.String())
+	}
+	if _, err := os.Stat(out); err != nil {
+		t.Errorf("-out に書かれていない: %v", err)
+	}
+	if len(*opened) != 0 {
+		t.Errorf("-no-open なのに開いた: %v", *opened)
+	}
+}
+
+// 実行のたびに置き場所の -ttl-days より古いファイルを消す。0 なら消さない。サブディレクトリは触らない。
+func TestAnswer_TTL(t *testing.T) {
+	dir, _ := stubAnswer(t)
+	old := filepath.Join(dir, "old.html")
+	fresh := filepath.Join(dir, "fresh.html")
+	writeFile(t, old, "o")
+	writeFile(t, fresh, "f")
+	writeFile(t, filepath.Join(dir, "sub", "old.html"), "s")
+	past := time.Now().Add(-20 * 24 * time.Hour)
+	if err := os.Chtimes(old, past, past); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(t.TempDir(), "a.md")
+	writeFile(t, src, "x\n")
+
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"answer", "-no-open", "-ttl-days", "0", src}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d\n%s", code, se.String())
+	}
+	if _, err := os.Stat(old); err != nil {
+		t.Error("-ttl-days 0 なのに消えた")
+	}
+	so.Reset()
+	if code := dispatch([]string{"answer", "-no-open", src}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d\n%s", code, se.String())
+	}
+	if _, err := os.Stat(old); err == nil {
+		t.Error("14 日より古いファイルが残っている")
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Error("新しいファイルが消えた")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "sub", "old.html")); err != nil {
+		t.Error("サブディレクトリの中を消した")
+	}
+	if !strings.Contains(so.String(), "14 日より古い 1 ファイルを消した") {
+		t.Errorf("削除の報告が無い: %s", so.String())
+	}
+	if code := dispatch([]string{"answer", "-ttl-days", "-1", src}, &so, &se); code != 1 {
+		t.Errorf("負の -ttl-days は exit 1 のはず: %d", code)
+	}
+}
+
+// -dir は置き場所を表示(作成)して終わる。-purge は置き場所の中を全部消す。
+func TestAnswer_DirAndPurge(t *testing.T) {
+	dir, _ := stubAnswer(t)
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"answer", "-dir"}, &so, &se); code != 0 || strings.TrimSpace(so.String()) != dir {
+		t.Fatalf("-dir: exit=%d out=%q want %q", code, so.String(), dir)
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		t.Error("-dir が置き場所を作っていない")
+	}
+	writeFile(t, filepath.Join(dir, "a.html"), "a")
+	writeFile(t, filepath.Join(dir, "b.md"), "b")
+	so.Reset()
+	if code := dispatch([]string{"answer", "-purge"}, &so, &se); code != 0 {
+		t.Fatalf("-purge: exit=%d\n%s", code, se.String())
+	}
+	if !strings.Contains(so.String(), "2 ファイルを消した") {
+		t.Errorf("-purge の報告が違う: %s", so.String())
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("-purge 後に残っている: %d", len(entries))
+	}
+}
+
+// 引数なし・無いファイルは 1。
+func TestAnswer_Errors(t *testing.T) {
+	stubAnswer(t)
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"answer"}, &so, &se); code != 1 {
+		t.Errorf("引数なしは exit 1 のはず: %d", code)
+	}
+	if code := dispatch([]string{"answer", filepath.Join(t.TempDir(), "none.md")}, &so, &se); code != 1 {
+		t.Errorf("無いファイルは exit 1 のはず: %d", code)
+	}
+}
