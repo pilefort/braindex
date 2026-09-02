@@ -2,6 +2,7 @@ package retro
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -13,6 +14,35 @@ func TestSettings_WithDefaults(t *testing.T) {
 	full := Settings{SessionsDir: "~/logs", WindowDays: 7, Threshold: 0.2, PositionBins: "1-5,6-", Dictionary: "d.txt", DictionaryExtra: "e.txt"}
 	if got := full.WithDefaults(); got != full {
 		t.Errorf("指定した値は変えない: got=%+v", got)
+	}
+}
+
+// 範囲外の値は既定値に丸めず、設定の誤りとしてエラーにする(0 は「未指定」で既定値)。
+func TestSettings_Validate(t *testing.T) {
+	ok := []Settings{{}, {WindowDays: 7, Threshold: 0.5}, {Threshold: 1}, {Threshold: 0.001}}
+	for _, s := range ok {
+		if err := s.Validate(); err != nil {
+			t.Errorf("Validate(%+v): 通るはず: %v", s, err)
+		}
+	}
+	bad := []struct {
+		s    Settings
+		want string // エラー文に含まれるキー名
+	}{
+		{Settings{Threshold: 5}, "threshold"},
+		{Settings{Threshold: 1.01}, "threshold"},
+		{Settings{Threshold: -1}, "threshold"},
+		{Settings{WindowDays: -3}, "window_days"},
+	}
+	for _, c := range bad {
+		err := c.s.Validate()
+		if err == nil {
+			t.Errorf("Validate(%+v): エラーにする", c.s)
+			continue
+		}
+		if !strings.Contains(err.Error(), c.want) {
+			t.Errorf("Validate(%+v): エラー文にキー名 %q が無い: %v", c.s, c.want, err)
+		}
 	}
 }
 

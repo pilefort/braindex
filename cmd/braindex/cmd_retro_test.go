@@ -118,6 +118,34 @@ func TestRetroStats_Config(t *testing.T) {
 	}
 }
 
+// 設定の retro 節の範囲外の値(threshold が 0〜1 の外・window_days が負)は、既定値に丸めず 1 で止まる。
+func TestRetroStats_ConfigOutOfRange(t *testing.T) {
+	fixUTC(t)
+	abs, err := filepath.Abs(retroTestdata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct{ retro, want string }{
+		{`"threshold": 5`, "retro.threshold"},
+		{`"threshold": -1`, "retro.threshold"},
+		{`"window_days": -3`, "retro.window_days"},
+	}
+	for _, c := range cases {
+		p := filepath.Join(t.TempDir(), "braindex.json")
+		writeFile(t, p, `{"retro": {"sessions_dir": `+jsonString(abs)+`, `+c.retro+`}}`)
+		code, so, se := execRetroStats(t, "-config", p)
+		if code != 1 {
+			t.Errorf("%s: exit=%d want 1\nstdout=%s\nstderr=%s", c.retro, code, so, se)
+		}
+		if !strings.Contains(se, c.want) {
+			t.Errorf("%s: stderr にキー名 %q が無い: %q", c.retro, c.want, se)
+		}
+		if so != "" {
+			t.Errorf("%s: 失敗時に stdout へ書かない: %q", c.retro, so)
+		}
+	}
+}
+
 func TestRetroStats_Errors(t *testing.T) {
 	fixUTC(t)
 	cases := [][]string{
