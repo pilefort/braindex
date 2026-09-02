@@ -383,3 +383,88 @@ func containsSub(ss []string, sub string) bool {
 	}
 	return false
 }
+
+// 自動規則で拾ったファイルを extra が重ねて指しても、索引には 1 回だけ載る(先に拾った自動規則のラベルが勝つ)。
+func TestScan_ExtraDoesNotDuplicateAutoFiles(t *testing.T) {
+	cfg := Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: "docs", Recursive: true, Kind: "x"}}}
+	files, _, err := Scan(cfg)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	count := map[string]int{}
+	kind := map[string]string{}
+	for _, f := range files {
+		count[f.Rel]++
+		kind[f.Rel] = f.Kind
+	}
+	if count["ext/docs/notes/project/extnote.md"] != 1 {
+		t.Errorf("自動規則と extra で二重に載っている: %d 回", count["ext/docs/notes/project/extnote.md"])
+	}
+	if kind["ext/docs/notes/project/extnote.md"] != "notes/project" {
+		t.Errorf("先に拾った自動規則のラベルが勝つべき: %q", kind["ext/docs/notes/project/extnote.md"])
+	}
+	if count["ext/docs/guides/style.md"] != 1 || kind["ext/docs/guides/style.md"] != "x/guides" {
+		t.Errorf("extra だけが指すファイルは extra のラベルで 1 回: count=%d kind=%q", count["ext/docs/guides/style.md"], kind["ext/docs/guides/style.md"])
+	}
+}
+
+// extra が docs 全体を指しても、docs/decisions.md は自動規則の種別 decisions で 1 回だけ載る
+// (notes_dirs の入れ子と同じく decisions が勝つ。TestScan_NotesDirs_Dedupe の extra 版)。
+func TestScan_ExtraDoesNotDuplicateDecisions(t *testing.T) {
+	cfg := Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "repo-both", Path: "docs", Recursive: true, Kind: "x"}}}
+	files, _, err := Scan(cfg)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	count := map[string]int{}
+	kind := map[string]string{}
+	for _, f := range files {
+		count[f.Rel]++
+		kind[f.Rel] = f.Kind
+	}
+	for _, c := range []struct{ rel, want string }{
+		{"repo-both/docs/decisions.md", "decisions"},
+		{"repo-both/docs/notes/common/a.md", "notes/common"},
+	} {
+		if count[c.rel] != 1 || kind[c.rel] != c.want {
+			t.Errorf("%s: 1 回・種別 %q を期待: count=%d kind=%q", c.rel, c.want, count[c.rel], kind[c.rel])
+		}
+	}
+}
+
+// notes_dirs と extra.path はリポ内の相対パスに限る。".." を含む・絶対パスは設定の誤りなのでエラー。
+// エラー文は「どの設定の・何が」だめかを名指しする(root 不在など別の理由で落ちたのと区別できるように)。
+func TestScan_RejectsEscapingPaths(t *testing.T) {
+	abs := t.TempDir() // OS ごとの絶対パス(Windows は C:\... 、他は /...)
+	cases := []struct {
+		desc string
+		cfg  Config
+		want string // エラー文に含まれるべき語
+	}{
+		{"notes_dirs に ..", Config{Root: "testdata/root", NotesDirs: []string{"../outside"}}, `notes_dirs: ".." でリポの外を指せない: "../outside"`},
+		{"notes_dirs に途中の ..", Config{Root: "testdata/root", NotesDirs: []string{"docs/../../x"}}, `notes_dirs: ".." でリポの外を指せない`},
+		{"notes_dirs に絶対パス", Config{Root: "testdata/root", NotesDirs: []string{abs}}, "notes_dirs: 絶対パスは書けない"},
+		{"extra.path に ..", Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: "../repo-flat", Kind: "x"}}}, `extra ext の path: ".." でリポの外を指せない: "../repo-flat"`},
+		{"extra.path に絶対パス", Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: abs, Kind: "x"}}}, "extra ext の path: 絶対パスは書けない"},
+		{"extra.repo に区切り", Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext/docs", Path: ".", Kind: "x"}}}, `extra: repo は root 直下のディレクトリ名だけを書く: "ext/docs"`},
+		{"extra.repo が空", Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "", Path: "docs", Kind: "x"}}}, `extra: repo は root 直下のディレクトリ名だけを書く: ""`},
+		{"extra.repo が ..", Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "..", Path: ".", Kind: "x"}}}, `extra: repo は root 直下のディレクトリ名だけを書く: ".."`},
+	}
+	for _, c := range cases {
+		_, _, err := Scan(c.cfg)
+		if err == nil {
+			t.Errorf("[%s] エラーになっていない", c.desc)
+			continue
+		}
+		if !strings.Contains(err.Error(), c.want) {
+			t.Errorf("[%s] エラー文が原因を名指ししていない: want=%q got=%q", c.desc, c.want, err)
+		}
+	}
+	// "." と "" はリポ直下の意味で許す
+	if _, _, err := Scan(Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: ".", Kind: "x"}}}); err != nil {
+		t.Errorf("extra.path \".\" が拒否された: %v", err)
+	}
+	if _, _, err := Scan(Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: "", Kind: "x"}}}); err != nil {
+		t.Errorf("extra.path \"\" が拒否された: %v", err)
+	}
+}
