@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pilefort/braindex/internal/scan"
 )
 
 // TodoItem は work/TODO.md の未チェック項目 1 つ。
@@ -164,14 +166,6 @@ func WriteTodoSection(b *strings.Builder, repos []RepoTodos, weeks int, cutoff s
 	}
 }
 
-// describeErr は警告向けにエラーを短く言い直す(scan.DescribeErr と同じ規則。import の循環を避けて持つ)。
-func describeErr(err error) string {
-	if errors.Is(err, fs.ErrNotExist) {
-		return "存在しない"
-	}
-	var pe *fs.PathError
-	if errors.As(err, &pe) {
-		return pe.Err.Error()
-	}
-	return err.Error()
-}
+// describeErr は警告向けにエラーを短く言い直す。規則は scan.DescribeErr のもの(scan は他の内部パッケージに
+// 依存しないので、review から使っても循環しない)。
+func describeErr(err error) string { return scan.DescribeErr(err) }
