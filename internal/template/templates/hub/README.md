@@ -22,6 +22,7 @@
 
 下書きの作成だけなら定期実行に任せられる（判断は人）。cron なら `0 9 * * 1 cd <この hub> && braindex review`、
 Windows のタスクスケジューラなら `schtasks /Create /SC WEEKLY /D MON /ST 09:00 /TN braindex-review /TR "cmd /c cd /d <この hub> && braindex review"`。
+`braindex` が定期実行の環境の PATH に無ければ、`go install` の出力先（`GOBIN`。無ければ `GOPATH/bin`、既定はホームの `go/bin`）のフルパスで書く。
 既にある下書きは上書きしない。
 
 ## 地図

@@ -167,6 +167,7 @@ braindex review                                                # 週に 1 回: �
 **定期実行**: 判断は人が行うので自動化するのは下書きの作成だけ。週に 1 回、hub で `braindex review` を動かす。
 cron なら `0 9 * * 1 cd <hub> && braindex review`、Windows のタスクスケジューラなら
 `schtasks /Create /SC WEEKLY /D MON /ST 09:00 /TN braindex-review /TR "cmd /c cd /d <hub> && braindex review"`。
+`braindex` が定期実行の環境の PATH に無ければ、`go install` の出力先（`GOBIN`。無ければ `GOPATH/bin`、既定はホームの `go/bin`）のフルパスで書く。
 同じ日に 2 回動いても、既にある下書きは上書きしない。
 
 ## ライセンス
