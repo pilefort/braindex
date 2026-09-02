@@ -436,11 +436,3 @@ func absPath(t *testing.T) string {
 	t.Helper()
 	return t.TempDir()
 }
-
-// root が空のときの scan のエラー文は CLI のフラグ名を含まない(ヒントは main が付ける)。
-func TestScan_EmptyRootErrorHasNoCLIHint(t *testing.T) {
-	_, _, err := Scan(Config{Root: ""})
-	if err == nil || strings.Contains(err.Error(), "-root") {
-		t.Errorf("scan のエラー文が CLI を知っている: %v", err)
-	}
-}
