@@ -138,7 +138,7 @@ braindex retro extract [-since YYYY-MM-DD | -window-days N] [-out DIR]          
   出力先の `sessions/` と `index.tsv` は実行のたびに書き直す（前回の分は消える。出力先の他のファイルは触らない）。
   セッションログには機微が含まれるので、`-out` でリポの中に向けるのは自己責任で
 
-設定（`braindex.json` の `retro` 節。設定ファイルが無くても動く。`retro` は hub を要らない）:
+設定（`braindex.json` の `retro` 節。設定ファイルが無くても動き、`root`（hub）も要らない）:
 
 | キー | 意味 |
 |---|---|
