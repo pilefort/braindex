@@ -23,11 +23,18 @@ func user(t *testing.T, idx int, when, text string) sessions.Turn {
 	return sessions.Turn{Role: sessions.User, Index: idx, Time: at(t, when), Text: text}
 }
 
+// session は reader と同じ形のセッションを組む(UserTurns と、時刻のある最初・最後の発話の Start/End を埋める)。
 func session(id, project string, turns ...sessions.Turn) sessions.Session {
 	s := sessions.Session{ID: id, Project: project, Turns: turns}
 	for _, tn := range turns {
 		if tn.Role == sessions.User {
 			s.UserTurns++
+		}
+		if !tn.Time.IsZero() {
+			if s.Start.IsZero() {
+				s.Start = tn.Time
+			}
+			s.End = tn.Time
 		}
 	}
 	return s
