@@ -180,9 +180,10 @@ func runRetroCheck(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "使い方: braindex retro check [-config braindex.json] [-sessions DIR] [-date YYYY-MM-DD] [-window-days N] [-threshold 0.1] [-quiet]")
 		fmt.Fprintln(stderr, "  直近の窓(既定 14 日)の訂正率を閾値(既定 10%)と比べて 1 行出す。本文は出さない。")
 		fmt.Fprintln(stderr, "  組み込みの例:")
-		fmt.Fprintln(stderr, "    Claude Code の hook(SessionStart)に braindex retro check -quiet を置くと、超えたときだけ 1 行がセッションに入る")
+		fmt.Fprintln(stderr, "    Claude Code の hook(SessionStart)に braindex retro check -quiet || true を置くと、超えたときだけ 1 行がセッションに入る")
 		fmt.Fprintln(stderr, "    cron / タスクスケジューラで週 1 回回し、終了コード 3 のときだけ通知コマンドへつなぐ")
 		fmt.Fprintln(stderr, "  終了コード: 0 閾値以下 / 1 失敗 / 2 閾値以下だが警告つき(読めないログを飛ばした) / 3 閾値超え(警告があっても 3)")
+		fmt.Fprintln(stderr, "  終了コード 3 は hook 以外(スケジューラ等)向け。Claude Code の hook は終了コード 0 の stdout だけを文脈に入れるので、hook では || true で 0 に落とす")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
 		fs.PrintDefaults()
@@ -434,6 +435,9 @@ func loadRetroEnv(cfgPath, sessionsFlag string) (retroEnv, error) {
 		baseDir = filepath.Dir(cfgPath)
 	}
 	env.home, _ = os.UserHomeDir() // 取れなければ "" のまま("~" の展開と表示の置換をしないだけ)
+	if err := fc.Retro.Validate(); err != nil {
+		return env, err
+	}
 	s := fc.Retro.WithDefaults()
 	env.settings = s
 
