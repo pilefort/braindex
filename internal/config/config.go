@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"os"
 
+	"github.com/pilefort/braindex/internal/retro"
 	"github.com/pilefort/braindex/internal/review"
 	"github.com/pilefort/braindex/internal/scan"
 )
@@ -26,6 +27,7 @@ const DefaultPath = "braindex.json"
 type Config struct {
 	scan.Config
 	Review review.Settings `json:"review"` // 週次レビュー(braindex review)の節。省略可
+	Retro  retro.Settings  `json:"retro"`  // レトロスペクティブ(braindex retro)の節。省略可
 }
 
 // Load は path の設定ファイル(JSON)を読む。

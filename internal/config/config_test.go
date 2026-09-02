@@ -65,3 +65,25 @@ func TestLoad_BadJSONAndTrailing(t *testing.T) {
 		t.Errorf("末尾の余分な内容でエラーになっていない: %v", err)
 	}
 }
+
+// retro 節(braindex retro の設定)を読める。節の中の未知のキーもエラーにする。
+func TestLoad_RetroSection(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "braindex.json")
+	if err := os.WriteFile(p, []byte(`{"root": ".", "retro": {"sessions_dir": "~/logs", "window_days": 7, "threshold": 0.2, "position_bins": "1-5,6-", "dictionary": "d.txt", "dictionary_extra": "e.txt"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, found, err := Load(p)
+	if err != nil || !found {
+		t.Fatalf("Load: found=%v err=%v", found, err)
+	}
+	r := cfg.Retro
+	if r.SessionsDir != "~/logs" || r.WindowDays != 7 || r.Threshold != 0.2 || r.PositionBins != "1-5,6-" || r.Dictionary != "d.txt" || r.DictionaryExtra != "e.txt" {
+		t.Errorf("retro 節: got=%+v", r)
+	}
+	if err := os.WriteFile(p, []byte(`{"root": ".", "retro": {"window_day": 7}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Load(p); err == nil {
+		t.Error("retro 節の未知のキーはエラーにする")
+	}
+}
