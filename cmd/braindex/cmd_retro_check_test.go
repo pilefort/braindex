@@ -58,6 +58,7 @@ func TestRetroCheck_Quiet(t *testing.T) {
 }
 
 // 設定 retro.threshold が 1 を超えていたら、率が届くことは無いので設定の誤りとして 1(フラグの -threshold と同じ範囲)。
+// 範囲の検査は設定の読み込み(retro.Settings.Validate)で行うので、フラグで有効な値を与えても設定の誤りは誤りのまま。
 func TestRetroCheck_ConfigThresholdOutOfRange(t *testing.T) {
 	fixUTC(t)
 	dir := t.TempDir()
@@ -70,10 +71,10 @@ func TestRetroCheck_ConfigThresholdOutOfRange(t *testing.T) {
 	if code != 1 || so != "" || !strings.Contains(se, "retro.threshold") {
 		t.Errorf("exit=%d want 1 stdout=%q stderr=%q", code, so, se)
 	}
-	// フラグで有効な値を明示すれば、設定の誤りは使われないので通る
+	// フラグで有効な値を与えても、設定の誤りは読み込み時に止まる
 	code, _, se = execRetroCheck(t, "-config", filepath.Join(dir, "braindex.json"), "-date", "2026-09-01", "-threshold", "0.5")
-	if code != 2 {
-		t.Errorf("フラグで上書き: exit=%d want 2 stderr=%q", code, se)
+	if code != 1 || !strings.Contains(se, "retro.threshold") {
+		t.Errorf("フラグで上書き: exit=%d want 1 stderr=%q", code, se)
 	}
 }
 
