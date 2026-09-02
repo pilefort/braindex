@@ -14,14 +14,14 @@ func execRetroCheck(t *testing.T, args ...string) (code int, stdout, stderr stri
 	return code, so.String(), se.String()
 }
 
-// 窓に aaaa1111 の 3 発話(訂正 1・33.3%)が入り、既定の閾値 10% を超える → 1 行出して 3。
+// 窓に aaaa1111 の 3 発話(訂正 1・33.3%)が入り、既定の閾値 8% を超える → 1 行出して 3。
 func TestRetroCheck_Over(t *testing.T) {
 	fixUTC(t)
 	code, so, se := execRetroCheck(t, "-sessions", retroTestdata, "-date", "2026-09-01")
 	if code != 3 {
 		t.Fatalf("exit=%d want 3\nstdout=%s\nstderr=%s", code, so, se)
 	}
-	want := "braindex retro check: 直近 14 日の訂正率 33.3%(発話 3・訂正 1)が閾値 10.0% を超えた → レトロスペクティブの時期(braindex retro extract で材料を出す)\n"
+	want := "braindex retro check: 直近 14 日の訂正率 33.3%(発話 3・訂正 1)が閾値 8.0% を超えた → レトロスペクティブの時期(braindex retro extract で材料を出す)\n"
 	if so != want {
 		t.Errorf("stdout:\n want=%q\n  got=%q", want, so)
 	}
@@ -85,7 +85,7 @@ func TestRetroCheck_NoUtterances(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("exit=%d want 2\n%s", code, so)
 	}
-	if want := "braindex retro check: 直近 1 日の訂正率 -(発話 0・訂正 0)は閾値 10.0% 以下\n"; so != want {
+	if want := "braindex retro check: 直近 1 日の訂正率 -(発話 0・訂正 0)は閾値 8.0% 以下\n"; so != want {
 		t.Errorf("stdout:\n want=%q\n  got=%q", want, so)
 	}
 }
