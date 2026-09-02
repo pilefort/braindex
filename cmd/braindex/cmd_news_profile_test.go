@@ -31,8 +31,9 @@ func newsProfile(t *testing.T, hub string, args ...string) (code int, so, se str
 
 func TestNewsProfile_Sources(t *testing.T) {
 	hub := profileHub(t)
+	// testdata には JSON でない行が 1 つあり、sessions の警告で終了コード 2 になる(retro と同じ)
 	code, so, se := newsProfile(t, hub, "-sessions", retroTestdata)
-	if code != 0 {
+	if code != 2 || !strings.Contains(se, "JSON でない 1 行を飛ばした") {
 		t.Fatalf("exit=%d\n%s%s", code, so, se)
 	}
 	mustContain(t, "profile", so, "# 関心プロファイル 2026-09-01（直近 14 日）", "| 語 | 重み | index | sessions | keep | extra |")
