@@ -1,0 +1,108 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// profileHub は hub に 索引(窓内のノート 1 件)・keep 履歴・補助ファイル を置く。セッションは retro と同じ testdata を使う。
+func profileHub(t *testing.T) (hub string) {
+	t.Helper()
+	parent, hub := hubWithRepo(t)
+	writeFile(t, filepath.Join(parent, "repo-a", "docs", "notes", "feed.md"), "# フィードのパース\n\n結論: RSS を読む\n記録日: 2026-08-25\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"-config", filepath.Join(hub, "braindex.json"), "-date", "2026-09-01"}, &so, &se); code != 0 {
+		t.Fatalf("index exit=%d\n%s", code, se.String())
+	}
+	writeFile(t, filepath.Join(hub, "news", "keep", "2026-08.md"), "# 2026-08\n\n- [ゴルーチンの本](https://example.com/g)\n")
+	writeFile(t, filepath.Join(hub, "news", "interests.md"), "# 補助\nRust\n")
+	return hub
+}
+
+func newsProfile(t *testing.T, hub string, args ...string) (code int, so, se string) {
+	t.Helper()
+	var sob, seb bytes.Buffer
+	code = dispatch(append([]string{"news", "profile", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-09-01"}, args...), &sob, &seb)
+	return code, sob.String(), seb.String()
+}
+
+func TestNewsProfile_Sources(t *testing.T) {
+	hub := profileHub(t)
+	code, so, se := newsProfile(t, hub, "-sessions", retroTestdata)
+	if code != 0 {
+		t.Fatalf("exit=%d\n%s%s", code, so, se)
+	}
+	mustContain(t, "profile", so, "# 関心プロファイル 2026-09-01（直近 14 日）", "| 語 | 重み | index | sessions | keep | extra |")
+	// 出典ごとに 1 語ずつ: 索引のタイトル「パース」、セッション本文「索引」、keep「ゴルーチン」、補助「rust」
+	for _, w := range []string{"| パース |", "| 索引 |", "| ゴルーチン |", "| rust |"} {
+		if !strings.Contains(so, w) {
+			t.Errorf("%s が無い:\n%s", w, so)
+		}
+	}
+	if !strings.Contains(so, "材料: ノート 1・セッション ") || !strings.Contains(so, "keep 1・補助 1") {
+		t.Errorf("材料:\n%s", so)
+	}
+
+	// 決定性
+	_, so2, _ := newsProfile(t, hub, "-sessions", retroTestdata)
+	if so != so2 {
+		t.Error("2 回の出力が違う")
+	}
+
+	// -json
+	_, js, _ := newsProfile(t, hub, "-sessions", retroTestdata, "-json")
+	var v struct {
+		Today string `json:"today"`
+		Terms []struct {
+			Word   string             `json:"word"`
+			Counts map[string]float64 `json:"counts"`
+		} `json:"terms"`
+	}
+	if err := json.Unmarshal([]byte(js), &v); err != nil || v.Today != "2026-09-01" || len(v.Terms) == 0 {
+		t.Errorf("json: err=%v %+v", err, v)
+	}
+	for _, tm := range v.Terms {
+		if tm.Word == "rust" && tm.Counts["extra"] != 1 {
+			t.Errorf("rust の出典: %v", tm.Counts)
+		}
+	}
+
+	// -top
+	_, so3, _ := newsProfile(t, hub, "-sessions", retroTestdata, "-top", "1")
+	if !strings.Contains(so3, "（上位 1 語。残り ") {
+		t.Errorf("top:\n%s", so3)
+	}
+}
+
+// 索引もセッションの置き場も無ければ警告して残りで作る(終了コード 2)。
+func TestNewsProfile_MissingSources(t *testing.T) {
+	_, hub := hubWithRepo(t)
+	writeFile(t, filepath.Join(hub, "news", "interests.md"), "Rust\n")
+	code, so, se := newsProfile(t, hub, "-sessions", filepath.Join(hub, "no-such-dir"))
+	if code != 2 {
+		t.Fatalf("exit=%d\n%s", code, se)
+	}
+	mustContain(t, "stderr", se, "索引", "が無いので飛ばした", "セッションログの置き場", "警告 2 件")
+	mustContain(t, "stdout", so, "| rust | 1.000 | | | | 1 |", "材料: ノート 0・セッション 0・keep 0・補助 1")
+}
+
+func TestNewsProfile_Errors(t *testing.T) {
+	_, hub := hubWithRepo(t)
+	if code, _, se := newsProfile(t, hub, "-date", "bad"); code != 1 || !strings.Contains(se, "-date は YYYY-MM-DD") {
+		t.Errorf("date: exit=%d %s", code, se)
+	}
+	if code, _, se := newsProfile(t, hub, "extra"); code != 1 || !strings.Contains(se, `引数 ["extra"] は受け付けない`) {
+		t.Errorf("引数: exit=%d %s", code, se)
+	}
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"news", "profile", "-h"}, &so, &se); code != 0 || !strings.Contains(se.String(), "使い方: braindex news profile") {
+		t.Errorf("-h: exit=%d %s", code, se.String())
+	}
+	se.Reset()
+	if code := dispatch([]string{"news", "profile", "-config", filepath.Join(hub, "nope.json")}, &so, &se); code != 1 || !strings.Contains(se.String(), "設定ファイルが無い") {
+		t.Errorf("config: exit=%d %s", code, se.String())
+	}
+}
