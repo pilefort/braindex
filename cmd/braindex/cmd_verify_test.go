@@ -112,7 +112,7 @@ func TestVerify_JSON(t *testing.T) {
 	if len(got) != 1 || got[0].Kind != "url" || got[0].Status != verify.Found || got[0].Target != "https://ok.example/?a=1&b=2" {
 		t.Errorf("JSON の中身が違う: %+v", got)
 	}
-	if strings.Contains(so.String(), `&`) {
+	if strings.Contains(so.String(), `&`) || !strings.Contains(so.String(), `a=1&b=2`) {
 		t.Error("& が HTML エスケープされている")
 	}
 }
