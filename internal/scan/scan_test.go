@@ -84,7 +84,7 @@ func TestScan_Exclusions(t *testing.T) {
 }
 
 // notes_dirs を [wiki] にすると、docs/notes でなく wiki/ を走査し、種別ラベルは末尾セグメント(wiki)になる。
-// docs/decisions.md は notes_dir と無関係に拾う。archive は従来どおり除外。
+// docs/decisions.md は notes_dirs と無関係に拾う。archive は従来どおり除外。
 func TestScan_NotesDir(t *testing.T) {
 	files, err := Scan(Config{Root: "testdata/root-wiki", NotesDirs: []string{"wiki"}})
 	if err != nil {

@@ -1,3 +1,3 @@
 # ignored
 
-notes_dir を wiki にしたら docs/notes は見ない
+notes_dirs を [wiki] にしたら docs/notes は見ない
