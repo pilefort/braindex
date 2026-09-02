@@ -8,10 +8,26 @@
 
 ## 状態
 
-v0（2026-09-02）: 設計文書のみ。CLI とテンプレートはこの文書に沿って順次追加する。
+v0（2026-09-02）: 索引 CLI（Phase 1）を原型から移植し、可搬化した。フォルダ規約のテンプレはこれから。
 原型は作者の私用「第二の脳」で 2026-08-07 から運用しているもの（非公開・20 リポ 307 ノートを索引中）。
 
-予定（順序は未定）: 索引 CLI の可搬化 → フォルダ規約のテンプレ同梱 → 訂正率トリガのレトロスペクティブ → ニュースサジェスト。
+予定（順序は未定）: フォルダ規約のテンプレ同梱 → 訂正率トリガのレトロスペクティブ → ニュースサジェスト。
+
+## 使い方
+
+```
+go install github.com/pilefort/braindex/cmd/braindex@latest
+```
+
+Go 1.26 以降。依存は標準ライブラリのみ。
+
+1. 複数のリポと hub リポ（索引を置くリポ）を同じ親ディレクトリの直下に並べる
+2. hub リポで `braindex.example.json` を `braindex.json` としてコピーする（`"root": ".."` が親ディレクトリを指す）
+3. hub リポで `braindex` を実行すると `index/catalog.md` ができる。索引を読むときは grep → パスの先の実ファイルへ
+4. `index/catalog.md` をコミットする。以後、索引の `git diff` が「前回からの差分」になる
+
+フラグ: `-config` `-root` `-out` `-date` `-lang`（`braindex -h`）。終了コードは 0 成功／1 失敗／2 警告つき完了。
+詳細は `docs/overview.md`「索引の仕様」。
 
 ## 何をするか
 
@@ -66,8 +82,11 @@ Karpathy の LLM wiki 型（2026-04・`raw/` の素材から LLM が `wiki/` の
 | `docs/decisions.md` | 設計判断と理由（結論 → 理由 → 根拠） |
 | `docs/glossary.md` | 用語の定義 |
 | `docs/conventions.md` | 索引が前提にするフォルダ規約（テンプレートの運用ルール） |
+| `cmd/braindex` `internal/` | 索引 CLI の実装（scan → extract → render → catalog） |
+| `braindex.example.json` | 設定ファイルの雛形 |
+| `CONTRIBUTING.md` | 開発の決まり（テスト・決定性・持ち込まないもの） |
 | `work/` | 作業状態。git 管理外（`.gitignore`） |
 
 ## ライセンス
 
-未定（決定後に `LICENSE` を置く）。
+MIT（`LICENSE`）。
