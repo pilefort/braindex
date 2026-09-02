@@ -1,12 +1,15 @@
 package catalog
 
 import (
+	"bytes"
 	"flag"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pilefort/braindex/internal/scan"
 )
@@ -87,9 +90,88 @@ func TestBuild_UnreadableFileWarns(t *testing.T) {
 }
 
 func TestBuild_Deterministic(t *testing.T) {
-	a, _ := Build(e2eConfig(), "2026-08-07")
-	b, _ := Build(e2eConfig(), "2026-08-07")
+	a, err := Build(e2eConfig(), "2026-08-07")
+	if err != nil {
+		t.Fatalf("Build(1 回目): %v", err)
+	}
+	b, err := Build(e2eConfig(), "2026-08-07")
+	if err != nil {
+		t.Fatalf("Build(2 回目): %v", err)
+	}
 	if string(a.Catalog) != string(b.Catalog) {
 		t.Errorf("2 回生成でバイト不一致(決定性違反)")
+	}
+}
+
+// clone 直後を模す: 同じ内容のツリーを 2 つ作り、mtime だけ変えて生成しても出力はバイト一致する
+// (git は mtime を保存しないので、mtime に依存すると clone ごとに索引が変わる)。
+// 日付を持たないノート(ext/docs/guides/style.md)を含める。
+func TestBuild_DeterministicAcrossMtime(t *testing.T) {
+	src := filepath.Join("..", "scan", "testdata", "root")
+	a := copyTree(t, src)
+	b := copyTree(t, src)
+	touchAll(t, a, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
+	touchAll(t, b, time.Date(2030, 6, 15, 12, 0, 0, 0, time.UTC))
+	guides := scan.ExtraRule{Repo: "ext", Path: "docs/guides", Kind: "guides"}
+	cfgA, cfgB := e2eConfig(), e2eConfig()
+	cfgA.Root, cfgB.Root = a, b
+	cfgA.Extra = append(cfgA.Extra, guides)
+	cfgB.Extra = append(cfgB.Extra, guides)
+	ra, err := Build(cfgA, "2026-08-07")
+	if err != nil {
+		t.Fatalf("Build(a): %v", err)
+	}
+	rb, err := Build(cfgB, "2026-08-07")
+	if err != nil {
+		t.Fatalf("Build(b): %v", err)
+	}
+	undated := "|  | guides | 書き方の指針 | 本文 | ext/docs/guides/style.md |"
+	if !strings.Contains(string(ra.Catalog), undated) {
+		t.Fatalf("日付なしノートが空欄の行として載っていない:%s", ra.Catalog)
+	}
+	if !bytes.Equal(ra.Catalog, rb.Catalog) {
+		t.Errorf("mtime が違うだけで出力が変わった(決定性違反):%s---%s", ra.Catalog, rb.Catalog)
+	}
+}
+
+// copyTree は src を一時ディレクトリに複製して、そのパスを返す。
+func copyTree(t *testing.T, src string) string {
+	t.Helper()
+	dst := t.TempDir()
+	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		content, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, content, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dst
+}
+
+// touchAll は root 以下の全ファイルの mtime を tm にそろえる。
+func touchAll(t *testing.T, root string, tm time.Time) {
+	t.Helper()
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		return os.Chtimes(p, tm, tm)
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

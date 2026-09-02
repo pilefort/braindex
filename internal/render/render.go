@@ -28,9 +28,8 @@ func Render(entries []Entry, genDate string) []byte {
 		if a.Repo != b.Repo {
 			return a.Repo < b.Repo // リポ名昇順
 		}
-		da, db := dateKey(a.Date), dateKey(b.Date)
-		if da != db {
-			return da > db // 日付降順
+		if a.Date != b.Date {
+			return a.Date > b.Date // 日付降順。日付なし("")は末尾
 		}
 		return a.Path < b.Path // 同日はパス昇順
 	})
@@ -53,9 +52,6 @@ func Render(entries []Entry, genDate string) []byte {
 	}
 	return []byte(b.String())
 }
-
-// dateKey は "~" 印(mtime 近似)を外した比較用の日付。
-func dateKey(d string) string { return strings.TrimPrefix(d, "~") }
 
 // distinctRepos は es がリポ名でソート済みである前提で、異なるリポの数を数える。
 func distinctRepos(es []Entry) int {

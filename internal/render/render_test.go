@@ -51,16 +51,19 @@ func TestRender_Deterministic(t *testing.T) {
 	}
 }
 
-func TestRender_TildeDateSort(t *testing.T) {
-	// "~" 印(mtime 近似)は比較時に外す。~2026-07-20 は 2026-07-10 より新しいので先に出る。
+// 日付なし(空)の行は、同じリポの中で日付のある行の後ろに並ぶ(日付降順の末尾)。
+func TestRender_UndatedSortsLast(t *testing.T) {
 	es := []Entry{
-		{Repo: "r", Date: "2026-07-10", Kind: "notes", Title: "古い", Summary: "s", Path: "r/docs/notes/old.md"},
-		{Repo: "r", Date: "~2026-07-20", Kind: "notes", Title: "新しい", Summary: "s", Path: "r/docs/notes/new.md"},
+		{Repo: "r", Date: "", Kind: "notes", Title: "日付なし", Summary: "s", Path: "r/docs/notes/undated.md"},
+		{Repo: "r", Date: "2026-07-10", Kind: "notes", Title: "日付あり", Summary: "s", Path: "r/docs/notes/dated.md"},
 	}
 	got := string(Render(es, "2026-08-07"))
-	iNew := strings.Index(got, "新しい")
-	iOld := strings.Index(got, "古い")
-	if iNew < 0 || iOld < 0 || iNew > iOld {
-		t.Errorf("~日付の降順ソートが不正: new=%d old=%d", iNew, iOld)
+	iDated := strings.Index(got, "日付あり")
+	iUndated := strings.Index(got, "日付なし")
+	if iDated < 0 || iUndated < 0 || iDated > iUndated {
+		t.Errorf("日付なしが先に出ている: dated=%d undated=%d", iDated, iUndated)
+	}
+	if !strings.Contains(got, "|  | notes | 日付なし |") {
+		t.Errorf("日付なしのセルは空欄にする:%s", got)
 	}
 }

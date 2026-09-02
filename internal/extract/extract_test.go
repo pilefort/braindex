@@ -3,10 +3,7 @@ package extract
 import (
 	"strings"
 	"testing"
-	"time"
 )
-
-var fixedMtime = time.Date(2026, 8, 7, 0, 0, 0, 0, time.UTC)
 
 func TestExtract_Title(t *testing.T) {
 	cases := []struct {
@@ -17,7 +14,7 @@ func TestExtract_Title(t *testing.T) {
 		{"h2first.md", "## これは H2\n# 本当のH1\n", "本当のH1"}, // H2 はタイトルにしない
 	}
 	for _, c := range cases {
-		got := Extract(c.name, []byte(c.content), fixedMtime, "").Title
+		got := Extract(c.name, []byte(c.content), "").Title
 		if got != c.want {
 			t.Errorf("Title(%q): want=%q got=%q", c.name, c.want, got)
 		}
@@ -27,7 +24,7 @@ func TestExtract_Title(t *testing.T) {
 func TestExtract_TitleBOM(t *testing.T) {
 	// 先頭 BOM(EF BB BF)付きファイル。ソースに BOM リテラルを置かずバイトで組み立てる。
 	content := append([]byte{0xEF, 0xBB, 0xBF}, []byte("# BOM付きタイトル\n\n結論: x")...)
-	got := Extract("bom.md", content, fixedMtime, "").Title
+	got := Extract("bom.md", content, "").Title
 	if got != "BOM付きタイトル" {
 		t.Errorf("BOM 付きタイトル: want=%q got=%q", "BOM付きタイトル", got)
 	}
@@ -43,10 +40,15 @@ func TestExtract_Date(t *testing.T) {
 		{"本文記録日", "plain.md", "# X\n\n記録日: 2026-07-28\n", "2026-07-28"},
 		{"本文和暦パディング", "plain.md", "# X\n\n2026年7月8日 に調査\n", "2026-07-08"},
 		{"8桁が不正で本文へ", "20261399_x.md", "# X\n\n記録日: 2026-05-05\n", "2026-05-05"},
-		{"mtimeフォールバック", "plain.md", "# X\n\n本文に日付なし\n", "~2026-08-07"},
+		{"日付なし(mtime には頼らない)", "plain.md", "# X\n\n本文に日付なし\n", ""},
+		// 月日が範囲外の候補は日付とみなさない(8 桁形式と同じ扱い)。ISO・和暦とも飛ばして次を探す。
+		{"ファイル名ISOの月が不正で本文へ", "2026-13-45_x.md", "# X\n\n記録日: 2026-05-05\n", "2026-05-05"},
+		{"本文ISOの月日が不正は飛ばす", "plain.md", "# X\n\n2026-13-45 は誤記\n記録日: 2026-05-06\n", "2026-05-06"},
+		{"同じ行の不正の後ろにある正しい日付", "plain.md", "# X\n\n2026-00-10 → 2026-05-07\n", "2026-05-07"},
+		{"本文和暦の月日が不正は飛ばす", "plain.md", "# X\n\n2026年13月45日\n", ""},
 	}
 	for _, c := range cases {
-		got := Extract(c.name, []byte(c.content), fixedMtime, "").Date
+		got := Extract(c.name, []byte(c.content), "").Date
 		if got != c.want {
 			t.Errorf("Date[%s]: want=%q got=%q", c.desc, c.want, got)
 		}
@@ -69,7 +71,7 @@ func TestExtract_Summary(t *testing.T) {
 		{"decisions3件未満", "# 決定\n\n## A\n## B\n", "decisions", "A / B"},
 	}
 	for _, c := range cases {
-		got := Extract("f.md", []byte(c.content), fixedMtime, c.kind).Summary
+		got := Extract("f.md", []byte(c.content), c.kind).Summary
 		if got != c.want {
 			t.Errorf("Summary[%s]: want=%q got=%q", c.desc, c.want, got)
 		}
