@@ -151,7 +151,7 @@ type Bin struct {
 
 func (b Bin) contains(i int) bool { return i >= b.Lo && (b.Hi == 0 || i <= b.Hi) }
 
-// ParseBins は "1-10,11-30,31-" の形を読む。各区間は "下限-上限" か "下限-"(上限なし)。
+// ParseBins は "1-3,4-10,11-30,31-" の形を読む。各区間は "下限-上限" か "下限-"(上限なし)。
 // 下限は 1 以上、上限は下限以上。区間は重ねない前提(重ねても検査はしない)。
 func ParseBins(s string) ([]Bin, error) {
 	var out []Bin

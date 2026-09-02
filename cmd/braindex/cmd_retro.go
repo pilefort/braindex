@@ -84,7 +84,7 @@ func runRetroStats(args []string, stdout, stderr io.Writer) int {
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方: braindex retro stats [-config braindex.json] [-sessions DIR] [-since YYYY-MM-DD | -window-days N] [-by project,week,position]")
 		fmt.Fprintln(stderr, "  人間の発話数・訂正(辞書に当たった発話)数・率を Markdown の表で出す。本文は出さない。")
-		fmt.Fprintln(stderr, "  週の境界と窓の 0 時は実行環境のタイムゾーン。位置の区間は設定 retro.position_bins(既定 1-10,11-30,31-)。")
+		fmt.Fprintln(stderr, "  週の境界と窓の 0 時は実行環境のタイムゾーン。位置の区間は設定 retro.position_bins(既定 1-3,4-10,11-30,31-)。")
 		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗 / 2 警告つきで完了(読めないログを飛ばした)")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")

@@ -7,7 +7,7 @@ import (
 
 func TestSettings_WithDefaults(t *testing.T) {
 	s := Settings{}.WithDefaults()
-	if s.SessionsDir != "" || s.WindowDays != 14 || s.Threshold != 0.08 || s.PositionBins != "1-10,11-30,31-" || s.Dictionary != "" || s.DictionaryExtra != "" {
+	if s.SessionsDir != "" || s.WindowDays != 14 || s.Threshold != 0.08 || s.PositionBins != "1-3,4-10,11-30,31-" || s.Dictionary != "" || s.DictionaryExtra != "" {
 		t.Errorf("既定値: got=%+v", s)
 	}
 	full := Settings{SessionsDir: "~/logs", WindowDays: 7, Threshold: 0.2, PositionBins: "1-5,6-", Dictionary: "d.txt", DictionaryExtra: "e.txt"}
