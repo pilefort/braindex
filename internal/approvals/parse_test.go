@@ -107,6 +107,17 @@ func TestParse_AliasesAndCRLF(t *testing.T) {
 	}
 }
 
+// 桁あふれする番号は捨てて出現順に振り直す(自前の桁計算だと巨大な値がそのまま N に入る)。
+func TestParse_HeadingNumberOverflow(t *testing.T) {
+	d := Parse([]byte("# 承認待ち\n\n## 99999999999999999999. 題\n"))
+	if len(d.Items) != 1 {
+		t.Fatalf("項目数 = %d", len(d.Items))
+	}
+	if d.Items[0].N != 1 {
+		t.Errorf("n = %d, want 1", d.Items[0].N)
+	}
+}
+
 // 「**私の案:** C」のように理由を書かずに存在しない案を指したときも記載漏れにする
 // (選択肢を書き換えて案の記号がずれたときが本番)。
 func TestParse_RecommendNotInOptions_NoReason(t *testing.T) {

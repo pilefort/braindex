@@ -8,6 +8,7 @@ package approvals
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -84,8 +85,9 @@ func Parse(md []byte) Doc {
 		if m := headRe.FindStringSubmatch(line); m != nil {
 			flush()
 			n := len(d.Items) + 1
-			if m[1] != "" {
-				n = atoi(m[1])
+			// 番号が無い(m[1] == "")か桁あふれなら Atoi がエラーを返すので、出現順のまま
+			if v, err := strconv.Atoi(m[1]); err == nil {
+				n = v
 			}
 			cur = &rawItem{n: n, title: strings.TrimSpace(m[2]), raw: []string{line}}
 			continue
@@ -212,12 +214,4 @@ func splitOption(s string) (label, desc string) {
 		return strings.TrimSpace(s[:loc[0]]), strings.TrimSpace(s[loc[1]:])
 	}
 	return strings.TrimSpace(s), ""
-}
-
-func atoi(s string) int {
-	n := 0
-	for _, c := range s {
-		n = n*10 + int(c-'0')
-	}
-	return n
 }
