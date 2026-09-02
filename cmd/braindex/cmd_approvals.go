@@ -31,6 +31,7 @@ var approvalsSubs = []struct {
 	run           func(args []string, stdout, stderr io.Writer) int
 }{
 	{"serve", "フォームを 127.0.0.1 で配信して既定ブラウザで開き、回答を 1 回受けて一時置き場に書く", runApprovalsServe},
+	{"apply", "受けた回答を docs/decisions.md(3 段で追記)と APPROVALS.md(消し込み・保留)に反映する", runApprovalsApply},
 }
 
 // approvalsOnReady はテスト用のフック。serve が待ち受けを始めた URL を受け取る。
