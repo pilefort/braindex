@@ -5,7 +5,7 @@
 //
 // 終了コード:
 //   - 0: 成功
-//   - 1: 失敗(設定・root が読めない等。索引は書かない)
+//   - 1: 失敗(フラグの誤り・設定・root が読めない等。索引は書かない)
 //   - 2: 警告つきで完了(読めないファイルや存在しない extra を飛ばした。索引は書く)
 package main
 
@@ -39,13 +39,36 @@ type options struct {
 }
 
 func main() {
-	var o options
-	flag.StringVar(&o.config, "config", "", "設定ファイルのパス(既定: カレントの braindex.json。無ければ既定値で動く)")
-	flag.StringVar(&o.root, "root", "", "走査のルート。直下の各ディレクトリを 1 リポとみなす(設定ファイルの root より優先)")
-	flag.StringVar(&o.out, "out", "", "索引の出力先(既定: 設定ファイルと同じディレクトリの index/catalog.md)")
-	flag.StringVar(&o.date, "date", "", "先頭行に載せる生成日 YYYY-MM-DD(既定: 今日)。再現可能な出力が要るときに使う")
-	flag.Parse()
+	o, code, done := parseArgs(os.Args[1:], os.Stderr)
+	if done {
+		os.Exit(code)
+	}
 	os.Exit(run(o, os.Stdout, os.Stderr))
+}
+
+// parseArgs はコマンドラインを解釈する。-h、解釈できないフラグ、位置引数のときはメッセージを stderr に
+// 出し、done=true と終了コード(-h は 0、それ以外は 1)を返す。
+// flag パッケージ既定の ExitOnError は誤りで 2 を返すが、2 は「警告つきで完了」に使っているので区別する。
+// 位置引数はサブコマンド未実装のうちは受け付けない(`braindex init -root x` が黙って通常の走査に入らないように)。
+func parseArgs(args []string, stderr io.Writer) (o options, code int, done bool) {
+	fs := flag.NewFlagSet("braindex", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.StringVar(&o.config, "config", "", "設定ファイルのパス(既定: カレントの braindex.json。無ければフラグだけで動き、-root が必須)")
+	fs.StringVar(&o.root, "root", "", "走査のルート。直下の各ディレクトリを 1 リポとみなす(設定ファイルの root より優先)")
+	fs.StringVar(&o.out, "out", "", "索引の出力先(既定: 設定ファイルと同じディレクトリの index/catalog.md)")
+	fs.StringVar(&o.date, "date", "", "先頭行に載せる生成日 YYYY-MM-DD(既定: 今日)。再現可能な出力が要るときに使う")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return o, 0, true
+		}
+		return o, 1, true // fs.Parse が誤りと使い方を stderr に書いている
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "braindex: 引数 %q は受け付けない(フラグだけを渡す)\n", fs.Args())
+		fs.Usage()
+		return o, 1, true
+	}
+	return o, 0, false
 }
 
 // run は終了コードを返す。メッセージは stdout / stderr に書く(テストから差し替えられるように引数で受ける)。

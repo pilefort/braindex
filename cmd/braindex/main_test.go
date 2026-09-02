@@ -137,3 +137,52 @@ func TestRun_WarningsExitTwo(t *testing.T) {
 		t.Errorf("警告ありでも索引は書くべき: %v", err)
 	}
 }
+
+// 不正なフラグは使い方エラーとして終了コード 1(「警告つきで完了」の 2 と区別する)。
+func TestParseArgs_UnknownFlagExitsOne(t *testing.T) {
+	var se bytes.Buffer
+	_, code, done := parseArgs([]string{"-bogus"}, &se)
+	if !done || code != 1 {
+		t.Errorf("done=%v code=%d want done=true code=1", done, code)
+	}
+	if !strings.Contains(se.String(), "-bogus") {
+		t.Errorf("stderr にフラグ名が無い: %s", se.String())
+	}
+}
+
+// 位置引数は受け付けない(サブコマンドは未実装。黙って通常の走査に入らない)。
+func TestParseArgs_PositionalRejected(t *testing.T) {
+	var se bytes.Buffer
+	_, code, done := parseArgs([]string{"init", "-root", "x"}, &se)
+	if !done || code != 1 {
+		t.Errorf("done=%v code=%d want done=true code=1", done, code)
+	}
+	if !strings.Contains(se.String(), "init") {
+		t.Errorf("stderr に受け付けなかった引数が無い: %s", se.String())
+	}
+}
+
+// -h は使い方を出して 0 で終わる。
+func TestParseArgs_Help(t *testing.T) {
+	var se bytes.Buffer
+	_, code, done := parseArgs([]string{"-h"}, &se)
+	if !done || code != 0 {
+		t.Errorf("done=%v code=%d want done=true code=0", done, code)
+	}
+	if !strings.Contains(se.String(), "-root") {
+		t.Errorf("stderr に使い方が無い: %s", se.String())
+	}
+}
+
+// フラグは options に入り、done=false で本処理へ進む。
+func TestParseArgs_Options(t *testing.T) {
+	var se bytes.Buffer
+	o, _, done := parseArgs([]string{"-config", "c.json", "-root", "r", "-out", "o.md", "-date", "2026-01-03"}, &se)
+	if done {
+		t.Fatalf("done=true: %s", se.String())
+	}
+	want := options{config: "c.json", root: "r", out: "o.md", date: "2026-01-03"}
+	if o != want {
+		t.Errorf("got %+v want %+v", o, want)
+	}
+}
