@@ -26,8 +26,11 @@ func LookGit() (g Git, ok bool) {
 }
 
 // run は dir をカレントにして git を実行し、stdout を返す。失敗時は stderr の要点をエラーに含める。
+// core.quotePath を切るのは、既定(true)だと ASCII 以外のパスが "\346\227\245..." と八進エスケープされ、
+// 索引のパスと突き合わせられず表示も読めないため(二重引用符・バックスラッシュ・制御文字は false でも
+// エスケープされる)。
 func (g Git) run(dir string, args ...string) (string, error) {
-	cmd := exec.Command(g.path, append([]string{"-C", dir}, args...)...)
+	cmd := exec.Command(g.path, append([]string{"-c", "core.quotePath=false", "-C", dir}, args...)...)
 	out, err := cmd.Output()
 	if err != nil {
 		var ee *exec.ExitError

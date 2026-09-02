@@ -165,6 +165,22 @@ func TestChangedSince_FromStartOfDay(t *testing.T) {
 	}
 }
 
+// ASCII 以外のファイル名は core.quotePath の既定(true)で "\346\227\245..." と八進エスケープされる。
+// そのままだと差分ファイルの行が読めず、Touched() のパスが索引のパスと一致しない。
+func TestChangedSince_NonASCIIPath(t *testing.T) {
+	r := newTestRepo(t)
+	r.write("docs/notes/日本語のメモ.md", "# メモ\n")
+	r.commit("2026-08-20", "jp")
+	rc, err := r.git.ChangedSince(r.dir, "2026-08-10", []string{"docs/notes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ChangedFile{{Path: "docs/notes/日本語のメモ.md", Status: "追加"}}
+	if !reflect.DeepEqual(rc.Files, want) {
+		t.Errorf("パスがエスケープされずに出るべき: want %v got %v", want, rc.Files)
+	}
+}
+
 // --name-status の解析だけを、git を呼ばずに確かめる(改名・複製・型変更・空行)。
 func TestParseNameStatus(t *testing.T) {
 	out := strings.Join([]string{
