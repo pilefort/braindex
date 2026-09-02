@@ -186,3 +186,28 @@ func TestParseArgs_Options(t *testing.T) {
 		t.Errorf("got %+v want %+v", o, want)
 	}
 }
+
+// 設定 JSON の末尾に余分な内容があれば失敗(先頭の 1 値だけ読んで黙認しない)。
+func TestRun_TrailingContentInConfigFails(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "braindex.json")
+	writeFile(t, cfg, `{"root": "."} trailing-garbage`)
+	var so, se bytes.Buffer
+	if code := run(options{config: cfg, root: makeRoot(t), out: filepath.Join(t.TempDir(), "c.md")}, &so, &se); code != 1 {
+		t.Errorf("exit=%d want 1", code)
+	}
+	if !strings.Contains(se.String(), "末尾") {
+		t.Errorf("stderr に末尾の説明が無い: %s", se.String())
+	}
+}
+
+// 設定ファイルが無く -root も無いときは、どの設定ファイルを探したかを言う(打ち間違いに気づけるように)。
+func TestRun_NoConfigNoRootMentionsConfigName(t *testing.T) {
+	t.Chdir(t.TempDir())
+	var so, se bytes.Buffer
+	if code := run(options{}, &so, &se); code != 1 {
+		t.Errorf("exit=%d want 1", code)
+	}
+	if !strings.Contains(se.String(), defaultConfig) {
+		t.Errorf("stderr に既定の設定ファイル名 %s が無い: %s", defaultConfig, se.String())
+	}
+}

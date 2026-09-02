@@ -56,7 +56,7 @@ const DefaultNotesDir = "docs/notes"
 // 無言でスキップせず呼び出し側に伝え、走査自体は続ける。root が空・読めない場合は error。
 func Scan(cfg Config) (files []File, warnings []string, err error) {
 	if cfg.Root == "" {
-		return nil, nil, errors.New("root が未指定(-root を渡すか、設定ファイルに root を書く)")
+		return nil, nil, errors.New("root が空")
 	}
 	notesDirs := cfg.NotesDirs
 	if len(notesDirs) == 0 {

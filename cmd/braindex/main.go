@@ -129,7 +129,11 @@ func resolve(o options) (cfg scan.Config, outPath, genDate string, err error) {
 	case cfg.Root != "":
 		cfg.Root = joinIfRelative(baseDir, filepath.FromSlash(cfg.Root))
 	default:
-		return cfg, "", "", errors.New("root が未指定(-root を渡すか、設定ファイルに root を書く)")
+		where := fmt.Sprintf("設定ファイル %s に root が無く", cfgPath)
+		if !found {
+			where = fmt.Sprintf("設定ファイル %s が無く", cfgPath)
+		}
+		return cfg, "", "", fmt.Errorf("root が未指定: %s、-root も無い(-root を渡すか、設定ファイルに root を書く)", where)
 	}
 
 	outPath = o.out
@@ -147,7 +151,8 @@ func resolve(o options) (cfg scan.Config, outPath, genDate string, err error) {
 }
 
 // loadConfig は設定ファイル(JSON)を読む。ファイルが無ければ found=false でゼロ値を返す(エラーにしない)。
-// 未知のキーはエラーにする(notes_dir のような打ち間違いを無言で無視しないため)。
+// 未知のキーと、オブジェクトの後ろに続く余分な内容はエラーにする(notes_dir のような打ち間違いや
+// 壊れたファイルを無言で通さないため。Decoder は先頭の 1 値しか読まないので末尾を自分で確かめる)。
 func loadConfig(path string) (cfg scan.Config, found bool, err error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -160,6 +165,9 @@ func loadConfig(path string) (cfg scan.Config, found bool, err error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&cfg); err != nil {
 		return cfg, true, fmt.Errorf("設定ファイル %s: %w", path, err)
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return cfg, true, fmt.Errorf("設定ファイル %s: 末尾に余分な内容がある(JSON のオブジェクト 1 つだけを書く)", path)
 	}
 	return cfg, true, nil
 }

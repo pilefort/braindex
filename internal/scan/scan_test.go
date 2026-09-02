@@ -188,8 +188,8 @@ func TestScan_WarningsAndErrors(t *testing.T) {
 		t.Errorf("警告 1 件「extra ext/no-such-dir: 存在しない」(パスを繰り返さない・OS の文言を出さない)を期待: %q", warns)
 	}
 
-	if _, _, err := Scan(Config{Root: ""}); err == nil {
-		t.Errorf("root 空でエラーになっていない")
+	if _, _, err := Scan(Config{Root: ""}); err == nil || strings.Contains(err.Error(), "-root") {
+		t.Errorf("root 空はエラーで、ライブラリの文に CLI のフラグ名を含めない: %v", err)
 	}
 	if _, _, err := Scan(Config{Root: "testdata/no-such-root"}); err == nil {
 		t.Errorf("root 不在でエラーになっていない")
