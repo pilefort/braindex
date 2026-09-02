@@ -203,3 +203,28 @@ func TestDisplayPath(t *testing.T) {
 		}
 	}
 }
+
+// line の前段の振り分け: "user"/"assistant" を含まない行は JSON を解かずに捨て(bad に数えない)、
+// 含むが JSON として壊れている行と、括弧で閉じていない行は bad に数える。
+func TestReaderLine_BadRows(t *testing.T) {
+	cases := []struct {
+		desc string
+		line string
+		bad  int
+	}{
+		{"user を含まない行は解かずに捨てる(bad にしない)", `{"type":"mode","mode":"default"}`, 0},
+		{"括弧が閉じていない", `{"type":"user","content":"x"`, 1},
+		{"括弧は閉じているが JSON として壊れている", `{"type":"user",,,}`, 1},
+		{"type が user/assistant でない行は捨てる(bad にしない)", `{"type":"system","content":"role user"}`, 0},
+	}
+	for _, c := range cases {
+		var r reader
+		r.line([]byte(c.line))
+		if r.bad != c.bad {
+			t.Errorf("line[%s]: bad want=%d got=%d", c.desc, c.bad, r.bad)
+		}
+		if len(r.s.Turns) != 0 {
+			t.Errorf("line[%s]: 発話が増えた: %+v", c.desc, r.s.Turns)
+		}
+	}
+}
