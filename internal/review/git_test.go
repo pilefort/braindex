@@ -10,10 +10,11 @@ import (
 
 // testRepo は一時ディレクトリに git リポを作り、日付を固定してコミットする道具。
 type testRepo struct {
-	t    *testing.T
-	dir  string
-	git  Git
-	date string // 次のコミットに使う日時(GIT_AUTHOR_DATE / GIT_COMMITTER_DATE)
+	t      *testing.T
+	dir    string
+	git    Git
+	config string // 空の設定ファイル。GIT_CONFIG_GLOBAL に与えて利用者のグローバル設定(commit.gpgsign 等)を読ませない
+	date   string // 次のコミットに使う日時(GIT_AUTHOR_DATE / GIT_COMMITTER_DATE)
 }
 
 func newTestRepo(t *testing.T) *testRepo {
@@ -23,16 +24,21 @@ func newTestRepo(t *testing.T) *testRepo {
 		t.Skip("git が無い環境")
 	}
 	dir := t.TempDir()
-	r := &testRepo{t: t, dir: dir, git: g}
+	config := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(config, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := &testRepo{t: t, dir: dir, git: g, config: config}
 	r.run("init", "-q", "-b", "main")
 	return r
 }
 
 // run は日付や利用者名を固定して git を実行する(環境の設定に依らないようにする)。
+// グローバル設定とシステム設定は読まない(commit.gpgsign=true の環境では commit が署名を求めて失敗する)。
 func (r *testRepo) run(args ...string) string {
 	r.t.Helper()
 	cmd := exec.Command(r.git.path, append([]string{"-C", r.dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "core.autocrlf=false"}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE="+r.date, "GIT_COMMITTER_DATE="+r.date)
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE="+r.date, "GIT_COMMITTER_DATE="+r.date, "GIT_CONFIG_GLOBAL="+r.config, "GIT_CONFIG_NOSYSTEM=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		r.t.Fatalf("git %v: %v\n%s", args, err, out)
