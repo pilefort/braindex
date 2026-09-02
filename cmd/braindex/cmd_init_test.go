@@ -145,3 +145,21 @@ func TestInit_Repo(t *testing.T) {
 		t.Errorf("init -repo で作ったリポが索引されていない:\n%s", b)
 	}
 }
+
+// 展開した hub の braindex.json(retro 節)で、そのまま braindex retro check が動く(設定の検証を通り、
+// テンプレの窓 14 日で testdata の 3 発話・訂正 1 を数え、閾値超えを 3 で返す)。閾値の値は表示で固定しない(設定の既定は較正で変わる)。
+func TestInit_ThenRetroCheck(t *testing.T) {
+	fixUTC(t)
+	hub := filepath.Join(t.TempDir(), "hub")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"init", hub}, &so, &se); code != 0 {
+		t.Fatalf("init exit=%d\n%s", code, se.String())
+	}
+	code, out, errs := execRetroCheck(t, "-config", filepath.Join(hub, "braindex.json"), "-sessions", retroTestdata, "-date", "2026-09-01")
+	if code != 3 {
+		t.Fatalf("exit=%d want 3\nstdout=%s\nstderr=%s", code, out, errs)
+	}
+	if !strings.Contains(out, "直近 14 日の訂正率 33.3%(発話 3・訂正 1)が閾値") || !strings.Contains(out, "を超えた") {
+		t.Errorf("stdout が想定と違う: %q", out)
+	}
+}
