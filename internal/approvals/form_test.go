@@ -129,8 +129,11 @@ func TestInline(t *testing.T) {
 	for in, want := range map[string]string{
 		"a `x<y` b":                 "a <code>x&lt;y</code> b",
 		"see https://example.com/p": `see <a href="https://example.com/p">https://example.com/p</a>`,
-		"1 行\n2 行":                  "1 行<br>2 行",
-		"**強**":                     "<b>強</b>",
+		// 末尾の句読点はリンクに含めないが、文字としては残す
+		"詳しくは https://example.com/p。":      `詳しくは <a href="https://example.com/p">https://example.com/p</a>。`,
+		"A は https://example.com/x, B は y": `A は <a href="https://example.com/x">https://example.com/x</a>, B は y`,
+		"1 行\n2 行":                         "1 行<br>2 行",
+		"**強**":                            "<b>強</b>",
 	} {
 		if got := inline(in); got != want {
 			t.Errorf("inline(%q) = %q, want %q", in, got, want)

@@ -147,8 +147,9 @@ func inlineLine(line string) string {
 	})
 	esc = boldRe.ReplaceAllString(esc, "<b>$1</b>")
 	esc = urlRe.ReplaceAllStringFunc(esc, func(u string) string {
-		u = strings.TrimRight(u, ".,;:!?、。")
-		return "<a href=\"" + u + "\">" + u + "</a>"
+		// 末尾の句読点はリンクに含めない。ただし落とさずリンクの後ろに戻す(文の読点・句点が消えてしまう)
+		link := strings.TrimRight(u, ".,;:!?、。")
+		return "<a href=\"" + link + "\">" + link + "</a>" + u[len(link):]
 	})
 	for i, c := range codes {
 		esc = strings.Replace(esc, fmt.Sprintf("\x00%d\x00", i), c, 1)
