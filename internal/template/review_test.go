@@ -1,6 +1,8 @@
 package template
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -34,5 +36,31 @@ func TestHub_ReviewSkillMatchesCLI(t *testing.T) {
 		if !strings.Contains(byPath[p], "`braindex review`") {
 			t.Errorf("%s が braindex review に触れていない", p)
 		}
+	}
+}
+
+// リポ直下の braindex.example.json は hub テンプレの braindex.json と同じ内容に保つ。README はこれを
+// braindex.json としてコピーする手順を案内しているので、片方だけ直すと init した hub と手で置いた hub で
+// 設定(review 節など)が食い違う。
+func TestHub_ExampleJSONMatchesTemplate(t *testing.T) {
+	files, err := Files(KindHub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tmpl []byte
+	for _, f := range files {
+		if f.Path == "braindex.json" {
+			tmpl = f.Content
+		}
+	}
+	if tmpl == nil {
+		t.Fatal("hub テンプレに braindex.json が無い")
+	}
+	example, err := os.ReadFile(filepath.Join("..", "..", "braindex.example.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(example) != string(tmpl) {
+		t.Errorf("braindex.example.json と hub テンプレの braindex.json が違う(同じ内容に保つ):\n example: %s\ntemplate: %s", example, tmpl)
 	}
 }

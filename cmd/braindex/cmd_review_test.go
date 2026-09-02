@@ -121,20 +121,26 @@ func TestReview_E2E_NoGit(t *testing.T) {
 	}
 }
 
-// 前回日の解決: 記録の置き場にある今日より前で最新の YYYY-MM-DD.md。未来の日付・他の名前は無視。-since が最優先。
+// 前回日の解決: 記録の置き場にある今日より前で最新の YYYY-MM-DD.md。未来の日付・形だけ日付で実在しない日
+// (2026-08-32)・他の名前は無視。-since が最優先。
 func TestReview_SinceResolution(t *testing.T) {
 	_, hub := hubWithRepo(t)
 	cfg := filepath.Join(hub, "braindex.json")
 	dir := filepath.Join(hub, "work", "review")
-	for _, n := range []string{"2026-08-20.md", "2026-08-13.md", "2026-09-10.md", "notes.md"} {
+	for _, n := range []string{"2026-08-20.md", "2026-08-13.md", "2026-09-10.md", "2026-08-32.md", "notes.md"} {
 		writeFile(t, filepath.Join(dir, n), "x\n")
 	}
 	var so, se bytes.Buffer
-	dispatch([]string{"review", "-config", cfg, "-date", "2026-09-03", "-stdout"}, &so, &se)
+	if code := dispatch([]string{"review", "-config", cfg, "-date", "2026-09-03", "-stdout"}, &so, &se); code != 2 {
+		t.Fatalf("exit=%d want 2(git 管理外の警告つき)\nstderr=%s", code, se.String())
+	}
 	mustContain(t, "前回日", so.String(), "前回: 2026-08-20（work/review/2026-08-20.md）\n")
 
 	so.Reset()
-	dispatch([]string{"review", "-config", cfg, "-date", "2026-09-03", "-since", "2026-08-01", "-stdout"}, &so, &se)
+	se.Reset()
+	if code := dispatch([]string{"review", "-config", cfg, "-date", "2026-09-03", "-since", "2026-08-01", "-stdout"}, &so, &se); code != 2 {
+		t.Fatalf("-since: exit=%d want 2\nstderr=%s", code, se.String())
+	}
 	mustContain(t, "-since", so.String(), "前回: 2026-08-01（-since で指定）\n")
 
 	so.Reset()

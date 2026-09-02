@@ -65,6 +65,76 @@ func TestStaleTodos(t *testing.T) {
 	if len(repos) != 1 || repos[0].Repo != "beta" {
 		t.Errorf("git なし: %+v", repos)
 	}
+
+	// 閾値ちょうどの日は含む(節の文言「cutoff 以前から」)。1 日前を閾値にすれば外れる
+	repos, _, err = StaleTodos(root, &r.git, "2026-07-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 2 || repos[0].Repo != "alpha" || len(repos[0].Items) != 1 {
+		t.Errorf("閾値ちょうど: %+v", repos)
+	}
+	repos, _, err = StaleTodos(root, &r.git, "2026-06-30")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 1 || repos[0].Repo != "beta" {
+		t.Errorf("閾値の前日: %+v", repos)
+	}
+}
+
+// CRLF の TODO.md でも blame の行と本文の行が対応し、Text に \r が残らない。
+// リポ側の core.autocrlf を false にして blob も作業ツリーも CRLF のままにする(実行環境の autocrlf に左右されないため)。
+func TestStaleTodos_CRLF(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "crlf")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := newTestRepoAt(t, dir)
+	r.run("config", "core.autocrlf", "false")
+	r.write("work/TODO.md", "- [ ] a\r\n  - [ ] sub\r\n")
+	r.commit("2026-07-01", "crlf")
+	r.write("work/TODO.md", "- [ ] a\r\n  - [ ] sub\r\n* [ ] b\r\n")
+	r.commit("2026-08-25", "crlf2")
+	repos, warnings, err := StaleTodos(root, &r.git, "2026-08-05")
+	if err != nil || len(warnings) != 0 {
+		t.Fatalf("err=%v warnings=%q", err, warnings)
+	}
+	if len(repos) != 1 || len(repos[0].Items) != 2 {
+		t.Fatalf("repos: %+v", repos)
+	}
+	for i, want := range []TodoItem{{Text: "a", Line: 1, Date: "2026-07-01"}, {Text: "sub", Line: 2, Date: "2026-07-01"}} {
+		if repos[0].Items[i] != want {
+			t.Errorf("[%d]: want %+v got %+v", i, want, repos[0].Items[i])
+		}
+	}
+}
+
+// 未チェック項目の判定: 記号は - * +、字下げ・タブ・末尾の空白・CRLF の \r を許す。
+// 済み([x] [X])・空の項目・記号と [ ] の間や後ろに空白が無いもの・番号付きは拾わない。
+func TestTodoLine(t *testing.T) {
+	match := map[string]string{
+		"- [ ] x":           "x",
+		"* [ ] x":           "x",
+		"+ [ ] x":           "x",
+		"  - [ ] 字下げ":       "字下げ",
+		"-\t[ ]\tタブ":        "タブ",
+		"- [ ] 末尾の空白   ":    "末尾の空白",
+		"- [ ] x\r":         "x",
+		"- [ ] 途中の [ ] も本文": "途中の [ ] も本文",
+	}
+	for in, text := range match {
+		m := todoLine.FindStringSubmatch(in)
+		if m == nil || m[1] != text {
+			t.Errorf("%q: want %q got %v", in, text, m)
+		}
+	}
+	for _, in := range []string{"- [x] 済み", "- [X] 済み", "- [ ]", "- [ ]   ", "-[ ] x", "- [ ]x", "- [] x", "[ ] x", "1. [ ] x", "- [ ] "} {
+		if todoLine.MatchString(in) {
+			t.Errorf("%q を拾った", in)
+		}
+	}
 }
 
 // blame の行日付: コミット済みの行は著者日、未コミットの行は今日(放置にならない)。未追跡は ok=false。
@@ -83,6 +153,41 @@ func TestLineDates(t *testing.T) {
 	r.write("docs/untracked.md", "x\n")
 	if _, ok := r.git.LineDates(r.dir, "docs/untracked.md"); ok {
 		t.Errorf("未追跡なのに ok")
+	}
+}
+
+// blameSample は 3 行の TODO.md に対する git blame --line-porcelain の実出力(git 2.x・2026-09-03 に採取。ハッシュは架空)。
+// 1 行目は root コミット(boundary 付き・2026-07-02T01:00+09:00 = UTC では 07-01)、2 行目は別コミット(08-25 UTC)、
+// 3 行目は未コミット(author-time は採取時の「今」)。
+const blameSample = "1111111111111111111111111111111111111111 1 1 1\n" +
+	"author t\nauthor-mail <t@example.com>\nauthor-time 1782921600\nauthor-tz +0900\n" +
+	"committer t\ncommitter-mail <t@example.com>\ncommitter-time 1782921600\ncommitter-tz +0900\n" +
+	"summary first\nboundary\nfilename work/TODO.md\n\t- [ ] a\n" +
+	"2222222222222222222222222222222222222222 2 2 1\n" +
+	"author t\nauthor-mail <t@example.com>\nauthor-time 1787659200\nauthor-tz +0000\n" +
+	"committer t\ncommitter-mail <t@example.com>\ncommitter-time 1787659200\ncommitter-tz +0000\n" +
+	"summary second\nprevious 1111111111111111111111111111111111111111 work/TODO.md\nfilename work/TODO.md\n\t- [ ] b2\n" +
+	"0000000000000000000000000000000000000000 3 3 1\n" +
+	"author Not Committed Yet\nauthor-mail <not.committed.yet>\nauthor-time 1788365997\nauthor-tz +0900\n" +
+	"committer Not Committed Yet\ncommitter-mail <not.committed.yet>\ncommitter-time 1788365997\ncommitter-tz +0900\n" +
+	"summary Version of work/TODO.md from work/TODO.md\nprevious 2222222222222222222222222222222222222222 work/TODO.md\nfilename work/TODO.md\n\t\n"
+
+// blame の解析: 行本体(タブ始まり)ごとに直前の author-time を author-tz で日付にする。boundary・未コミット・空行も 1 行。
+// author-time が無い・読めない行があれば ok=false(1970-01-01 のような日付を作らず、mtime に倒す)。
+func TestParseBlame(t *testing.T) {
+	dates, ok := parseBlame(blameSample)
+	want := []string{"2026-07-02", "2026-08-25", "2026-09-03"}
+	if !ok || strings.Join(dates, ",") != strings.Join(want, ",") {
+		t.Errorf("want %v ok=true, got %v ok=%v", want, dates, ok)
+	}
+	if dates, ok := parseBlame(""); !ok || len(dates) != 0 {
+		t.Errorf("空ファイル: dates=%v ok=%v", dates, ok)
+	}
+	if dates, ok := parseBlame(strings.Replace(blameSample, "author-time 1787659200", "author-time x", 1)); ok {
+		t.Errorf("author-time が読めないのに ok: %v", dates)
+	}
+	if dates, ok := parseBlame("\t- [ ] a\n"); ok {
+		t.Errorf("author-time が無いのに ok: %v", dates)
 	}
 }
 
