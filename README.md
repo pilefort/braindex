@@ -37,9 +37,21 @@ Go 1.26 以降。依存は標準ライブラリのみ。
 |---|---|
 | `root` | 走査のルート。直下の各ディレクトリを 1 リポとみなす。相対パスは設定ファイルのディレクトリ基準。`-root` が無ければ必須 |
 | `notes_dirs` | 各リポのノート置き場。既定 `["docs/notes"]`。`["wiki"]` や、移行中の `["docs/notes", "wiki"]` も可。種別ラベルは末尾セグメント |
-| `extra` | 規約外の置き場を個別に足す。`exclude` はグロブ（`/` を含むパターンは起点からの相対パス、含まなければファイル名に掛ける） |
+| `extra` | 規約外の置き場を個別に足す配列。各要素は `repo`（root 直下のリポ名）・`path`（リポ内の起点。`"."` はリポ直下）・`recursive`（`true` でサブディレクトリも走査）・`kind`（種別ラベル）・`exclude`（グロブの配列。`/` を含むパターンは起点からの相対パス、含まなければファイル名に掛ける。大文字小文字は区別する） |
 
 未知のキーはエラーにする（`notes_dir` のような打ち間違いを無言で無視しない）。
+
+例（`alpha` リポの `research/` を種別 `research` で載せ、README と下書きを除く）:
+
+```json
+{
+  "root": "..",
+  "notes_dirs": ["docs/notes"],
+  "extra": [
+    { "repo": "alpha", "path": "research", "recursive": true, "kind": "research", "exclude": ["README.md", "*.draft.md"] }
+  ]
+}
+```
 
 フラグ: `-config` `-root` `-out`（既定は設定ファイルと同じディレクトリの `index/catalog.md`）`-date YYYY-MM-DD`（生成日の固定。テスト・CI 用）。
 終了コード: 0 成功／1 失敗（設定・root が読めない。索引は書かない）／2 警告つき完了（読めないファイルや存在しない `extra` を stderr に出して飛ばし、索引は書く）。
