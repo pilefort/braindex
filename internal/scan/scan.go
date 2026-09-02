@@ -36,7 +36,7 @@ type ExtraRule struct {
 	Path      string   `json:"path"`      // リポ内の起点。"." はリポ直下
 	Recursive bool     `json:"recursive"` // false なら起点直下のみ
 	Kind      string   `json:"kind"`      // catalog に載せる種別ラベル
-	Exclude   []string `json:"exclude"`   // 除外するファイル名
+	Exclude   []string `json:"exclude"`   // 除外パターン(path.Match のグロブ。"/" を含むなら起点からの相対パスに掛ける)
 }
 
 // File は発見した 1 ファイル。
@@ -65,6 +65,13 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 	rootAbs, err := filepath.Abs(cfg.Root)
 	if err != nil {
 		return nil, nil, err
+	}
+	for _, ex := range cfg.Extra {
+		for _, pat := range ex.Exclude {
+			if _, err := path.Match(pat, ""); err != nil {
+				return nil, nil, fmt.Errorf("extra %s/%s: exclude のパターンが不正: %q", ex.Repo, ex.Path, pat)
+			}
+		}
 	}
 	warn := func(format string, a ...any) {
 		warnings = append(warnings, fmt.Sprintf(format, a...))
@@ -186,8 +193,9 @@ func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 		return out
 	}
 
-	add := func(path, name, kind string) {
-		if !isMarkdown(name) || excluded(name, ex.Exclude) {
+	// relFromBase は起点からの相対パス(スラッシュ区切り)。exclude の "/" 入りパターンはこれに掛ける
+	add := func(path, name, relFromBase, kind string) {
+		if !isMarkdown(name) || excluded(name, relFromBase, ex.Exclude) {
 			return
 		}
 		if f := mkFile(rootAbs, ex.Repo, kind, path); !hasArchiveSeg(f.Rel) {
@@ -207,7 +215,12 @@ func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 				}
 				return nil
 			}
-			add(path, d.Name(), extraKind(ex.Kind, base, path))
+			rel, err := filepath.Rel(base, path)
+			if err != nil {
+				warn("%s: %v", path, err)
+				return nil
+			}
+			add(path, d.Name(), filepath.ToSlash(rel), extraKind(ex.Kind, base, path))
 			return nil
 		})
 		return out
@@ -222,7 +235,7 @@ func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 		if de.IsDir() {
 			continue
 		}
-		add(filepath.Join(base, de.Name()), de.Name(), ex.Kind)
+		add(filepath.Join(base, de.Name()), de.Name(), de.Name(), ex.Kind)
 	}
 	return out
 }
@@ -274,9 +287,16 @@ func isMarkdown(name string) bool {
 	return strings.HasSuffix(strings.ToLower(name), ".md")
 }
 
-func excluded(name string, list []string) bool {
-	for _, e := range list {
-		if name == e {
+// excluded は exclude パターンに当たるかを判定する。パターンは path.Match のグロブ
+// (ワイルドカード無しなら完全一致と同じ)。"/" を含むパターンは起点からの相対パス、
+// 含まないパターンはファイル名に掛ける。不正なパターンは Scan の入口で弾いてあるので、ここでは無視する。
+func excluded(name, relFromBase string, patterns []string) bool {
+	for _, pat := range patterns {
+		target := name
+		if strings.Contains(pat, "/") {
+			target = relFromBase
+		}
+		if ok, _ := path.Match(pat, target); ok {
 			return true
 		}
 	}

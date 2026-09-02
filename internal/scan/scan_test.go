@@ -221,6 +221,50 @@ func TestScan_ArchiveJudgedOnRootRelativePath(t *testing.T) {
 	}
 }
 
+// extra の exclude はグロブ。"/" を含まないパターンはファイル名に、含むパターンは起点からの相対パスに掛ける。
+func TestScan_ExtraExcludeGlob(t *testing.T) {
+	root := t.TempDir()
+	base := filepath.Join(root, "r", "x")
+	for _, rel := range []string{"a.md", "b.draft.md", "sub/c.md", "sub/d.draft.md"} {
+		p := filepath.Join(base, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("# "+rel+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases := []struct {
+		desc    string
+		exclude []string
+		want    []string
+	}{
+		{"ファイル名グロブ", []string{"*.draft.md"}, []string{"r/x/a.md", "r/x/sub/c.md"}},
+		{"相対パスグロブ", []string{"sub/*"}, []string{"r/x/a.md", "r/x/b.draft.md"}},
+		{"完全一致(従来どおり)", []string{"a.md"}, []string{"r/x/b.draft.md", "r/x/sub/c.md", "r/x/sub/d.draft.md"}},
+	}
+	for _, c := range cases {
+		files, _, err := Scan(Config{Root: root, Extra: []ExtraRule{{Repo: "r", Path: "x", Recursive: true, Kind: "x", Exclude: c.exclude}}})
+		if err != nil {
+			t.Fatalf("[%s] Scan: %v", c.desc, err)
+		}
+		var got []string
+		for _, f := range files {
+			got = append(got, f.Rel)
+		}
+		sort.Strings(got)
+		if strings.Join(got, ",") != strings.Join(c.want, ",") {
+			t.Errorf("[%s] want=%v got=%v", c.desc, c.want, got)
+		}
+	}
+
+	// 不正なパターンは設定の誤りなのでエラー(無言で文字列比較に落とさない)
+	_, _, err := Scan(Config{Root: root, Extra: []ExtraRule{{Repo: "r", Path: "x", Kind: "x", Exclude: []string{"["}}}})
+	if err == nil {
+		t.Errorf("不正なグロブでエラーになっていない")
+	}
+}
+
 func sortedKeys(m map[string]string) string {
 	ks := make([]string, 0, len(m))
 	for k := range m {
