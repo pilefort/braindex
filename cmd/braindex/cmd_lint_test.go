@@ -1,0 +1,189 @@
+package main
+
+import (
+	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+const goodIssue = "# ISSUE: 例\n\n## 現在の作業\nx\n\n## 状態\n- [x] a\n- [ ] b  ← いまここ\n\n最終更新: 2026-09-01\n"
+
+// ファイルを渡すとそれを検査する。指摘なしは 0、指摘ありは 2 で「パス:行: 内容」を stdout に出す。
+func TestLint_File(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "ISSUE-a.md")
+	writeFile(t, p, goodIssue)
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", "-no-git", "-date", "2026-09-02", p}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d want 0\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	if !strings.Contains(so.String(), "braindex lint: 1 ファイル・指摘 0 件") {
+		t.Errorf("要約が無い: %s", so.String())
+	}
+
+	writeFile(t, p, strings.Replace(goodIssue, "  ← いまここ", "", 1))
+	so.Reset()
+	if code := dispatch([]string{"lint", "-no-git", "-date", "2026-09-02", p}, &so, &se); code != 2 {
+		t.Fatalf("exit=%d want 2\n%s", code, so.String())
+	}
+	if !strings.Contains(so.String(), filepath.ToSlash(p)+": ") || !strings.Contains(so.String(), "いまここ") {
+		t.Errorf("指摘の形が違う: %s", so.String())
+	}
+	if !strings.Contains(so.String(), "指摘 1 件") {
+		t.Errorf("要約の件数が違う: %s", so.String())
+	}
+}
+
+// 行番号つきの指摘は「パス:行: 内容」。
+func TestLint_LineNumber(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "ISSUE-a.md")
+	writeFile(t, p, strings.Replace(goodIssue, "2026-09-01", "2026-09-09", 1)) // 10 行目が未来
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", "-no-git", "-date", "2026-09-02", p}, &so, &se); code != 2 {
+		t.Fatalf("exit=%d want 2\n%s", code, so.String())
+	}
+	if !strings.Contains(so.String(), filepath.ToSlash(p)+":10: ") {
+		t.Errorf("行番号つきの形でない: %s", so.String())
+	}
+}
+
+// パスを渡さなければ root 直下の各リポの work/ISSUE-*.md。. で始まるディレクトリと work の無いリポは飛ばす。表示は root 相対。
+func TestLint_Root(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "repo-a", "work", "ISSUE-x.md"), goodIssue)
+	writeFile(t, filepath.Join(root, "repo-b", "work", "ISSUE-y.md"), strings.Replace(goodIssue, "最終更新: 2026-09-01\n", "", 1))
+	writeFile(t, filepath.Join(root, "repo-b", "work", "TODO.md"), "# TODO\n")
+	writeFile(t, filepath.Join(root, ".hidden", "work", "ISSUE-z.md"), "# x\n")
+	writeFile(t, filepath.Join(root, "repo-c", "README.md"), "# c\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", "-no-git", "-date", "2026-09-02", "-root", root}, &so, &se); code != 2 {
+		t.Fatalf("exit=%d want 2\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	s := so.String()
+	if !strings.Contains(s, "repo-b/work/ISSUE-y.md: ") {
+		t.Errorf("root 相対の表示でない: %s", s)
+	}
+	if strings.Contains(s, ".hidden") || strings.Contains(s, "TODO.md") {
+		t.Errorf("対象外が混じる: %s", s)
+	}
+	if !strings.Contains(s, "braindex lint: 2 ファイル・指摘 1 件") {
+		t.Errorf("要約が違う: %s", s)
+	}
+}
+
+// ディレクトリを渡すと直下の ISSUE-*.md。
+func TestLint_Dir(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "ISSUE-a.md"), goodIssue)
+	writeFile(t, filepath.Join(dir, "ISSUE-b.md"), goodIssue)
+	writeFile(t, filepath.Join(dir, "APPROVALS.md"), "# 承認待ち\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", "-no-git", "-date", "2026-09-02", dir}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d want 0\n%s%s", code, so.String(), se.String())
+	}
+	if !strings.Contains(so.String(), "2 ファイル") {
+		t.Errorf("2 ファイルを検査していない: %s", so.String())
+	}
+}
+
+// -stale-days は -date を基準に経過日数を見る。
+func TestLint_StaleDays(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "ISSUE-a.md")
+	writeFile(t, p, goodIssue)
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", "-no-git", "-date", "2026-09-30", "-stale-days", "7", p}, &so, &se); code != 2 {
+		t.Fatalf("exit=%d want 2\n%s", code, so.String())
+	}
+	if !strings.Contains(so.String(), "29 日") {
+		t.Errorf("経過日数が出ていない: %s", so.String())
+	}
+}
+
+// 誤り: root もパスも無い / -date の形式 / 存在しないパス / -stale-days が負。-h は 0。
+func TestLint_Errors(t *testing.T) {
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", "-no-git", "-config", filepath.Join(t.TempDir(), "none.json")}, &so, &se); code != 1 {
+		t.Errorf("root 無しの exit=%d want 1: %s", code, se.String())
+	}
+	if code := dispatch([]string{"lint", "-date", "2026/09/02", "x"}, &so, &se); code != 1 {
+		t.Errorf("-date 不正の exit=%d want 1", code)
+	}
+	if code := dispatch([]string{"lint", "-no-git", filepath.Join(t.TempDir(), "nope.md")}, &so, &se); code != 1 {
+		t.Errorf("存在しないパスの exit=%d want 1", code)
+	}
+	if code := dispatch([]string{"lint", "-stale-days", "-1", "x"}, &so, &se); code != 1 {
+		t.Errorf("-stale-days 負の exit=%d want 1", code)
+	}
+	se.Reset()
+	if code := dispatch([]string{"lint", "-h"}, &so, &se); code != 0 || !strings.Contains(se.String(), "使い方") {
+		t.Errorf("-h の exit=%d: %s", code, se.String())
+	}
+}
+
+// 同じ入力からは同じ出力(決定性)。
+func TestLint_Deterministic(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "repo-b", "work", "ISSUE-y.md"), strings.Replace(goodIssue, "## 状態", "## 進捗", 1))
+	writeFile(t, filepath.Join(root, "repo-a", "work", "ISSUE-x.md"), strings.Replace(goodIssue, "  ← いまここ", "", 1))
+	run := func() string {
+		var so, se bytes.Buffer
+		dispatch([]string{"lint", "-no-git", "-date", "2026-09-02", "-root", root}, &so, &se)
+		return so.String()
+	}
+	a, b := run(), run()
+	if a != b {
+		t.Errorf("出力が揺れる:\n%s\n---\n%s", a, b)
+	}
+	if strings.Index(a, "repo-a/") > strings.Index(a, "repo-b/") {
+		t.Errorf("パス順でない:\n%s", a)
+	}
+}
+
+// git 管理下のファイルは HEAD と比べ、消えたチェック項目と据え置きの最終更新を指摘する。-no-git で飛ばす。
+func TestLint_Git(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git が無い")
+	}
+	dir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "core.autocrlf=false"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	p := filepath.Join(dir, "ISSUE-a.md")
+	writeFile(t, p, goodIssue)
+	git("add", "ISSUE-a.md")
+	git("commit", "-q", "-m", "init")
+
+	// 項目 a を落とし、最終更新はそのまま
+	writeFile(t, p, strings.Replace(goodIssue, "- [x] a\n", "", 1))
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", "-date", "2026-09-02", p}, &so, &se); code != 2 {
+		t.Fatalf("exit=%d want 2\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	s := so.String()
+	if !strings.Contains(s, "消えた") || !strings.Contains(s, "HEAD と同じ") || !strings.Contains(s, "HEAD 比較 1 件") {
+		t.Errorf("HEAD 比較の指摘が無い:\n%s", s)
+	}
+	so.Reset()
+	if code := dispatch([]string{"lint", "-no-git", "-date", "2026-09-02", p}, &so, &se); code != 0 {
+		t.Errorf("-no-git の exit=%d want 0:\n%s", code, so.String())
+	}
+	if strings.Contains(so.String(), "HEAD 比較") {
+		t.Errorf("-no-git なのに HEAD 比較している: %s", so.String())
+	}
+
+	// 未追跡のファイルは比較しない
+	q := filepath.Join(dir, "ISSUE-b.md")
+	writeFile(t, q, goodIssue)
+	so.Reset()
+	if code := dispatch([]string{"lint", "-date", "2026-09-02", q}, &so, &se); code != 0 || strings.Contains(so.String(), "HEAD 比較") {
+		t.Errorf("未追跡の exit=%d 出力=%s", code, so.String())
+	}
+	_ = os.Remove(q)
+}
