@@ -32,7 +32,7 @@ Windows のタスクスケジューラなら `schtasks /Create /SC WEEKLY /D MON
 超えたら、スキル `retro`（`.claude/skills/retro/SKILL.md`）の手順で `braindex retro extract` のダイジェスト（OS の一時ディレクトリに出る）を読み、
 所見と規約への反映案を `docs/notes/retro-YYYY-MM-DD.md` に残す。数値は `braindex retro stats -by project,week,position` の表を貼る。
 
-組み込みは 2 通り。Claude Code の hook（`SessionStart`）に `braindex retro check -quiet` を置けば、超えたときだけ 1 行がセッションに入る。
+組み込みは 2 通り。Claude Code の hook（`SessionStart`）に `braindex retro check -quiet || true` を置けば、超えたときだけ 1 行がセッションに入る。
 定期実行なら週 1 回 `braindex retro check` を回し、終了コード 3 のときだけ通知コマンドへつなぐ。窓・閾値・辞書は `braindex.json` の `retro` 節。
 
 ## 地図

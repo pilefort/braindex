@@ -19,7 +19,7 @@ type Settings struct {
 // 既定値。
 const (
 	DefaultWindowDays   = 14
-	DefaultThreshold    = 0.08 // 2026-09-03 の決定。完成後に試用して見直す(較正の実測は直近 14 日で 8.3%)
+	DefaultThreshold    = 0.08                 // 2026-09-03 の決定。完成後に試用して見直す(較正の実測は直近 14 日で 8.3%)
 	DefaultPositionBins = "1-3,4-10,11-30,31-" // 2026-09-03 の決定。最初の 3 発話(全発話の 54%・率高め)を分ける
 )
 
