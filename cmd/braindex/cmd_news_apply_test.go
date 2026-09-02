@@ -1,0 +1,75 @@
+package main
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// fetch → HTML の選別 JSON(手で置く) → apply → keep と統計 → 次の fetch のプロファイルと脚注に効く、の一巡。
+func TestNewsApply_EndToEnd(t *testing.T) {
+	hub, _ := newsHub(t)
+	inbox := filepath.Join(hub, "downloads")
+	os.MkdirAll(inbox, 0o755)
+
+	// 1 回目の fetch(採点なし)
+	if code, _, _ := newsFetch(t, hub, "-layer", "daily", "-inbox", inbox); code != 2 { // C の 404 で 2
+		t.Fatalf("fetch 1: exit=%d", code)
+	}
+	// ブラウザで「残す」にした体で選別 JSON を置く(記事1 を残す・記事2 は不要)
+	sel := `{"type": "braindex-news-selection", "date": "2026-08-15", "layer": "daily", "exported_at": "2026-08-15T10:00:00Z",
+	 "keeps": [{"id": "` + feedIDOf("https://example.com/1") + `", "title": "記事1", "link": "https://example.com/1", "feed": "A", "category": "tech", "score": "", "rescued": false}],
+	 "feed_stats": {"A": {"shown": 2, "kept": 1, "dropped": 1, "hidden": 0, "rescued": 0}}}`
+	writeFile(t, filepath.Join(inbox, "braindex-news-selection_2026-08-15_daily_20260815100000.json"), sel)
+
+	// apply
+	var so, se bytes.Buffer
+	code := dispatch([]string{"news", "apply", "-config", filepath.Join(hub, "braindex.json"), "-inbox", inbox}, &so, &se)
+	if code != 0 {
+		t.Fatalf("apply exit=%d\n%s", code, se.String())
+	}
+	mustContain(t, "apply stdout", so.String(), "news: 取り込み: braindex-news-selection_2026-08-15_daily_20260815100000.json（残す 1 件）", "news apply 完了")
+	keep := readFile(t, filepath.Join(hub, "news", "keep", "2026-08.md"))
+	mustContain(t, "keep", keep, "# 選別済みニュース 2026-08", "## 2026-08-15（daily）", "- [記事1](https://example.com/1) — A")
+	if _, err := os.Stat(filepath.Join(hub, "news", ".stats.json")); err != nil {
+		t.Error("統計ファイルが無い")
+	}
+	if _, err := os.Stat(filepath.Join(hub, "news", ".ingested", "braindex-news-selection_2026-08-15_daily_20260815100000.json")); err != nil {
+		t.Error("取り込み済みへ移っていない")
+	}
+	if m, _ := filepath.Glob(filepath.Join(inbox, "*.json")); len(m) != 0 {
+		t.Errorf("inbox に残った: %v", m)
+	}
+
+	// 2 回目の fetch(採点あり・-replay): keep の見出し「記事1」から語「記事」が関心語になり(数字は語にならない)、
+	// 記事1・記事2 とも主要(★2)。脚注に累積
+	so.Reset()
+	se.Reset()
+	code = dispatch([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-16", "-layer", "daily",
+		"-replay", "-no-open", "-inbox", inbox, "-sessions", filepath.Join(hub, "no-such-dir")}, &so, &se)
+	if code != 2 {
+		t.Fatalf("fetch 2: exit=%d\n%s%s", code, so.String(), se.String())
+	}
+	md := readFile(t, filepath.Join(hub, "news", "digest_2026-08-16_daily.md"))
+	mustContain(t, "digest 2", md, "・関心度 2 以上を主要表示", "## A（tech・新着 2 件・主要 2 件）", "[記事1](https://example.com/1) ★2（記事）", "[記事2](https://example.com/2) ★2（記事）")
+	h := readFile(t, filepath.Join(hub, "news", "digest_2026-08-16_daily.html"))
+	mustContain(t, "html 2", h, "<b>選別の反映状況（累積）:</b><br>A: 残す 1 / 見た 2")
+	if strings.Contains(h, "間引き候補") {
+		t.Error("見た数が足りないのに間引き候補が出た")
+	}
+
+	// apply の誤り: 引数・設定なし・-h
+	if code := dispatch([]string{"news", "apply", "x"}, &so, &se); code != 1 {
+		t.Errorf("引数: exit=%d", code)
+	}
+	se.Reset()
+	if code := dispatch([]string{"news", "apply", "-config", filepath.Join(hub, "nope.json")}, &so, &se); code != 1 || !strings.Contains(se.String(), "設定ファイルが無い") {
+		t.Errorf("config: exit=%d %s", code, se.String())
+	}
+	se.Reset()
+	if code := dispatch([]string{"news", "apply", "-h"}, &so, &se); code != 0 || !strings.Contains(se.String(), "使い方: braindex news apply") {
+		t.Errorf("-h: exit=%d", code)
+	}
+}

@@ -88,6 +88,32 @@ func RenderHTML(results []Result, o DigestOptions) []byte {
 	if len(failures) > 0 {
 		foot = append(foot, "<b class=\"prune\">取得失敗:</b> "+esc(strings.Join(failures, " / ")))
 	}
+	if len(o.Totals) > 0 {
+		cands := map[string]bool{}
+		for _, f := range PruneCandidates(o.Totals, PruneMinShown) {
+			cands[f] = true
+		}
+		names := make([]string, 0, len(o.Totals))
+		for f := range o.Totals {
+			names = append(names, f)
+		}
+		sort.Strings(names)
+		var lines []string
+		for _, f := range names {
+			d := o.Totals[f]
+			line := fmt.Sprintf("%s: 残す %d / 見た %d", esc(f), d.Kept, d.Shown)
+			if d.Hidden > 0 {
+				line += fmt.Sprintf("・関心外 %d 件中 救済 %d", d.Hidden, d.Rescued)
+			}
+			if cands[f] {
+				line += " <b class=\"prune\">← 間引き候補（一度も残していない）</b>"
+			}
+			lines = append(lines, line)
+		}
+		foot = append(foot, "<b>選別の反映状況（累積）:</b><br>"+strings.Join(lines, "<br>")+
+			"<br><small>救済 = 関心外と判定されたのに残した件数（採点の見逃し）。増えるフィードは news/interests.md に関心語を足す。"+
+			"間引きは news/feeds.json から該当行を消す。</small>")
+	}
 	scoring := "採点なし（全件を主要表示）"
 	if o.Ranking != nil {
 		scoring = fmt.Sprintf("関心度は語の一致（braindex news profile）。%d 以上を主要表示", o.MinScore)

@@ -117,11 +117,12 @@ func Split(entries []feed.Entry, rk Ranking, minScore int) (main, low []feed.Ent
 
 // DigestOptions はダイジェストの体裁。
 type DigestOptions struct {
-	Layer    string  // 層の名前(見出し)
-	Today    string  // 日付(見出し)
-	Cap      int     // 1 フィードあたりの表示上限(主要・関心外それぞれ)
-	Ranking  Ranking // 採点。nil なら一段(全件を主要)
-	MinScore int     // 主要に入れる最低の関心度(Ranking が nil なら使わない)
+	Layer    string               // 層の名前(見出し)
+	Today    string               // 日付(見出し)
+	Cap      int                  // 1 フィードあたりの表示上限(主要・関心外それぞれ)
+	Ranking  Ranking              // 採点。nil なら一段(全件を主要)
+	MinScore int                  // 主要に入れる最低の関心度(Ranking が nil なら使わない)
+	Totals   map[string]FeedStats // 選別の累積(フィード別)。HTML の脚注に出す。nil なら出さない
 }
 
 // Digest は新着のダイジェスト(Markdown・LF)を組む。
