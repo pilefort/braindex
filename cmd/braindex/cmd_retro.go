@@ -21,7 +21,7 @@ var retroLoc = time.Local
 func init() {
 	register(&command{
 		name:    "retro",
-		summary: "セッションログの訂正率を測る(retro stats)。本文はどこにも書かず送らない",
+		summary: "セッションログの訂正率を測る(stats)・閾値超えを知らせる(check)。本文はどこにも書かず送らない",
 		run:     runRetro,
 	})
 }
@@ -33,6 +33,7 @@ func retroUsage(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "サブコマンド:")
 	fmt.Fprintln(w, "  stats   発話数・訂正数・率を、プロジェクト別／週別／セッション内位置の区間別の表で出す")
+	fmt.Fprintln(w, "  check   直近の窓の訂正率を閾値と比べて 1 行出す。超えたら終了コード 3(hook やスケジューラが分岐できる)")
 	fmt.Fprintln(w, "  各サブコマンドの -h で詳細")
 }
 
@@ -45,6 +46,8 @@ func runRetro(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "stats":
 		return runRetroStats(args[1:], stdout, stderr)
+	case "check":
+		return runRetroCheck(args[1:], stdout, stderr)
 	case "-h", "-help", "--help", "help":
 		retroUsage(stderr)
 		return 0
@@ -161,6 +164,113 @@ func runRetroStats(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(warns) > 0 {
 		fmt.Fprintf(stderr, "braindex retro stats: 警告 %d 件(終了コード 2)\n", len(warns))
+		return 2
+	}
+	return 0
+}
+
+// retroCheckOptions は braindex retro check のコマンドライン。
+type retroCheckOptions struct {
+	config     string  // -config
+	sessions   string  // -sessions
+	date       string  // -date。今日の固定
+	windowDays int     // -window-days(既定: 設定 retro.window_days)
+	threshold  float64 // -threshold(既定: 設定 retro.threshold)
+	quiet      bool    // -quiet。閾値超えのときだけ出力
+}
+
+// runRetroCheck は braindex retro check を実行する。
+// 終了コード: 0 閾値以下 / 1 失敗 / 2 閾値以下だが警告つき / 3 閾値超え(警告があっても 3。超えの合図を優先する)。
+func runRetroCheck(args []string, stdout, stderr io.Writer) int {
+	var o retroCheckOptions
+	fs := flag.NewFlagSet("braindex retro check", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.StringVar(&o.config, "config", "", "設定ファイルのパス(既定: カレントの braindex.json。無ければ既定値で動く)")
+	fs.StringVar(&o.sessions, "sessions", "", "セッションログの置き場(既定: 設定 retro.sessions_dir → ~/.claude/projects)")
+	fs.StringVar(&o.date, "date", "", "今日として使う日付 YYYY-MM-DD(既定: 実行日)。窓の基準")
+	fs.IntVar(&o.windowDays, "window-days", 0, "直近 N 日を窓にする(既定: 設定 retro.window_days → 14)")
+	fs.Float64Var(&o.threshold, "threshold", 0, "訂正率の閾値 0〜1(既定: 設定 retro.threshold → 0.10)")
+	fs.BoolVar(&o.quiet, "quiet", false, "閾値を超えたときだけ出力する(警告も出さない。hook 向け)")
+	fs.Usage = func() {
+		fmt.Fprintln(stderr, "使い方: braindex retro check [-config braindex.json] [-sessions DIR] [-date YYYY-MM-DD] [-window-days N] [-threshold 0.1] [-quiet]")
+		fmt.Fprintln(stderr, "  直近の窓(既定 14 日)の訂正率を閾値(既定 10%)と比べて 1 行出す。本文は出さない。")
+		fmt.Fprintln(stderr, "  組み込みの例:")
+		fmt.Fprintln(stderr, "    Claude Code の hook(SessionStart)に braindex retro check -quiet || true を置くと、超えたときだけ 1 行がセッションに入る")
+		fmt.Fprintln(stderr, "    cron / タスクスケジューラで週 1 回回し、終了コード 3 のときだけ通知コマンドへつなぐ")
+		fmt.Fprintln(stderr, "  終了コード: 0 閾値以下 / 1 失敗 / 2 閾値以下だが警告つき(読めないログを飛ばした) / 3 閾値超え(警告があっても 3)")
+		fmt.Fprintln(stderr, "  終了コード 3 は hook 以外(スケジューラ等)向け。Claude Code の hook は終了コード 0 の stdout だけを文脈に入れるので、hook では || true で 0 に落とす")
+		fmt.Fprintln(stderr)
+		fmt.Fprintln(stderr, "フラグ:")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 1
+	}
+	fail := func(err error) int {
+		fmt.Fprintln(stderr, "braindex retro check:", err)
+		return 1
+	}
+	if fs.NArg() > 0 {
+		return fail(fmt.Errorf("引数 %q は受け付けない(フラグだけを渡す)", fs.Args()))
+	}
+	// 明示されたフラグだけが設定を上書きする(0 は「未指定」ではなく誤り)
+	windowSet, thresholdSet := false, false
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "window-days":
+			windowSet = true
+		case "threshold":
+			thresholdSet = true
+		}
+	})
+	if windowSet && o.windowDays < 1 {
+		return fail(errors.New("-window-days は 1 以上"))
+	}
+	if thresholdSet && (o.threshold <= 0 || o.threshold > 1) {
+		return fail(errors.New("-threshold は 0 より大きく 1 以下(0.10 = 10%)"))
+	}
+	today, err := retroToday(o.date)
+	if err != nil {
+		return fail(err)
+	}
+	env, err := loadRetroEnv(o.config, o.sessions)
+	if err != nil {
+		return fail(err)
+	}
+	days, thr := env.settings.WindowDays, env.settings.Threshold
+	if windowSet {
+		days = o.windowDays
+	}
+	if thresholdSet {
+		thr = o.threshold
+	}
+
+	w := retro.Recent(today, days, retroLoc)
+	ss, warns, err := sessions.Dir{Path: env.sessionsDir}.Sessions(sessions.Options{Since: w.Since})
+	if err != nil {
+		return fail(err)
+	}
+	if !o.quiet {
+		for _, wn := range warns {
+			fmt.Fprintln(stderr, "braindex retro check: 警告:", wn)
+		}
+	}
+	total := retro.Total(retro.Judge(ss, w, env.dicts...))
+	msg := fmt.Sprintf("直近 %d 日の訂正率 %s(発話 %d・訂正 %d)", days, total.Percent(), total.Utterances, total.Corrections)
+	if total.Rate() > thr {
+		fmt.Fprintf(stdout, "braindex retro check: %sが閾値 %.1f%% を超えた → レトロスペクティブの時期(braindex retro extract で材料を出す)\n", msg, thr*100)
+		return 3
+	}
+	if !o.quiet {
+		fmt.Fprintf(stdout, "braindex retro check: %sは閾値 %.1f%% 以下\n", msg, thr*100)
+	}
+	if len(warns) > 0 {
+		if !o.quiet {
+			fmt.Fprintf(stderr, "braindex retro check: 警告 %d 件(終了コード 2)\n", len(warns))
+		}
 		return 2
 	}
 	return 0
