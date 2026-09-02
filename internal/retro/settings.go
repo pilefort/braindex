@@ -1,6 +1,7 @@
 package retro
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 )
@@ -36,8 +37,24 @@ func (s Settings) WithDefaults() Settings {
 	return s
 }
 
+// Validate は設定ファイルに書かれた値が範囲内かを確かめる(WithDefaults の前に呼ぶ。0 は「未指定」なので通す)。
+// 範囲外は既定値に丸めず、設定の誤りとしてエラーにする(未知のキーを通さないのと同じ考え)。
+func (s Settings) Validate() error {
+	if s.WindowDays < 0 {
+		return fmt.Errorf("設定 retro.window_days: 0 以上の整数(0 は既定の %d): %d", DefaultWindowDays, s.WindowDays)
+	}
+	if s.Threshold < 0 || s.Threshold > 1 {
+		return fmt.Errorf("設定 retro.threshold: 0〜1 の割合(0.10 = 10%%。0 は既定の %.2f): %g", DefaultThreshold, s.Threshold)
+	}
+	return nil
+}
+
 // ExpandHome は先頭の "~"("~" だけ・"~/"・"~\")を home に置き換える。それ以外はそのまま。
+// home が空(ホームディレクトリが分からない)なら展開せず p をそのまま返す("~/logs" がカレント相対の "logs" に化けないように)。
 func ExpandHome(p, home string) string {
+	if home == "" {
+		return p
+	}
 	if p == "~" {
 		return home
 	}
