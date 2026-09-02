@@ -93,7 +93,8 @@ var hashLine = regexp.MustCompile(`^[0-9a-f]{40}$`)
 // 窓の中で作られて消えたファイルは載せない(前回にも今にも無い)。リネームは旧パスを削除・新パスを追加として扱う。
 // パスは dir 相対(--relative)。dir の外のファイルは含まれない。
 func (g Git) ChangedSince(dir, since string, pathspecs []string) (RepoChanges, error) {
-	args := []string{"log", "--since=" + since, "--name-status", "--relative", "--format=%H", "--"}
+	// 時刻を明示する。日付だけだと git は「その日の今の時刻」と解釈し、0 時〜実行時刻のコミットが落ちる
+	args := []string{"log", "--since=" + since + " 00:00:00", "--name-status", "--relative", "--format=%H", "--"}
 	args = append(args, pathspecs...)
 	out, err := g.run(dir, args...)
 	if err != nil {

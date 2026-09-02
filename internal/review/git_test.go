@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -69,7 +70,13 @@ func (r *testRepo) remove(rel string) {
 // (UTC 正午に固定すると UTC+12 以上の TZ では前日扱いになり、--until=<日> 23:59:59 から漏れる)。
 func (r *testRepo) commit(date, msg string) {
 	r.t.Helper()
-	r.date = date + "T12:00:00" // 時差の接尾辞なし＝ローカル時刻
+	r.commitAt(date+"T12:00:00", msg)
+}
+
+// commitAt は作業ツリーの全変更を datetime(YYYY-MM-DDThh:mm:ss。時差の接尾辞なし＝ローカル時刻)でコミットする。
+func (r *testRepo) commitAt(datetime, msg string) {
+	r.t.Helper()
+	r.date = datetime
 	r.run("add", "-A")
 	r.run("commit", "-q", "-m", msg)
 }
@@ -137,6 +144,24 @@ func TestChangedSince(t *testing.T) {
 	rc, err = r.git.ChangedSince(r.dir, "2026-09-01", specs)
 	if err != nil || rc.Commits != 0 || len(rc.Files) != 0 {
 		t.Errorf("差分なし: err=%v rc=%+v", err, rc)
+	}
+}
+
+// --since は前回日の 0 時から。git は日付だけの --since を「その日の今の時刻」と解釈するので、時刻を明示しないと
+// 前回日の 0 時〜実行時刻のコミットが、実行する時刻しだいで落ちる。
+func TestChangedSince_FromStartOfDay(t *testing.T) {
+	r := newTestRepo(t)
+	r.write("docs/notes/before.md", "# before\n")
+	r.commitAt("2026-08-21T23:59:59", "before")
+	r.write("docs/notes/midnight.md", "# midnight\n")
+	r.commitAt("2026-08-22T00:00:00", "midnight")
+	rc, err := r.git.ChangedSince(r.dir, "2026-08-22", []string{"docs/notes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ChangedFile{{Path: "docs/notes/midnight.md", Status: "追加"}}
+	if rc.Commits != 1 || !reflect.DeepEqual(rc.Files, want) {
+		t.Errorf("前回日の 0 時のコミットだけが入るべき: commits=%d files=%v", rc.Commits, rc.Files)
 	}
 }
 
