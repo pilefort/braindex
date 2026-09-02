@@ -37,8 +37,8 @@ func Render(entries []Entry, genDate string) []byte {
 	var b strings.Builder
 	b.WriteString("# 知識カタログ(braindex 自動生成 — 手で編集しない)\n\n")
 	fmt.Fprintf(&b, "生成: %s / %d リポジトリ / %d 件\n", genDate, distinctRepos(es), len(es))
-	b.WriteString("再生成: brain ルートで `go run ./cmd/braindex`\n")
-	b.WriteString("使い方: このファイルを grep → ヒット行のパス(projects ルート相対)の実ファイルを読む\n")
+	b.WriteString("再生成: hub リポで `braindex` を実行\n")
+	b.WriteString("使い方: このファイルを grep → ヒット行のパス(root 相対)の実ファイルを読む。要旨だけで答えない\n")
 
 	lastRepo := ""
 	for _, e := range es {
