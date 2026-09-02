@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -110,5 +111,48 @@ func TestRetroExtract_Errors(t *testing.T) {
 	var so, se bytes.Buffer
 	if code := dispatch([]string{"retro", "extract", "-h"}, &so, &se); code != 0 || !strings.Contains(se.String(), "一時ディレクトリ") {
 		t.Errorf("-h: exit=%d stderr=%q", code, se.String())
+	}
+}
+
+// 同じ出力先に書き直すと、前回の sessions/ と index.tsv は消えて今回の窓の分だけになる。出力先の他のファイルは触らない。
+func TestRetroExtract_Rewrite(t *testing.T) {
+	fixUTC(t)
+	out := filepath.Join(t.TempDir(), "retro")
+	if code, so, se := execRetroExtract(t, "-sessions", retroTestdata, "-out", out); code != 2 {
+		t.Fatalf("1 回目: exit=%d want 2\nstdout=%s\nstderr=%s", code, so, se)
+	}
+	keep := filepath.Join(out, "keep.txt")
+	if err := os.WriteFile(keep, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, so, se := execRetroExtract(t, "-sessions", retroTestdata, "-out", out, "-since", "2026-08-15"); code != 2 {
+		t.Fatalf("2 回目: exit=%d want 2\nstdout=%s\nstderr=%s", code, so, se)
+	}
+	var files []string
+	err := filepath.WalkDir(filepath.Join(out, "sessions"), func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			rel, _ := filepath.Rel(out, p)
+			files = append(files, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"sessions/_work_repo-a/20260820_0100_aaaa1111.md"}; !reflect.DeepEqual(files, want) {
+		t.Errorf("2 回目の後に残る md: want=%v got=%v", want, files)
+	}
+	idx, err := os.ReadFile(filepath.Join(out, "index.tsv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines := strings.Count(string(idx), "\n"); lines != 2 {
+		t.Errorf("index.tsv は見出し + 今回の 1 行のはず: %q", string(idx))
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Errorf("出力先の他のファイルが消えた: %v", err)
 	}
 }

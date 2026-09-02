@@ -288,6 +288,7 @@ func runRetroExtract(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "  セッションごとの md ダイジェスト(sessions/<プロジェクト>/<開始日時>_<ID>.md)と index.tsv を書く。")
 		fmt.Fprintln(stderr, "  ダイジェストは、窓の中の人間の発話ごとに「直前のアシスタント本文 300 字 → 発話(2000 字まで)」。")
 		fmt.Fprintln(stderr, "  訂正辞書に当たった発話には ★、感情辞書に当たった発話には ☆ を見出しに付ける。")
+		fmt.Fprintln(stderr, "  出力先の sessions/ と index.tsv は実行のたびに書き直す(前回の分は消える。出力先の他のファイルは触らない)。")
 		fmt.Fprintln(stderr, "  既定の出力先は OS の一時ディレクトリ。セッションログには機微が含まれるので、リポの中に -out を向けるときは自己責任で。")
 		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗(何も書かない) / 2 警告つきで完了(読めないログを飛ばした)")
 		fmt.Fprintln(stderr)
@@ -340,6 +341,13 @@ func runRetroExtract(args []string, stdout, stderr io.Writer) int {
 		Loc:         retroLoc,
 		Home:        env.home,
 	})
+	// 前回の出力を消してから書く(出力先が常に今回の窓だけになる。決定 2026-09-03)。消すのは自分が書く sessions/ と index.tsv だけ
+	if err := os.RemoveAll(filepath.Join(outDir, "sessions")); err != nil {
+		return fail(err)
+	}
+	if err := os.Remove(filepath.Join(outDir, "index.tsv")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fail(err)
+	}
 	for _, f := range res.Files {
 		p := filepath.Join(outDir, filepath.FromSlash(f.RelPath))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
