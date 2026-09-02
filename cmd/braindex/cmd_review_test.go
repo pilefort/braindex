@@ -131,11 +131,16 @@ func TestReview_SinceResolution(t *testing.T) {
 		writeFile(t, filepath.Join(dir, n), "x\n")
 	}
 	var so, se bytes.Buffer
-	dispatch([]string{"review", "-config", cfg, "-date", "2026-09-03", "-stdout"}, &so, &se)
+	if code := dispatch([]string{"review", "-config", cfg, "-date", "2026-09-03", "-stdout"}, &so, &se); code != 2 {
+		t.Fatalf("exit=%d want 2(git 管理外の警告つき)\nstderr=%s", code, se.String())
+	}
 	mustContain(t, "前回日", so.String(), "前回: 2026-08-20（work/review/2026-08-20.md）\n")
 
 	so.Reset()
-	dispatch([]string{"review", "-config", cfg, "-date", "2026-09-03", "-since", "2026-08-01", "-stdout"}, &so, &se)
+	se.Reset()
+	if code := dispatch([]string{"review", "-config", cfg, "-date", "2026-09-03", "-since", "2026-08-01", "-stdout"}, &so, &se); code != 2 {
+		t.Fatalf("-since: exit=%d want 2\nstderr=%s", code, se.String())
+	}
 	mustContain(t, "-since", so.String(), "前回: 2026-08-01（-since で指定）\n")
 
 	so.Reset()
