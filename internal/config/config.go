@@ -15,11 +15,8 @@ import (
 	"io/fs"
 	"os"
 
-<<<<<<< HEAD
 	"github.com/pilefort/braindex/internal/news"
-=======
 	"github.com/pilefort/braindex/internal/retro"
->>>>>>> phase4/feed
 	"github.com/pilefort/braindex/internal/review"
 	"github.com/pilefort/braindex/internal/scan"
 )
@@ -31,11 +28,8 @@ const DefaultPath = "braindex.json"
 type Config struct {
 	scan.Config
 	Review review.Settings `json:"review"` // 週次レビュー(braindex review)の節。省略可
-<<<<<<< HEAD
-	News   news.Settings   `json:"news"`   // ニュースサジェスト(braindex news)の節。省略可
-=======
 	Retro  retro.Settings  `json:"retro"`  // レトロスペクティブ(braindex retro)の節。省略可
->>>>>>> phase4/feed
+	News   news.Settings   `json:"news"`   // ニュースサジェスト(braindex news)の節。省略可
 }
 
 // Load は path の設定ファイル(JSON)を読む。
