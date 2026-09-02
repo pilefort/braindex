@@ -106,3 +106,23 @@ func TestParse_AliasesAndCRLF(t *testing.T) {
 		t.Errorf("推奨 = %q 理由 = %q warnings = %v", it.Recommended, it.Reason, it.Warnings)
 	}
 }
+
+// 先頭 BOM(Windows のエディタが付ける)は除去してから解析する。
+// 見出しから始まるファイルでは、BOM が残ると 1 件目の見出しが読めず項目が 0 件になる。
+func TestParse_BOM(t *testing.T) {
+	// ソースに BOM リテラルを置かず、バイトで組み立てる(internal/extract のテストと同じ手)。
+	withBOM := func(s string) []byte { return append([]byte{0xEF, 0xBB, 0xBF}, []byte(s)...) }
+
+	d := Parse(withBOM("## 1. 題\n\n**決めたいこと:** X\n"))
+	if len(d.Items) != 1 {
+		t.Fatalf("項目数 = %d, want 1", len(d.Items))
+	}
+	if d.Items[0].Title != "題" {
+		t.Errorf("題 = %q", d.Items[0].Title)
+	}
+
+	d2 := Parse(withBOM("# 承認待ち\n\n## 1. 題\n"))
+	if d2.Preamble != "# 承認待ち" {
+		t.Errorf("前文に BOM が残る: %q", d2.Preamble)
+	}
+}

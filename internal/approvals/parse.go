@@ -70,8 +70,7 @@ var (
 
 // Parse は APPROVALS.md を解析する。壊れた入力でもエラーにせず、欠落は Item.Warnings に出す。
 func Parse(md []byte) Doc {
-	text := strings.ReplaceAll(strings.ReplaceAll(string(md), "\r\n", "\n"), "\r", "\n")
-	lines := strings.Split(text, "\n")
+	lines := splitLines(md)
 	var d Doc
 	var pre []string
 	var cur *rawItem
@@ -101,6 +100,18 @@ func Parse(md []byte) Doc {
 	flush()
 	d.Preamble = strings.TrimRight(strings.Join(pre, "\n"), "\n")
 	return d
+}
+
+// splitLines は BOM を除去し CRLF/CR を LF に正規化して行に分割する(internal/extract と同じ規則)。
+func splitLines(content []byte) []string {
+	// UTF-8 BOM (EF BB BF) を除去。ソースに BOM リテラルを置かず、バイトで判定する。
+	if len(content) >= 3 && content[0] == 0xEF && content[1] == 0xBB && content[2] == 0xBF {
+		content = content[3:]
+	}
+	s := string(content)
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	return strings.Split(s, "\n")
 }
 
 type rawItem struct {
