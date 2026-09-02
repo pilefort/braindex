@@ -258,10 +258,16 @@ func TestScan_ExtraExcludeGlob(t *testing.T) {
 		}
 	}
 
-	// 不正なパターンは設定の誤りなのでエラー(無言で文字列比較に落とさない)
+	// 不正なパターンは設定の誤りなのでエラー(無言で文字列比較に落とさない)。
+	// 文言には「どの extra の」「どのパターンが」を出す(設定を直す手掛かりになる)
 	_, _, err := Scan(Config{Root: root, Extra: []ExtraRule{{Repo: "r", Path: "x", Kind: "x", Exclude: []string{"["}}}})
 	if err == nil {
-		t.Errorf("不正なグロブでエラーになっていない")
+		t.Fatalf("不正なグロブでエラーになっていない")
+	}
+	for _, want := range []string{"r/x", `"["`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("エラー文に %q が無い: %v", want, err)
+		}
 	}
 }
 
