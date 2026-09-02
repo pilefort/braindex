@@ -44,15 +44,16 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	}
 
 	res, err := template.Install(dir, template.KindHub)
-	if err != nil {
-		fmt.Fprintln(stderr, "braindex init:", err)
-		return 1
-	}
+	// 途中で失敗しても、そこまでに作った／残したものは列挙する(書いたものを無言にしない)
 	for _, p := range res.Created {
 		fmt.Fprintln(stdout, "作成:", p)
 	}
 	for _, p := range res.Skipped {
 		fmt.Fprintln(stdout, "保持(既存):", p)
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, "braindex init:", err)
+		return 1
 	}
 	fmt.Fprintf(stdout, "braindex init: 作成 %d・保持 %d(%s)\n", len(res.Created), len(res.Skipped), dir)
 	if len(res.Created) > 0 {

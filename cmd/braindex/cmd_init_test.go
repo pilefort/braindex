@@ -59,6 +59,28 @@ func TestInit_ThenGenerate(t *testing.T) {
 	}
 }
 
+// 展開が途中で失敗しても、そこまでに作ったファイルは stdout に列挙する(無言で作らない)。
+// docs を通常ファイルにしておくと、docs/ より前の 5 ファイルを作った後で失敗する。
+func TestInit_PartialFailureListsCreated(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "hub")
+	writeFile(t, filepath.Join(dir, "docs"), "x")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"init", dir}, &so, &se); code != 1 {
+		t.Fatalf("exit=%d want 1\nstderr=%s", code, se.String())
+	}
+	if !strings.Contains(se.String(), "braindex init:") {
+		t.Errorf("stderr にエラーが無い: %s", se.String())
+	}
+	for _, p := range []string{".gitattributes", "CLAUDE.md", "README.md", "braindex.json"} {
+		if !strings.Contains(so.String(), "作成: "+p+"\n") {
+			t.Errorf("失敗前に作った %s が stdout に無い:\n%s", p, so.String())
+		}
+	}
+	if strings.Contains(so.String(), "braindex init: 作成") || strings.Contains(so.String(), "次:") {
+		t.Errorf("失敗したのに完了の要約や次の案内が出ている:\n%s", so.String())
+	}
+}
+
 // 引数の誤り: ディレクトリが 2 つ以上・不正なフラグ。-h は使い方を出して 0。
 func TestInit_BadArgs(t *testing.T) {
 	var so, se bytes.Buffer
