@@ -43,6 +43,22 @@ func TestFiles_Hub(t *testing.T) {
 	}
 }
 
+// repo の雛形は docs/notes の 2 ディレクトリ・decisions・work の骨だけ(README や braindex.json は hub のもの)。
+func TestFiles_Repo(t *testing.T) {
+	files, err := Files(KindRepo)
+	if err != nil {
+		t.Fatalf("Files: %v", err)
+	}
+	var paths []string
+	for _, f := range files {
+		paths = append(paths, f.Path)
+	}
+	want := "docs/decisions.md,docs/notes/common/.gitkeep,docs/notes/project/.gitkeep,work/APPROVALS.md,work/TODO.md"
+	if got := strings.Join(paths, ","); got != want {
+		t.Errorf("repo の雛形が想定と違う:\n got=%s\nwant=%s", got, want)
+	}
+}
+
 // 無い種別はエラー。
 func TestFiles_UnknownKind(t *testing.T) {
 	if _, err := Files(Kind("nope")); err == nil {
@@ -154,9 +170,13 @@ func TestInstall_LstatErrorMentionsPathOnce(t *testing.T) {
 // 個人識別子(ユーザー名・実在リポ名)そのものはこのテストにも書かない(CLAUDE.md「してはいけないこと」)。
 // それらは公開前チェックリストの grep で見る。
 func TestFiles_Hygiene(t *testing.T) {
-	files, err := Files(KindHub)
-	if err != nil {
-		t.Fatal(err)
+	var files []File
+	for _, kind := range []Kind{KindHub, KindRepo} {
+		fs, err := Files(kind)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, fs...)
 	}
 	for _, f := range files {
 		s := string(f.Content)
