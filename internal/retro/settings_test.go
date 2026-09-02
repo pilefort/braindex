@@ -85,3 +85,18 @@ func TestResolvePath(t *testing.T) {
 		}
 	}
 }
+
+// 既定値そのものが自分の検査を通ることを守る(既定を変えたときに、解析できない区間や範囲外の閾値を入れてしまう事故を防ぐ)。
+func TestDefaults_AreValid(t *testing.T) {
+	s := Settings{}.WithDefaults()
+	if err := s.Validate(); err != nil {
+		t.Errorf("既定値が Validate を通らない: %v", err)
+	}
+	bins, err := ParseBins(DefaultPositionBins)
+	if err != nil {
+		t.Fatalf("DefaultPositionBins %q が解析できない: %v", DefaultPositionBins, err)
+	}
+	if len(bins) != 4 || bins[0].Lo != 1 || bins[len(bins)-1].Hi != 0 {
+		t.Errorf("DefaultPositionBins の解析結果: %+v", bins)
+	}
+}
