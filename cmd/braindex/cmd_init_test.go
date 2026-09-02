@@ -81,15 +81,25 @@ func TestInit_PartialFailureListsCreated(t *testing.T) {
 	}
 }
 
-// 引数の誤り: ディレクトリが 2 つ以上・不正なフラグ。-h は使い方を出して 0。
+// 引数の誤り: ディレクトリが 2 つ以上・不正なフラグ。文言を出して 1 を返し、何も書かない。-h は使い方を出して 0。
 func TestInit_BadArgs(t *testing.T) {
+	base := t.TempDir()
+	a, b := filepath.Join(base, "a"), filepath.Join(base, "b")
 	var so, se bytes.Buffer
-	if code := dispatch([]string{"init", "a", "b"}, &so, &se); code != 1 {
-		t.Errorf("引数 2 つ exit=%d want 1", code)
+	if code := dispatch([]string{"init", a, b}, &so, &se); code != 1 || !strings.Contains(se.String(), "1 つまで") {
+		t.Errorf("引数 2 つ: exit=%d stderr=%s", code, se.String())
+	}
+	for _, d := range []string{a, b} {
+		if _, err := os.Stat(d); err == nil {
+			t.Errorf("引数の誤りなのに %s が作られた", d)
+		}
 	}
 	se.Reset()
-	if code := dispatch([]string{"init", "-nope"}, &so, &se); code != 1 {
-		t.Errorf("不正なフラグ exit=%d want 1", code)
+	if code := dispatch([]string{"init", "-nope"}, &so, &se); code != 1 || !strings.Contains(se.String(), "使い方") {
+		t.Errorf("不正なフラグ: exit=%d stderr=%s", code, se.String())
+	}
+	if _, err := os.Stat("braindex.json"); err == nil {
+		t.Errorf("不正なフラグなのにカレントディレクトリに展開された")
 	}
 	se.Reset()
 	if code := dispatch([]string{"init", "-h"}, &so, &se); code != 0 || !strings.Contains(se.String(), "使い方") {
