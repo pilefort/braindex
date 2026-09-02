@@ -5,7 +5,7 @@
 //     notes_dirs は braindex.json で複数指定でき、既定は ["docs/notes"](2026-09-02。wiki/ 派を受け入れるため。
 //     規約の名前は docs のまま)。同じファイルが複数の指定から拾われたら先に書いた指定のラベルで 1 回だけ
 //   - D/docs/decisions.md があれば 1 エントリ(種別 decisions。notes_dirs に含まれていても decisions が勝つ)
-//   - パスセグメントに archive を含むものは除外
+//   - root 相対パスのセグメントに archive を含むものは除外(root 自身のパスは見ない)
 //   - docs/ を持たないディレクトリは自然にスキップ
 //
 // 例外規則(braindex.json の extra): 指定リポの起点から *.md を収集(リポ直下・research/・projects/ 等の規約外の置き場)。
@@ -36,7 +36,7 @@ type ExtraRule struct {
 	Path      string   `json:"path"`      // リポ内の起点。"." はリポ直下
 	Recursive bool     `json:"recursive"` // false なら起点直下のみ
 	Kind      string   `json:"kind"`      // catalog に載せる種別ラベル
-	Exclude   []string `json:"exclude"`   // 除外するファイル名
+	Exclude   []string `json:"exclude"`   // 除外パターン(path.Match のグロブ。"/" を含むなら起点からの相対パスに掛ける)
 }
 
 // File は発見した 1 ファイル。
@@ -66,6 +66,13 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	for _, ex := range cfg.Extra {
+		for _, pat := range ex.Exclude {
+			if _, err := path.Match(pat, ""); err != nil {
+				return nil, nil, fmt.Errorf("extra %s/%s: exclude のパターンが不正: %q", ex.Repo, ex.Path, pat)
+			}
+		}
+	}
 	warn := func(format string, a ...any) {
 		warnings = append(warnings, fmt.Sprintf(format, a...))
 	}
@@ -93,9 +100,11 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 			if !errors.Is(err, fs.ErrNotExist) {
 				warn("%s: %s", relSlash(rootAbs, decPath), DescribeErr(err)) // 無いのは正常、読めないのは警告
 			}
-		} else if !fi.IsDir() && !hasArchiveSeg(decPath) {
-			files = append(files, mkFile(rootAbs, name, "decisions", decPath))
-			seen[decPath] = true
+		} else if !fi.IsDir() {
+			if f := mkFile(rootAbs, name, "decisions", decPath); !hasArchiveSeg(f.Rel) {
+				files = append(files, f)
+				seen[decPath] = true
+			}
 		}
 
 		// notes_dirs の各 N について D/N/**/*.md
@@ -155,7 +164,7 @@ func collectNotes(rootAbs, repo, notesDir, label string, warn warnFunc) []File {
 			}
 			return nil
 		}
-		if !isMarkdown(d.Name()) || hasArchiveSeg(path) {
+		if !isMarkdown(d.Name()) {
 			return nil
 		}
 		rel, err := filepath.Rel(notesDir, path)
@@ -163,17 +172,24 @@ func collectNotes(rootAbs, repo, notesDir, label string, warn warnFunc) []File {
 			warn("%s: %s", relSlash(rootAbs, path), DescribeErr(err))
 			return nil
 		}
-		out = append(out, mkFile(rootAbs, repo, kindFromRel(rel, label), path))
+		if f := mkFile(rootAbs, repo, kindFromRel(rel, label), path); !hasArchiveSeg(f.Rel) {
+			out = append(out, f)
+		}
 		return nil
 	})
 	return out
 }
 
 // collectExtra は例外規則に従ってファイルを収集する。
-// 起点が無い・読めないのは設定の誤りなので警告する(自動規則の notesDir 不在とは違う)。
+// 起点が無い・読めない・archive の下にあるのは設定の誤りなので警告する(自動規則の notesDir 不在とは違う)。
 func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 	base := filepath.Join(rootAbs, ex.Repo, filepath.FromSlash(ex.Path))
 	var out []File
+	// 起点自体が archive セグメントの下なら、archive の除外規則で全件落ちる。設定の誤りなので無言にしない
+	if hasArchiveSeg(path.Join(ex.Repo, ex.Path)) {
+		warn("extra %s/%s: パスに archive を含むので全件除外(載せるなら archive の外に置く)", ex.Repo, ex.Path)
+		return out
+	}
 	if info, err := os.Stat(base); err != nil {
 		warn("extra %s/%s: %s", ex.Repo, ex.Path, DescribeErr(err))
 		return out
@@ -182,11 +198,14 @@ func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 		return out
 	}
 
-	add := func(path, name, kind string) {
-		if !isMarkdown(name) || excluded(name, ex.Exclude) || hasArchiveSeg(path) {
+	// relFromBase は起点からの相対パス(スラッシュ区切り)。exclude の "/" 入りパターンはこれに掛ける
+	add := func(path, name, relFromBase, kind string) {
+		if !isMarkdown(name) || excluded(name, relFromBase, ex.Exclude) {
 			return
 		}
-		out = append(out, mkFile(rootAbs, ex.Repo, kind, path))
+		if f := mkFile(rootAbs, ex.Repo, kind, path); !hasArchiveSeg(f.Rel) {
+			out = append(out, f)
+		}
 	}
 
 	if ex.Recursive {
@@ -201,7 +220,12 @@ func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 				}
 				return nil
 			}
-			add(path, d.Name(), extraKind(ex.Kind, base, path))
+			rel, err := filepath.Rel(base, path)
+			if err != nil {
+				warn("%s: %v", path, err)
+				return nil
+			}
+			add(path, d.Name(), filepath.ToSlash(rel), extraKind(ex.Kind, base, path))
 			return nil
 		})
 		return out
@@ -216,7 +240,7 @@ func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 		if de.IsDir() {
 			continue
 		}
-		add(filepath.Join(base, de.Name()), de.Name(), ex.Kind)
+		add(filepath.Join(base, de.Name()), de.Name(), de.Name(), ex.Kind)
 	}
 	return out
 }
@@ -268,18 +292,26 @@ func isMarkdown(name string) bool {
 	return strings.HasSuffix(strings.ToLower(name), ".md")
 }
 
-func excluded(name string, list []string) bool {
-	for _, e := range list {
-		if name == e {
+// excluded は exclude パターンに当たるかを判定する。パターンは path.Match のグロブ
+// (ワイルドカード無しなら完全一致と同じ)。"/" を含むパターンは起点からの相対パス、
+// 含まないパターンはファイル名に掛ける。不正なパターンは Scan の入口で弾いてあるので、ここでは無視する。
+func excluded(name, relFromBase string, patterns []string) bool {
+	for _, pat := range patterns {
+		target := name
+		if strings.Contains(pat, "/") {
+			target = relFromBase
+		}
+		if ok, _ := path.Match(pat, target); ok {
 			return true
 		}
 	}
 	return false
 }
 
-// hasArchiveSeg はパスのいずれかのセグメントが archive かを判定する。
-func hasArchiveSeg(path string) bool {
-	for _, seg := range strings.Split(filepath.ToSlash(path), "/") {
+// hasArchiveSeg は root 相対パス(スラッシュ区切り)のいずれかのセグメントが archive かを判定する。
+// 絶対パスに掛けると root 自身が archive ディレクトリの下にあるとき全件除外されるので、必ず相対パスを渡す。
+func hasArchiveSeg(rel string) bool {
+	for _, seg := range strings.Split(filepath.ToSlash(rel), "/") {
 		if seg == "archive" {
 			return true
 		}

@@ -196,6 +196,116 @@ func TestScan_WarningsAndErrors(t *testing.T) {
 	}
 }
 
+// archive の判定はルート相対パスに掛ける。root 自体が archive という名前のディレクトリの下にあっても、
+// その中のノートは索引に載る(原型は絶対パス全体で判定していたので全件除外されていた)。
+func TestScan_ArchiveJudgedOnRootRelativePath(t *testing.T) {
+	files, _, err := Scan(Config{Root: "testdata/archive/root"})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	got := map[string]string{}
+	for _, f := range files {
+		got[f.Rel] = f.Kind
+	}
+	want := map[string]string{
+		"repo-x/docs/notes/keep.md": "notes",
+		"repo-x/docs/decisions.md":  "decisions",
+	}
+	for rel, kind := range want {
+		if got[rel] != kind {
+			t.Errorf("欠落 or 種別違い: %s want=%q got=%q", rel, kind, got[rel])
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("件数不一致: want=%d got=%d\n got=%s", len(want), len(got), sortedKeys(got))
+	}
+}
+
+// extra の exclude はグロブ。"/" を含まないパターンはファイル名に、含むパターンは起点からの相対パスに掛ける。
+func TestScan_ExtraExcludeGlob(t *testing.T) {
+	root := t.TempDir()
+	base := filepath.Join(root, "r", "x")
+	for _, rel := range []string{"a.md", "b.draft.md", "sub/c.md", "sub/d.draft.md"} {
+		p := filepath.Join(base, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("# "+rel+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases := []struct {
+		desc    string
+		exclude []string
+		want    []string
+	}{
+		{"ファイル名グロブ", []string{"*.draft.md"}, []string{"r/x/a.md", "r/x/sub/c.md"}},
+		{"相対パスグロブ", []string{"sub/*"}, []string{"r/x/a.md", "r/x/b.draft.md"}},
+		{"完全一致(従来どおり)", []string{"a.md"}, []string{"r/x/b.draft.md", "r/x/sub/c.md", "r/x/sub/d.draft.md"}},
+	}
+	for _, c := range cases {
+		files, _, err := Scan(Config{Root: root, Extra: []ExtraRule{{Repo: "r", Path: "x", Recursive: true, Kind: "x", Exclude: c.exclude}}})
+		if err != nil {
+			t.Fatalf("[%s] Scan: %v", c.desc, err)
+		}
+		var got []string
+		for _, f := range files {
+			got = append(got, f.Rel)
+		}
+		sort.Strings(got)
+		if strings.Join(got, ",") != strings.Join(c.want, ",") {
+			t.Errorf("[%s] want=%v got=%v", c.desc, c.want, got)
+		}
+	}
+
+	// 不正なパターンは設定の誤りなのでエラー(無言で文字列比較に落とさない)。
+	// 文言には「どの extra の」「どのパターンが」を出す(設定を直す手掛かりになる)
+	_, _, err := Scan(Config{Root: root, Extra: []ExtraRule{{Repo: "r", Path: "x", Kind: "x", Exclude: []string{"["}}}})
+	if err == nil {
+		t.Fatalf("不正なグロブでエラーになっていない")
+	}
+	for _, want := range []string{"r/x", `"["`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("エラー文に %q が無い: %v", want, err)
+		}
+	}
+}
+
+// extra の起点が archive セグメントの下にあると、archive の除外規則で全件が落ちる。
+// 設定の誤りなので無言で 0 件にせず警告する(起点が無い・読めない場合と同じ扱い)。
+func TestScan_ExtraUnderArchiveWarns(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range []string{"r/archive/old/a.md", "archive/notes/b.md"} {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("# "+rel+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases := []struct {
+		desc string
+		rule ExtraRule
+	}{
+		{"起点のパスに archive", ExtraRule{Repo: "r", Path: "archive/old", Recursive: true, Kind: "old"}},
+		{"リポ名が archive", ExtraRule{Repo: "archive", Path: "notes", Kind: "n"}},
+	}
+	for _, c := range cases {
+		files, warnings, err := Scan(Config{Root: root, Extra: []ExtraRule{c.rule}})
+		if err != nil {
+			t.Fatalf("[%s] Scan: %v", c.desc, err)
+		}
+		if len(files) != 0 {
+			t.Errorf("[%s] archive 配下なのに拾っている: %v", c.desc, files)
+		}
+		want := "extra " + c.rule.Repo + "/" + c.rule.Path
+		if len(warnings) != 1 || !strings.Contains(warnings[0], want) || !strings.Contains(warnings[0], "archive") {
+			t.Errorf("[%s] 警告に %q と archive を含む 1 件を期待: %v", c.desc, want, warnings)
+		}
+	}
+}
+
 func sortedKeys(m map[string]string) string {
 	ks := make([]string, 0, len(m))
 	for k := range m {
