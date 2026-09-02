@@ -61,6 +61,12 @@ func TestExpandHome(t *testing.T) {
 			t.Errorf("ExpandHome(%q): want=%q got=%q", c.in, c.want, got)
 		}
 	}
+	// ホームが分からない(空)ときは展開しない(カレント相対の "logs" に化けさせない)
+	for _, in := range []string{"~", "~/logs", `~\logs`} {
+		if got := ExpandHome(in, ""); got != in {
+			t.Errorf("ExpandHome(%q, \"\"): 展開しないはず: got=%q", in, got)
+		}
+	}
 }
 
 func TestResolvePath(t *testing.T) {

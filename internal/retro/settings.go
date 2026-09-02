@@ -50,7 +50,11 @@ func (s Settings) Validate() error {
 }
 
 // ExpandHome は先頭の "~"("~" だけ・"~/"・"~\")を home に置き換える。それ以外はそのまま。
+// home が空(ホームディレクトリが分からない)なら展開せず p をそのまま返す("~/logs" がカレント相対の "logs" に化けないように)。
 func ExpandHome(p, home string) string {
+	if home == "" {
+		return p
+	}
 	if p == "~" {
 		return home
 	}
