@@ -161,7 +161,8 @@ func resolveSince(flagSince, reviewDir, dirRel, today string, sinceDays int) (si
 }
 
 // latestReviewBefore は dir にある YYYY-MM-DD.md のうち today より前で最新の日付を返す。無ければ ""。
-// 置き場が無いのは初回なので正常。
+// 置き場が無いのは初回なので正常。形だけ日付で実在しない日(2026-08-32.md)は他の名前と同じく無視する
+// (採ると前回日に不正な日付が載り、git の --since/--until にもそのまま渡る)。
 func latestReviewBefore(dir, today string) string {
 	des, err := os.ReadDir(dir)
 	if err != nil {
@@ -174,6 +175,9 @@ func latestReviewBefore(dir, today string) string {
 			continue
 		}
 		d := name[:len(name)-len(".md")]
+		if _, err := time.Parse("2006-01-02", d); err != nil {
+			continue
+		}
 		if d < today && d > best {
 			best = d
 		}

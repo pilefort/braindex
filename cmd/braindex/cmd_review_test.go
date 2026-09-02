@@ -121,12 +121,13 @@ func TestReview_E2E_NoGit(t *testing.T) {
 	}
 }
 
-// 前回日の解決: 記録の置き場にある今日より前で最新の YYYY-MM-DD.md。未来の日付・他の名前は無視。-since が最優先。
+// 前回日の解決: 記録の置き場にある今日より前で最新の YYYY-MM-DD.md。未来の日付・形だけ日付で実在しない日
+// (2026-08-32)・他の名前は無視。-since が最優先。
 func TestReview_SinceResolution(t *testing.T) {
 	_, hub := hubWithRepo(t)
 	cfg := filepath.Join(hub, "braindex.json")
 	dir := filepath.Join(hub, "work", "review")
-	for _, n := range []string{"2026-08-20.md", "2026-08-13.md", "2026-09-10.md", "notes.md"} {
+	for _, n := range []string{"2026-08-20.md", "2026-08-13.md", "2026-09-10.md", "2026-08-32.md", "notes.md"} {
 		writeFile(t, filepath.Join(dir, n), "x\n")
 	}
 	var so, se bytes.Buffer
