@@ -4,16 +4,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
 
 // testRepo は一時ディレクトリに git リポを作り、日付を固定してコミットする道具。
 type testRepo struct {
-	t    *testing.T
-	dir  string
-	git  Git
-	date string // 次のコミットに使う日時(GIT_AUTHOR_DATE / GIT_COMMITTER_DATE)
+	t      *testing.T
+	dir    string
+	git    Git
+	config string // 空の設定ファイル。GIT_CONFIG_GLOBAL に与えて利用者のグローバル設定(commit.gpgsign 等)を読ませない
+	date   string // 次のコミットに使う日時(GIT_AUTHOR_DATE / GIT_COMMITTER_DATE)
 }
 
 func newTestRepo(t *testing.T) *testRepo {
@@ -28,16 +30,21 @@ func newTestRepoAt(t *testing.T, dir string) *testRepo {
 	if !ok {
 		t.Skip("git が無い環境")
 	}
-	r := &testRepo{t: t, dir: dir, git: g}
+	config := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(config, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := &testRepo{t: t, dir: dir, git: g, config: config}
 	r.run("init", "-q", "-b", "main")
 	return r
 }
 
 // run は日付や利用者名を固定して git を実行する(環境の設定に依らないようにする)。
+// グローバル設定とシステム設定は読まない(commit.gpgsign=true の環境では commit が署名を求めて失敗する)。
 func (r *testRepo) run(args ...string) string {
 	r.t.Helper()
 	cmd := exec.Command(r.git.path, append([]string{"-C", r.dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "core.autocrlf=false"}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE="+r.date, "GIT_COMMITTER_DATE="+r.date)
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE="+r.date, "GIT_COMMITTER_DATE="+r.date, "GIT_CONFIG_GLOBAL="+r.config, "GIT_CONFIG_NOSYSTEM=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		r.t.Fatalf("git %v: %v\n%s", args, err, out)
@@ -63,10 +70,18 @@ func (r *testRepo) remove(rel string) {
 	}
 }
 
-// commit は作業ツリーの全変更を date(YYYY-MM-DD)の正午 UTC でコミットする。
+// commit は作業ツリーの全変更を date(YYYY-MM-DD)のローカル時刻の正午でコミットする。
+// --since / --until は git がローカル時刻で解釈するので、正午なら TZ に依らずその日の中に入る
+// (UTC 正午に固定すると UTC+12 以上の TZ では前日扱いになり、--until=<日> 23:59:59 から漏れる)。
 func (r *testRepo) commit(date, msg string) {
 	r.t.Helper()
-	r.date = date + "T12:00:00+00:00"
+	r.commitAt(date+"T12:00:00", msg)
+}
+
+// commitAt は作業ツリーの全変更を datetime(YYYY-MM-DDThh:mm:ss。時差の接尾辞なし＝ローカル時刻)でコミットする。
+func (r *testRepo) commitAt(datetime, msg string) {
+	r.t.Helper()
+	r.date = datetime
 	r.run("add", "-A")
 	r.run("commit", "-q", "-m", msg)
 }
@@ -137,6 +152,40 @@ func TestChangedSince(t *testing.T) {
 	}
 }
 
+// --since は前回日の 0 時から。git は日付だけの --since を「その日の今の時刻」と解釈するので、時刻を明示しないと
+// 前回日の 0 時〜実行時刻のコミットが、実行する時刻しだいで落ちる。
+func TestChangedSince_FromStartOfDay(t *testing.T) {
+	r := newTestRepo(t)
+	r.write("docs/notes/before.md", "# before\n")
+	r.commitAt("2026-08-21T23:59:59", "before")
+	r.write("docs/notes/midnight.md", "# midnight\n")
+	r.commitAt("2026-08-22T00:00:00", "midnight")
+	rc, err := r.git.ChangedSince(r.dir, "2026-08-22", []string{"docs/notes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ChangedFile{{Path: "docs/notes/midnight.md", Status: "追加"}}
+	if rc.Commits != 1 || !reflect.DeepEqual(rc.Files, want) {
+		t.Errorf("前回日の 0 時のコミットだけが入るべき: commits=%d files=%v", rc.Commits, rc.Files)
+	}
+}
+
+// ASCII 以外のファイル名は core.quotePath の既定(true)で "\346\227\245..." と八進エスケープされる。
+// そのままだと差分ファイルの行が読めず、Touched() のパスが索引のパスと一致しない。
+func TestChangedSince_NonASCIIPath(t *testing.T) {
+	r := newTestRepo(t)
+	r.write("docs/notes/日本語のメモ.md", "# メモ\n")
+	r.commit("2026-08-20", "jp")
+	rc, err := r.git.ChangedSince(r.dir, "2026-08-10", []string{"docs/notes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ChangedFile{{Path: "docs/notes/日本語のメモ.md", Status: "追加"}}
+	if !reflect.DeepEqual(rc.Files, want) {
+		t.Errorf("パスがエスケープされずに出るべき: want %v got %v", want, rc.Files)
+	}
+}
+
 // --name-status の解析だけを、git を呼ばずに確かめる(改名・複製・型変更・空行)。
 func TestParseNameStatus(t *testing.T) {
 	out := strings.Join([]string{
@@ -171,6 +220,24 @@ func TestParseNameStatus(t *testing.T) {
 	}
 }
 
+// SHA-256 のリポ(git init --object-format=sha256)では %H が 64 桁(git 2.39.2 で実測)。40 桁だけを見ると
+// ハッシュ行を見落としてコミット数が 0 になり、全コミットの出来事が 1 束(新しい順)に混ざって前後の判定が逆転する。
+func TestParseNameStatus_SHA256(t *testing.T) {
+	out := strings.Join([]string{
+		strings.Repeat("a", 64), "", "D\tgone.md", // 新しいコミット: 削除
+		strings.Repeat("b", 64), "", "A\tgone.md", "M\tkept.md", // 古いコミット: 追加と変更
+		"",
+	}, "\n")
+	rc := parseNameStatus(out)
+	if rc.Commits != 2 {
+		t.Errorf("commits: want 2 got %d", rc.Commits)
+	}
+	want := []ChangedFile{{Path: "kept.md", Status: "変更"}} // gone.md は窓の中で生まれて消えたので載らない
+	if !reflect.DeepEqual(rc.Files, want) {
+		t.Errorf("files: want %v got %v", want, rc.Files)
+	}
+}
+
 func TestFileAt(t *testing.T) {
 	r := newTestRepo(t)
 	r.write("index/catalog.md", "v1\n")
@@ -196,6 +263,42 @@ func TestFileAt(t *testing.T) {
 	}
 }
 
+// git init 直後でまだコミットが無いリポは「前回の索引なし・差分なし」であって失敗ではない
+// (git log は HEAD の指す先が無いと fatal になる。braindex init → git init の直後に review を実行する場面)。
+func TestNoCommits(t *testing.T) {
+	r := newTestRepo(t)
+	if _, ok, err := r.git.FileAt(r.dir, "index/catalog.md", "2026-09-01"); ok || err != nil {
+		t.Errorf("FileAt: 未コミットのリポは ok=false・err=nil のはず: ok=%v err=%v", ok, err)
+	}
+	rc, err := r.git.ChangedSince(r.dir, "2026-01-01", []string{"docs/notes"})
+	if err != nil || rc.Commits != 0 || len(rc.Files) != 0 {
+		t.Errorf("ChangedSince: 未コミットのリポは差分なし・err=nil のはず: err=%v rc=%+v", err, rc)
+	}
+}
+
+// 親リポの中のサブディレクトリ(root 自体が 1 つの git リポで、その直下の各ディレクトリをリポ扱いする形)でも、
+// --relative でパスは dir 相対になり、dir の外のファイルは入らず、show の ./<rel> も dir 基準で解決される。
+func TestSubdirOfRepo(t *testing.T) {
+	r := newTestRepo(t)
+	r.write("sub/docs/notes/x.md", "# x\n")
+	r.write("other/docs/notes/y.md", "# y\n")
+	r.write("sub/index/catalog.md", "c1\n")
+	r.commit("2026-08-20", "m")
+	sub := filepath.Join(r.dir, "sub")
+	rc, err := r.git.ChangedSince(sub, "2026-08-10", []string{"docs/notes", "docs/decisions.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ChangedFile{{Path: "docs/notes/x.md", Status: "追加"}}
+	if rc.Commits != 1 || !reflect.DeepEqual(rc.Files, want) {
+		t.Errorf("サブディレクトリ相対で、外の other/ は入らないはず: commits=%d files=%v", rc.Commits, rc.Files)
+	}
+	s, ok, err := r.git.FileAt(sub, "index/catalog.md", "2026-08-25")
+	if err != nil || !ok || string(s.Content) != "c1\n" {
+		t.Errorf("FileAt(sub): ok=%v err=%v content=%q", ok, err, s.Content)
+	}
+}
+
 func TestInRepo(t *testing.T) {
 	r := newTestRepo(t)
 	if !r.git.InRepo(r.dir) {
@@ -214,6 +317,14 @@ func TestInRepo(t *testing.T) {
 	}
 	if _, err := r.git.ChangedSince(plain, "2026-01-01", []string{"docs"}); err == nil {
 		t.Errorf("git 管理外で ChangedSince がエラーにならない")
+	}
+}
+
+// PATH に git が無ければ ok=false(差分ファイルの節を飛ばす材料)。
+func TestLookGit_Missing(t *testing.T) {
+	t.Setenv("PATH", "")
+	if g, ok := LookGit(); ok {
+		t.Errorf("PATH が空なのに見つかった: %q", g.path)
 	}
 }
 
