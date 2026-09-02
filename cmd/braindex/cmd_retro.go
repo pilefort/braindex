@@ -320,6 +320,9 @@ func loadRetroEnv(cfgPath, sessionsFlag string) (retroEnv, error) {
 		baseDir = filepath.Dir(cfgPath)
 	}
 	env.home, _ = os.UserHomeDir() // 取れなければ "" のまま("~" の展開と表示の置換をしないだけ)
+	if err := fc.Retro.Validate(); err != nil {
+		return env, err
+	}
 	s := fc.Retro.WithDefaults()
 	env.settings = s
 
