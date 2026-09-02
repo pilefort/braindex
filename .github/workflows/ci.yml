@@ -1,0 +1,49 @@
+# CI: ubuntu と windows で gofmt / vet / test を回し、同じ入力から 2 回生成して
+# バイト一致することを確かめる（索引の決定性は設計の前提。設計判断 2026-08-07）。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          # 依存が無く go.sum も無いので、モジュールキャッシュの復元は毎回「見つからない」の警告になる。切る
+          cache: false
+
+      - name: gofmt
+        shell: bash
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "gofmt が必要:"; echo "$out"; exit 1; fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+      - name: 決定性（同じ入力から 2 回生成してバイト一致）
+        shell: bash
+        run: |
+          root=internal/scan/testdata/root
+          go run ./cmd/braindex -root "$root" -out out-1.md -date 2026-01-01
+          go run ./cmd/braindex -root "$root" -out out-2.md -date 2026-01-01
+          cmp out-1.md out-2.md
+          # 生成物は LF のみ（CRLF が混じると checkout 結果とずれて diff が壊れる）
+          if grep -q $'\r' out-1.md; then echo "CRLF が混入"; exit 1; fi
