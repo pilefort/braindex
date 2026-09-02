@@ -20,11 +20,16 @@ type testRepo struct {
 
 func newTestRepo(t *testing.T) *testRepo {
 	t.Helper()
+	return newTestRepoAt(t, t.TempDir())
+}
+
+// newTestRepoAt は既存のディレクトリ dir を git リポにする(root 直下に複数リポを並べるテスト用)。
+func newTestRepoAt(t *testing.T, dir string) *testRepo {
+	t.Helper()
 	g, ok := LookGit()
 	if !ok {
 		t.Skip("git が無い環境")
 	}
-	dir := t.TempDir()
 	config := filepath.Join(t.TempDir(), "gitconfig")
 	if err := os.WriteFile(config, nil, 0o644); err != nil {
 		t.Fatal(err)
