@@ -95,6 +95,14 @@ func TestRenderForm_DuplicateHeadingNumbers(t *testing.T) {
 	}
 }
 
+// 出力は LF 固定(設計判断 2026-08-07)。埋め込みの CSS/JS に CRLF が紛れ込むと checkout 結果とずれる。
+func TestRenderForm_LFOnly(t *testing.T) {
+	h := RenderForm(Parse(load(t, "two-items.md")), sampleMeta())
+	if bytes.Contains(h, []byte("\r")) {
+		t.Error("出力に CR が混ざっている")
+	}
+}
+
 func TestRenderForm_Empty(t *testing.T) {
 	h := string(RenderForm(Parse(load(t, "empty.md")), sampleMeta()))
 	if !strings.Contains(h, "承認待ちはありません") || strings.Contains(h, `id="send"`) {
