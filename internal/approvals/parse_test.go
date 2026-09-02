@@ -107,6 +107,21 @@ func TestParse_AliasesAndCRLF(t *testing.T) {
 	}
 }
 
+// 「**私の案:** C」のように理由を書かずに存在しない案を指したときも記載漏れにする
+// (選択肢を書き換えて案の記号がずれたときが本番)。
+func TestParse_RecommendNotInOptions_NoReason(t *testing.T) {
+	md := "# 承認待ち\n\n## 1. 題\n\n**決めたいこと:** X\n**なぜ今決めるか:** Y\n**選択肢:**\n" +
+		"- A. 案 1 — 得\n- B. 案 2 — 損\n**私の案:** C\n**決めないとどうなるか:** Z\n"
+	it := Parse([]byte(md)).Items[0]
+	if it.Recommended != "" {
+		t.Errorf("選択肢に無い案は推奨にしない: %q", it.Recommended)
+	}
+	want := []string{"私の案 C が選択肢に無い"}
+	if strings.Join(it.Warnings, "|") != strings.Join(want, "|") {
+		t.Errorf("warnings = %v, want %v", it.Warnings, want)
+	}
+}
+
 // 先頭 BOM(Windows のエディタが付ける)は除去してから解析する。
 // 見出しから始まるファイルでは、BOM が残ると 1 件目の見出しが読めず項目が 0 件になる。
 func TestParse_BOM(t *testing.T) {

@@ -174,7 +174,7 @@ func (r *rawItem) finish() Item {
 		if it.hasOption(k) {
 			it.Recommended = k
 			it.Reason = strings.TrimSpace(m[2])
-		} else if it.Fields[FieldRecommend] != "" && strings.TrimSpace(m[2]) != "" {
+		} else if it.Fields[FieldRecommend] != "" {
 			it.Warnings = append(it.Warnings, FieldRecommend+" "+k+" が選択肢に無い")
 		}
 	}
