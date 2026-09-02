@@ -1,6 +1,11 @@
 package scan
 
 import (
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -20,7 +25,7 @@ func testConfig() Config {
 }
 
 func TestScan_FoundSet(t *testing.T) {
-	files, err := Scan(testConfig())
+	files, _, err := Scan(testConfig())
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -67,7 +72,7 @@ func TestScan_FoundSet(t *testing.T) {
 }
 
 func TestScan_Exclusions(t *testing.T) {
-	files, err := Scan(testConfig())
+	files, _, err := Scan(testConfig())
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -86,7 +91,7 @@ func TestScan_Exclusions(t *testing.T) {
 // notes_dirs を [wiki] にすると、docs/notes でなく wiki/ を走査し、種別ラベルは末尾セグメント(wiki)になる。
 // docs/decisions.md は notes_dirs と無関係に拾う。archive は従来どおり除外。
 func TestScan_NotesDir(t *testing.T) {
-	files, err := Scan(Config{Root: "testdata/root-wiki", NotesDirs: []string{"wiki"}})
+	files, _, err := Scan(Config{Root: "testdata/root-wiki", NotesDirs: []string{"wiki"}})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -117,7 +122,7 @@ func TestScan_NotesDir(t *testing.T) {
 
 // notes_dirs に複数を並べると、それぞれを走査し、ラベルは各ディレクトリの末尾セグメントになる。
 func TestScan_NotesDirs_Multiple(t *testing.T) {
-	files, err := Scan(Config{Root: "testdata/root-wiki", NotesDirs: []string{"wiki", "docs/notes"}})
+	files, _, err := Scan(Config{Root: "testdata/root-wiki", NotesDirs: []string{"wiki", "docs/notes"}})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -148,7 +153,7 @@ func TestScan_NotesDirs_Multiple(t *testing.T) {
 // (docs 起点なら docs/notes/ignored.md は "docs/notes"。後の docs/notes 起点なら "notes" になるはずのもの)。
 // docs/decisions.md は notes_dirs に含まれていても種別 decisions のまま。
 func TestScan_NotesDirs_Dedupe(t *testing.T) {
-	files, err := Scan(Config{Root: "testdata/root-wiki", NotesDirs: []string{"docs", "docs/notes"}})
+	files, _, err := Scan(Config{Root: "testdata/root-wiki", NotesDirs: []string{"docs", "docs/notes"}})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -169,6 +174,28 @@ func TestScan_NotesDirs_Dedupe(t *testing.T) {
 	}
 }
 
+// 存在しない extra の起点は警告(エラーにも無言スキップにもしない)。root が空・存在しなければエラー。
+func TestScan_WarningsAndErrors(t *testing.T) {
+	cfg := Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: "no-such-dir", Kind: "x"}}}
+	files, warns, err := Scan(cfg)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(files) == 0 {
+		t.Errorf("警告があっても自動規則の結果は返すべき")
+	}
+	if len(warns) != 1 || warns[0] != "extra ext/no-such-dir: 存在しない" {
+		t.Errorf("警告 1 件「extra ext/no-such-dir: 存在しない」(パスを繰り返さない・OS の文言を出さない)を期待: %q", warns)
+	}
+
+	if _, _, err := Scan(Config{Root: ""}); err == nil || strings.Contains(err.Error(), "-root") {
+		t.Errorf("root 空はエラーで、ライブラリの文に CLI のフラグ名を含めない: %v", err)
+	}
+	if _, _, err := Scan(Config{Root: "testdata/no-such-root"}); err == nil {
+		t.Errorf("root 不在でエラーになっていない")
+	}
+}
+
 func sortedKeys(m map[string]string) string {
 	ks := make([]string, 0, len(m))
 	for k := range m {
@@ -176,4 +203,73 @@ func sortedKeys(m map[string]string) string {
 	}
 	sort.Strings(ks)
 	return strings.Join(ks, "\n ")
+}
+
+// docs/decisions.md の Stat が権限エラー等で失敗したら警告にする(存在しないのは正常で警告しない)。
+func TestScan_DecisionsStatErrorWarns(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Getuid() == 0 {
+		t.Skip("chmod 000 で読めなくする方法が使えない環境")
+	}
+	root := t.TempDir()
+	docs := filepath.Join(root, "r", "docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(docs, "decisions.md"), []byte("# d\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(docs, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(docs, 0o755) })
+	_, warns, err := Scan(Config{Root: root})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if !containsSub(warns, "r/docs/decisions.md") {
+		t.Errorf("decisions.md の警告が無い: %q", warns)
+	}
+}
+
+// notes_dir がディレクトリでなくファイルなら警告(規約外の状態)。パスは root 相対・スラッシュ区切り。
+func TestScan_NotesDirIsFileWarns(t *testing.T) {
+	root := t.TempDir()
+	docs := filepath.Join(root, "r", "docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(docs, "notes"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, warns, err := Scan(Config{Root: root})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(warns) != 1 || warns[0] != "r/docs/notes: ディレクトリではない" {
+		t.Errorf("警告 1 件「r/docs/notes: ディレクトリではない」を期待: %q", warns)
+	}
+}
+
+// DescribeErr はパスを繰り返さず、存在しないは日本語の定型にする。
+func TestDescribeErr(t *testing.T) {
+	_, err := os.Stat(filepath.Join(t.TempDir(), "nope"))
+	if got := DescribeErr(err); got != "存在しない" {
+		t.Errorf("ErrNotExist: got %q", got)
+	}
+	pe := &fs.PathError{Op: "open", Path: "/some/path", Err: errors.New("boom")}
+	if got := DescribeErr(pe); got != "boom" {
+		t.Errorf("PathError: got %q", got)
+	}
+	if got := DescribeErr(errors.New("plain")); got != "plain" {
+		t.Errorf("plain: got %q", got)
+	}
+}
+
+func containsSub(ss []string, sub string) bool {
+	for _, s := range ss {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }
