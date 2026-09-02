@@ -102,7 +102,8 @@ type RepoChanges struct {
 	Files   []ChangedFile
 }
 
-var hashLine = regexp.MustCompile(`^[0-9a-f]{40}$`)
+// hashLine は --format=%H のコミット行。SHA-1 なら 40 桁、SHA-256 のリポ(--object-format=sha256)なら 64 桁。
+var hashLine = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 
 // ChangedSince は dir で since(YYYY-MM-DD。その日を含む)以降のコミットが pathspecs の範囲で触ったファイルを集める。
 // 同じファイルが複数のコミットに現れたら 1 行にまとめ、前回日の時点と今の有無で 追加／変更／削除 を決める。

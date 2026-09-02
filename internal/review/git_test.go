@@ -215,6 +215,24 @@ func TestParseNameStatus(t *testing.T) {
 	}
 }
 
+// SHA-256 のリポ(git init --object-format=sha256)では %H が 64 桁(git 2.39.2 で実測)。40 桁だけを見ると
+// ハッシュ行を見落としてコミット数が 0 になり、全コミットの出来事が 1 束(新しい順)に混ざって前後の判定が逆転する。
+func TestParseNameStatus_SHA256(t *testing.T) {
+	out := strings.Join([]string{
+		strings.Repeat("a", 64), "", "D\tgone.md", // 新しいコミット: 削除
+		strings.Repeat("b", 64), "", "A\tgone.md", "M\tkept.md", // 古いコミット: 追加と変更
+		"",
+	}, "\n")
+	rc := parseNameStatus(out)
+	if rc.Commits != 2 {
+		t.Errorf("commits: want 2 got %d", rc.Commits)
+	}
+	want := []ChangedFile{{Path: "kept.md", Status: "変更"}} // gone.md は窓の中で生まれて消えたので載らない
+	if !reflect.DeepEqual(rc.Files, want) {
+		t.Errorf("files: want %v got %v", want, rc.Files)
+	}
+}
+
 func TestFileAt(t *testing.T) {
 	r := newTestRepo(t)
 	r.write("index/catalog.md", "v1\n")
