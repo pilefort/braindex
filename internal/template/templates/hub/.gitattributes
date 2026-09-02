@@ -1,0 +1,3 @@
+# 改行は LF に統一する。braindex は index/catalog.md を LF で書く。git が checkout 時に改行を
+# 変換すると、再生成のたびに差分が出て「git diff = 前回からの差分」が壊れる。
+* text=auto eol=lf
