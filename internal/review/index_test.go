@@ -130,6 +130,39 @@ func TestDiffIndex_Same(t *testing.T) {
 	}
 }
 
+// 同じリポに 追加・変更・削除 が混じるときの並び(追加 → 変更 → 削除。各群の中はパス昇順)と、
+// 複数列が変わった行の列名の順(日付・種別・タイトル・要旨)、日付なしの行の表示(タイトルだけ)を見る。
+// golden(before.md)は 1 リポの中でこれらを同時に踏まないので、合成した索引で補う。
+// 今回側の行順はわざとパスの降順にし、出力がパス昇順に並び直されることも確かめる。
+func TestWriteIndexSection_OrderAndColumns(t *testing.T) {
+	header := "## r\n| 日付 | 種別 | タイトル | 要旨 | パス |\n|---|---|---|---|---|\n"
+	before := header +
+		"| 2026-01-01 | notes | 消える | S | r/docs/notes/a-gone.md |\n" +
+		"| 2026-01-02 | notes | 全部変わる | S | r/docs/notes/m.md |\n" +
+		"|  | notes | 日付なし | S | r/docs/notes/nodate.md |\n"
+	after := header +
+		"|  | notes | 日付なしで増えた | S | r/docs/notes/z-new.md |\n" +
+		"| 2026-01-05 | notes | 増えた | S | r/docs/notes/y-new.md |\n" +
+		"|  | notes | 日付なし | S | r/docs/notes/nodate.md |\n" +
+		"| 2026-01-03 | notes/x | 全部変わった | S2 | r/docs/notes/m.md |\n"
+	d, err := DiffIndex([]byte(before), []byte(after))
+	if err != nil {
+		t.Fatalf("DiffIndex: %v", err)
+	}
+	var b strings.Builder
+	WriteIndexSection(&b, d, "x")
+	want := "## 索引（件数と増減）\n\n" +
+		"前回 3 件 → 今回 4 件（追加 2・変更 1・削除 1）。前回の索引: x\n\n" +
+		"### r\n" +
+		"- 追加: r/docs/notes/y-new.md（2026-01-05・増えた）\n" +
+		"- 追加: r/docs/notes/z-new.md（日付なしで増えた）\n" +
+		"- 変更（日付・種別・タイトル・要旨）: r/docs/notes/m.md（2026-01-03・全部変わった）\n" +
+		"- 削除: r/docs/notes/a-gone.md（2026-01-01・消える）\n"
+	if got := b.String(); got != want {
+		t.Errorf("節が想定と不一致:\n--- got ---\n%s--- want ---\n%s", got, want)
+	}
+}
+
 // 壊れた索引はエラー。どちら側かを添える。
 func TestDiffIndex_BrokenInput(t *testing.T) {
 	broken := []byte("| a | b |\n")
