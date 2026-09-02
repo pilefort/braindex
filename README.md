@@ -1,6 +1,6 @@
 # braindex
 
-**Deterministic, cross-repo, zero-dependency knowledge index for Markdown notes. No LLM in the loop.**
+**Markdown ノートの索引を、LLM なし・依存なし・決定的に作るリポ横断の CLI。**
 
 複数の git リポジトリに散らばった Markdown ノート（`docs/notes/`・`docs/decisions.md`）を、
 コピーせずに 1 枚の索引 `catalog.md` にまとめる CLI と、その索引を中心に知識を蓄積・レビューする
@@ -124,7 +124,7 @@ Karpathy の LLM wiki 型（2026-04・`raw/` の素材から LLM が `wiki/` の
 
 ```sh
 go install github.com/pilefort/braindex/cmd/braindex@latest   # CLI を入れる
-mkdir brain && cd brain && braindex init                       # hub リポの骨格を展開(既存ファイルは上書きしない)
+mkdir hub && cd hub && braindex init                           # hub リポの骨格を展開(既存ファイルは上書きしない)
 braindex                                                       # 索引 index/catalog.md を生成
 ```
 
