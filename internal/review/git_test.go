@@ -224,6 +224,19 @@ func TestFileAt(t *testing.T) {
 	}
 }
 
+// git init 直後でまだコミットが無いリポは「前回の索引なし・差分なし」であって失敗ではない
+// (git log は HEAD の指す先が無いと fatal になる。braindex init → git init の直後に review を実行する場面)。
+func TestNoCommits(t *testing.T) {
+	r := newTestRepo(t)
+	if _, ok, err := r.git.FileAt(r.dir, "index/catalog.md", "2026-09-01"); ok || err != nil {
+		t.Errorf("FileAt: 未コミットのリポは ok=false・err=nil のはず: ok=%v err=%v", ok, err)
+	}
+	rc, err := r.git.ChangedSince(r.dir, "2026-01-01", []string{"docs/notes"})
+	if err != nil || rc.Commits != 0 || len(rc.Files) != 0 {
+		t.Errorf("ChangedSince: 未コミットのリポは差分なし・err=nil のはず: err=%v rc=%+v", err, rc)
+	}
+}
+
 func TestInRepo(t *testing.T) {
 	r := newTestRepo(t)
 	if !r.git.InRepo(r.dir) {

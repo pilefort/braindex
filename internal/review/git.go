@@ -45,6 +45,16 @@ func (g Git) InRepo(dir string) bool {
 	return err == nil && strings.TrimSpace(out) == "true"
 }
 
+// noCommits は dir が git 管理下で、まだコミットが 1 つも無い(git init 直後で HEAD の指す先が無い)かを返す。
+// git log はこの状態を失敗にするので、呼び出し側は log が失敗したときにこれで見分けて「無し」に倒す。
+func (g Git) noCommits(dir string) bool {
+	if !g.InRepo(dir) {
+		return false
+	}
+	_, err := g.run(dir, "rev-parse", "--verify", "--quiet", "HEAD")
+	return err != nil
+}
+
 // Snapshot は前回日時点の索引のコミット。
 type Snapshot struct {
 	Content []byte
@@ -58,6 +68,9 @@ type Snapshot struct {
 func (g Git) FileAt(dir, rel, until string) (s Snapshot, ok bool, err error) {
 	out, err := g.run(dir, "log", "-1", "--format=%h %as", "--until="+until+" 23:59:59", "--", rel)
 	if err != nil {
+		if g.noCommits(dir) {
+			return s, false, nil
+		}
 		return s, false, err
 	}
 	line := strings.TrimSpace(out)
@@ -98,6 +111,9 @@ func (g Git) ChangedSince(dir, since string, pathspecs []string) (RepoChanges, e
 	args = append(args, pathspecs...)
 	out, err := g.run(dir, args...)
 	if err != nil {
+		if g.noCommits(dir) {
+			return RepoChanges{}, nil
+		}
 		return RepoChanges{}, err
 	}
 	return parseNameStatus(out), nil
