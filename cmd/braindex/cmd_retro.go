@@ -174,11 +174,11 @@ func runRetroCheck(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.sessions, "sessions", "", "セッションログの置き場(既定: 設定 retro.sessions_dir → ~/.claude/projects)")
 	fs.StringVar(&o.date, "date", "", "今日として使う日付 YYYY-MM-DD(既定: 実行日)。窓の基準")
 	fs.IntVar(&o.windowDays, "window-days", 0, "直近 N 日を窓にする(既定: 設定 retro.window_days → 14)")
-	fs.Float64Var(&o.threshold, "threshold", 0, "訂正率の閾値 0〜1(既定: 設定 retro.threshold → 0.10)")
+	fs.Float64Var(&o.threshold, "threshold", 0, "訂正率の閾値 0〜1(既定: 設定 retro.threshold → 0.08)")
 	fs.BoolVar(&o.quiet, "quiet", false, "閾値を超えたときだけ出力する(警告も出さない。hook 向け)")
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方: braindex retro check [-config braindex.json] [-sessions DIR] [-date YYYY-MM-DD] [-window-days N] [-threshold 0.1] [-quiet]")
-		fmt.Fprintln(stderr, "  直近の窓(既定 14 日)の訂正率を閾値(既定 10%)と比べて 1 行出す。本文は出さない。")
+		fmt.Fprintln(stderr, "  直近の窓(既定 14 日)の訂正率を閾値(既定 8%)と比べて 1 行出す。本文は出さない。")
 		fmt.Fprintln(stderr, "  組み込みの例:")
 		fmt.Fprintln(stderr, "    Claude Code の hook(SessionStart)に braindex retro check -quiet を置くと、超えたときだけ 1 行がセッションに入る")
 		fmt.Fprintln(stderr, "    cron / タスクスケジューラで週 1 回回し、終了コード 3 のときだけ通知コマンドへつなぐ")
@@ -214,7 +214,7 @@ func runRetroCheck(args []string, stdout, stderr io.Writer) int {
 		return fail(errors.New("-window-days は 1 以上"))
 	}
 	if thresholdSet && (o.threshold <= 0 || o.threshold > 1) {
-		return fail(errors.New("-threshold は 0 より大きく 1 以下(0.10 = 10%)"))
+		return fail(errors.New("-threshold は 0 より大きく 1 以下(0.08 = 8%)"))
 	}
 	today, err := retroToday(o.date)
 	if err != nil {

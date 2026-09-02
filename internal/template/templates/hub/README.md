@@ -28,7 +28,7 @@ Windows のタスクスケジューラなら `schtasks /Create /SC WEEKLY /D MON
 ## 振り返り（訂正率）
 
 `braindex retro check` が、直近 14 日のセッションログ（Claude Code の `~/.claude/projects`）で「エージェントの振る舞いへの訂正」の割合を
-閾値（既定 10%）と比べ、超えていれば 1 行と終了コード 3 で知らせる。判定は辞書照合の決定論で、発話の本文はどこにも書かず送らない。
+閾値（既定 8%）と比べ、超えていれば 1 行と終了コード 3 で知らせる。判定は辞書照合の決定論で、発話の本文はどこにも書かず送らない。
 超えたら、スキル `retro`（`.claude/skills/retro/SKILL.md`）の手順で `braindex retro extract` のダイジェスト（OS の一時ディレクトリに出る）を読み、
 所見と規約への反映案を `docs/notes/retro-YYYY-MM-DD.md` に残す。数値は `braindex retro stats -by project,week,position` の表を貼る。
 

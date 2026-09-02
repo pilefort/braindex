@@ -9,7 +9,7 @@ import (
 type Settings struct {
 	SessionsDir     string  `json:"sessions_dir"`     // セッションログの置き場。空なら ~/.claude/projects(sessions.DefaultDir)
 	WindowDays      int     `json:"window_days"`      // 直近何日を窓にするか(check の既定)。既定 14
-	Threshold       float64 `json:"threshold"`        // 訂正率の閾値(0〜1)。既定 0.10
+	Threshold       float64 `json:"threshold"`        // 訂正率の閾値(0〜1)。既定 0.08
 	PositionBins    string  `json:"position_bins"`    // セッション内位置の区間。既定 "1-10,11-30,31-"
 	Dictionary      string  `json:"dictionary"`       // 訂正辞書のファイル。埋め込みの既定辞書の代わりに使う。空なら既定辞書
 	DictionaryExtra string  `json:"dictionary_extra"` // 追加の辞書ファイル。既定辞書(か dictionary)に足す
@@ -18,7 +18,7 @@ type Settings struct {
 // 既定値。
 const (
 	DefaultWindowDays   = 14
-	DefaultThreshold    = 0.10
+	DefaultThreshold    = 0.08 // 2026-09-03 の決定。完成後に試用して見直す(較正の実測は直近 14 日で 8.3%)
 	DefaultPositionBins = "1-10,11-30,31-"
 )
 

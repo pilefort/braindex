@@ -143,7 +143,7 @@ braindex retro extract [-since YYYY-MM-DD | -window-days N] [-out DIR]          
 |---|---|
 | `sessions_dir` | セッションログの置き場。既定 `~/.claude/projects`（`~` は展開する。相対パスは設定ファイルのディレクトリ基準） |
 | `window_days` | `check` の窓（直近何日か）。既定 14 |
-| `threshold` | 訂正率の閾値（0〜1）。既定 0.10 |
+| `threshold` | 訂正率の閾値（0〜1）。既定 0.08（試用後に見直す前提の暫定値） |
 | `position_bins` | 位置の区間。既定 `"1-10,11-30,31-"`（`下限-上限` か `下限-` をコンマ区切り） |
 | `dictionary` / `dictionary_extra` | 訂正辞書のファイル（差し替え／追加）。省略で埋め込みの既定辞書 |
 
