@@ -50,15 +50,15 @@ type Item struct {
 	Hit     bool   // 訂正辞書に当たったか
 }
 
-// Judge は窓に入る人間の発話を辞書で判定する。順序はセッションの順 → 発話の順。
-func Judge(ss []sessions.Session, w Window, dict *Dictionary) []Item {
+// Judge は窓に入る人間の発話を辞書で判定する(どれかの辞書に当たれば Hit)。順序はセッションの順 → 発話の順。
+func Judge(ss []sessions.Session, w Window, dicts ...*Dictionary) []Item {
 	var out []Item
 	for _, s := range ss {
 		for _, t := range s.HumanTurns() {
 			if !w.Contains(t.Time) {
 				continue
 			}
-			out = append(out, Item{Time: t.Time, Project: s.Project, Session: s.ID, Index: t.Index, Hit: len(Classify(t.Text, dict)) > 0})
+			out = append(out, Item{Time: t.Time, Project: s.Project, Session: s.ID, Index: t.Index, Hit: len(Classify(t.Text, dicts...)) > 0})
 		}
 	}
 	return out
@@ -206,10 +206,14 @@ func Render(header string, rows []Count, total Count) string {
 	return b.String()
 }
 
-func writeRow(b *strings.Builder, c Count) {
-	rate := "-"
-	if c.Utterances > 0 {
-		rate = fmt.Sprintf("%.1f%%", c.Rate()*100)
+// Percent は率の表示("16.7%")。発話が無ければ "-"。
+func (c Count) Percent() string {
+	if c.Utterances == 0 {
+		return "-"
 	}
-	fmt.Fprintf(b, "| %s | %d | %d | %s |\n", c.Key, c.Utterances, c.Corrections, rate)
+	return fmt.Sprintf("%.1f%%", c.Rate()*100)
+}
+
+func writeRow(b *strings.Builder, c Count) {
+	fmt.Fprintf(b, "| %s | %d | %d | %s |\n", c.Key, c.Utterances, c.Corrections, c.Percent())
 }
