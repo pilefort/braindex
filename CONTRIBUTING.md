@@ -8,9 +8,12 @@
 go build ./...
 go vet ./...
 go test ./...
+gofmt -l .
 ```
 
 Go 1.26 以降。依存は標準ライブラリのみで、CLI にサードパーティの依存を足さないでください。
+`gofmt -l .` は何も表示しない状態にしてください。CI（`.github/workflows/ci.yml`）は ubuntu と windows でこの 4 つを回し、
+さらに同じ入力から 2 回生成してバイト一致することを確かめます。
 
 golden ファイルは `internal/catalog/testdata/` にあります。出力を意図して変えたときは
 `go test ./internal/catalog/ -update` で再生成し、同じコミットに含めてください。
