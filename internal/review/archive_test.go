@@ -37,6 +37,19 @@ func TestArchiveCandidates(t *testing.T) {
 	if got := ArchiveCandidates(entries, "2026-01-01", nil); len(got) != 0 {
 		t.Errorf("候補が残る: %+v", got)
 	}
+	// 閾値ちょうどの日は含まない(「cutoff より前」)。07-06 を閾値にすると 07-06 の e.md は外れ、07-05 だけ残る
+	got = ArchiveCandidates(entries, "2026-07-06", nil)
+	if len(got) != 1 || len(got[0].Entries) != 1 || got[0].Entries[0].Path != "repo-both/docs/notes/misc/20260705_table.md" {
+		t.Errorf("閾値ちょうど: %+v", got)
+	}
+	// 初回(前回の索引が無い)は全件が「追加」= touched なので、閾値を未来にしても候補は出ない(決定 2026-09-02)
+	d, err := DiffIndex(nil, afterCatalog(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ArchiveCandidates(entries, "2026-12-31", d.Touched()); len(got) != 0 {
+		t.Errorf("初回なのに候補: %+v", got)
+	}
 }
 
 // 索引差分の Touched は追加・変更のパスだけ(削除は今回の索引に無いので候補にもならない)。

@@ -65,6 +65,76 @@ func TestStaleTodos(t *testing.T) {
 	if len(repos) != 1 || repos[0].Repo != "beta" {
 		t.Errorf("git なし: %+v", repos)
 	}
+
+	// 閾値ちょうどの日は含む(節の文言「cutoff 以前から」)。1 日前を閾値にすれば外れる
+	repos, _, err = StaleTodos(root, &r.git, "2026-07-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 2 || repos[0].Repo != "alpha" || len(repos[0].Items) != 1 {
+		t.Errorf("閾値ちょうど: %+v", repos)
+	}
+	repos, _, err = StaleTodos(root, &r.git, "2026-06-30")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 1 || repos[0].Repo != "beta" {
+		t.Errorf("閾値の前日: %+v", repos)
+	}
+}
+
+// CRLF の TODO.md でも blame の行と本文の行が対応し、Text に \r が残らない。
+// リポ側の core.autocrlf を false にして blob も作業ツリーも CRLF のままにする(実行環境の autocrlf に左右されないため)。
+func TestStaleTodos_CRLF(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "crlf")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := newTestRepoAt(t, dir)
+	r.run("config", "core.autocrlf", "false")
+	r.write("work/TODO.md", "- [ ] a\r\n  - [ ] sub\r\n")
+	r.commit("2026-07-01", "crlf")
+	r.write("work/TODO.md", "- [ ] a\r\n  - [ ] sub\r\n* [ ] b\r\n")
+	r.commit("2026-08-25", "crlf2")
+	repos, warnings, err := StaleTodos(root, &r.git, "2026-08-05")
+	if err != nil || len(warnings) != 0 {
+		t.Fatalf("err=%v warnings=%q", err, warnings)
+	}
+	if len(repos) != 1 || len(repos[0].Items) != 2 {
+		t.Fatalf("repos: %+v", repos)
+	}
+	for i, want := range []TodoItem{{Text: "a", Line: 1, Date: "2026-07-01"}, {Text: "sub", Line: 2, Date: "2026-07-01"}} {
+		if repos[0].Items[i] != want {
+			t.Errorf("[%d]: want %+v got %+v", i, want, repos[0].Items[i])
+		}
+	}
+}
+
+// 未チェック項目の判定: 記号は - * +、字下げ・タブ・末尾の空白・CRLF の \r を許す。
+// 済み([x] [X])・空の項目・記号と [ ] の間や後ろに空白が無いもの・番号付きは拾わない。
+func TestTodoLine(t *testing.T) {
+	match := map[string]string{
+		"- [ ] x":           "x",
+		"* [ ] x":           "x",
+		"+ [ ] x":           "x",
+		"  - [ ] 字下げ":       "字下げ",
+		"-\t[ ]\tタブ":        "タブ",
+		"- [ ] 末尾の空白   ":    "末尾の空白",
+		"- [ ] x\r":         "x",
+		"- [ ] 途中の [ ] も本文": "途中の [ ] も本文",
+	}
+	for in, text := range match {
+		m := todoLine.FindStringSubmatch(in)
+		if m == nil || m[1] != text {
+			t.Errorf("%q: want %q got %v", in, text, m)
+		}
+	}
+	for _, in := range []string{"- [x] 済み", "- [X] 済み", "- [ ]", "- [ ]   ", "-[ ] x", "- [ ]x", "- [] x", "[ ] x", "1. [ ] x", "- [ ] "} {
+		if todoLine.MatchString(in) {
+			t.Errorf("%q を拾った", in)
+		}
+	}
 }
 
 // blame の行日付: コミット済みの行は著者日、未コミットの行は今日(放置にならない)。未追跡は ok=false。
