@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -187,11 +186,12 @@ func TestRetroStats_Errors(t *testing.T) {
 // 設定ファイルの既定パス(カレントの braindex.json)が無くても動く(retro は hub を要らない)
 func TestRetroStats_NoConfig(t *testing.T) {
 	fixUTC(t)
-	wd, _ := os.Getwd()
-	if _, err := os.Stat(filepath.Join(wd, "braindex.json")); err == nil {
-		t.Skip("カレントに braindex.json がある")
+	abs, err := filepath.Abs(retroTestdata)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if code, so, se := execRetroStats(t, "-sessions", retroTestdata); code != 2 {
+	t.Chdir(t.TempDir()) // braindex.json の無いカレントで実行する
+	if code, so, se := execRetroStats(t, "-sessions", abs); code != 2 {
 		t.Errorf("exit=%d want 2\nstdout=%s\nstderr=%s", code, so, se)
 	}
 }
