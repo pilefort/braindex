@@ -155,8 +155,9 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 type warnFunc func(format string, a ...any)
 
 // checkRepoRelative は設定のパス(notes_dirs・extra.path)がリポ内の相対パスであることを確かめる。
-// ".." セグメントや絶対パスはリポの外へ出てしまい、root 相対でない行が索引に載るので設定の誤りとして弾く。
-// "" と "." はリポ直下の意味で許す。
+// ".." セグメントはリポの外へ出てしまい、root 相対でない行が索引に載る。絶対パスは filepath.Join が
+// 先頭の区切りを捨てて相対扱いにするので外へは出ないが、書いた場所とは別の場所(リポの中)を指す。
+// どちらも設定の誤りとして弾く。"" と "." はリポ直下の意味で許す。
 func checkRepoRelative(what, p string) error {
 	if p == "" || p == "." {
 		return nil
