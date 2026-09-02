@@ -59,6 +59,24 @@ func TestParse_Atom(t *testing.T) {
 	}
 }
 
+// Atom の type="xhtml": 入れ子の要素の境目で語が繋がらない(html 型でタグが空白に置き換わるのと揃える)。
+func TestParse_AtomXHTMLSeparatesElements(t *testing.T) {
+	in := `<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>T</title>` +
+		`<link href="https://example.com/x"/>` +
+		`<content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><p>前半</p><p>後半</p></div></content>` +
+		`</entry></feed>`
+	d, err := ParseBytes([]byte(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Entries) != 1 {
+		t.Fatalf("entries=%d", len(d.Entries))
+	}
+	if got := d.Entries[0].Summary; got != "前半 後半" {
+		t.Errorf("summary=%q, want %q", got, "前半 後半")
+	}
+}
+
 // RSS 1.0: item は channel の外にあり、日付は dc:date。末尾 "/" の有無で ID が変わらない。
 func TestParse_RSS1(t *testing.T) {
 	d, err := ParseBytes(readTestdata(t, "rss1.xml"))
