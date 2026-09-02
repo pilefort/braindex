@@ -8,10 +8,11 @@
 
 ## 状態
 
-v0（2026-09-02）: 索引 CLI（Phase 1）を原型から移植し、可搬化した。フォルダ規約のテンプレはこれから。
+v0（2026-09-02）: 索引 CLI（Phase 1）を原型から移植して可搬化し、セットアップ `braindex init`（フォルダ規約のテンプレ同梱）と
+週次レビューの集計 `braindex review`（Phase 2）を足した。
 原型は作者の私用「第二の脳」で 2026-08-07 から運用しているもの（非公開・20 リポ 307 ノートを索引中）。
 
-予定: セットアップ機能（`braindex init`）とフォルダ規約のテンプレ同梱 → 訂正率トリガのレトロスペクティブ → ニュースサジェスト（この順。2026-09-02 決定）。
+予定: 訂正率トリガのレトロスペクティブ → ニュースサジェスト（この順。2026-09-02 決定）。
 
 ## 使い方
 
@@ -37,6 +38,7 @@ Go 1.26 以降。依存は標準ライブラリのみ。
 | `root` | 走査のルート。直下の各ディレクトリを 1 リポとみなす。相対パスは設定ファイルのディレクトリ基準。`-root` が無ければ必須 |
 | `notes_dirs` | 各リポのノート置き場。既定 `["docs/notes"]`。`["wiki"]` や、移行中の `["docs/notes", "wiki"]` も可。種別ラベルは末尾セグメント |
 | `extra` | 規約外の置き場を個別に足す配列。各要素は `repo`（root 直下のリポ名）・`path`（リポ内の起点。`"."` はリポ直下）・`recursive`（`true` でサブディレクトリも走査）・`kind`（種別ラベル）・`exclude`（グロブの配列。`/` を含むパターンは起点からの相対パス、含まなければファイル名に掛ける。大文字小文字は区別する） |
+| `review` | 週次レビュー（`braindex review`）の節。`dir`（記録の置き場。既定 `work/review`）・`since_days`（前回の記録が無いときに遡る日数。既定 14）・`stale_todo_weeks`（TODO を放置とみなす週数。既定 4）・`archive_months`（アーカイブ候補にする古さ。既定 6）。省略可 |
 
 未知のキーはエラーにする（`notes_dir` のような打ち間違いを無言で無視しない）。
 
@@ -54,6 +56,27 @@ Go 1.26 以降。依存は標準ライブラリのみ。
 
 フラグ: `-config` `-root` `-out`（既定は設定ファイルと同じディレクトリの `index/catalog.md`）`-date YYYY-MM-DD`（生成日の固定。テスト・CI 用）。
 終了コード: 0 成功／1 失敗（フラグの誤り・設定・root が読めない。索引は書かない）／2 警告つき完了（読めないファイルや存在しない `extra` を stderr に出して飛ばし、索引は書く）。
+
+## 週次レビュー（braindex review）
+
+hub で `braindex review` を実行すると、`work/review/<今日>.md` に週次レビューの下書きができる。集計は CLI が決定論で行い、
+判断（差分の要約・アーカイブの可否・次アクション）は人か、人が使うエージェント（hub に入るスキル `braindex-review`）が埋める。
+索引 `index/catalog.md` は読むだけで書き換えない（再生成は `braindex`）。
+
+下書きの節（この順・固定）:
+
+| 節 | 中身 | 埋めるのは |
+|---|---|---|
+| 索引（件数と増減） | 前回レビュー時点の索引（hub が git 管理下ならそのコミット、無ければディスクの索引）と、いま走査した結果の差。リポ別に 追加／変更（変わった列名つき）／削除 | CLI |
+| 差分ファイル（リポ別） | 各リポで前回以降のコミットが `notes_dirs` と `docs/decisions.md` に触れたファイル（`git log --since --name-status`）。git 管理外のリポは飛ばして警告 | CLI |
+| 放置 TODO | 各リポの `work/TODO.md` の未完了項目のうち、行が最後に変わった日（`git blame`）が `stale_todo_weeks` 週より前のもの。git で追えなければ mtime に `~` | CLI |
+| アーカイブ候補（機械条件のみ） | `archive_months` か月より前で、今回の差分に無いノート。`decisions` は含めない | CLI |
+| 今週の差分ダイジェスト／アーカイブ（実施・見送りと理由）／次アクション | 見出しだけ | 人 |
+
+フラグ: `-config`（設定ファイル＝hub の位置。必須）`-date YYYY-MM-DD`（今日の固定）`-since YYYY-MM-DD`（前回日。既定は記録の置き場にある最新の `YYYY-MM-DD.md`、無ければ `since_days` 日前）
+`-out`（出力先。既にあれば書かない）`-stdout`（標準出力へ）。
+終了コード: 0 成功／1 失敗（設定が無い・出力先が既にある。何も書かない）／2 警告つき完了（git 不在・git 管理外のリポを飛ばした）。
+git はあれば使う。無い環境でも索引の増減とアーカイブ候補は出る。
 
 ## 索引の中身
 
@@ -100,7 +123,7 @@ Karpathy の LLM wiki 型（2026-04・`raw/` の素材から LLM が `wiki/` の
 | `wiki/`（LLM が編纂したページ） | 各リポの `docs/notes/`（`notes_dirs` で変更・追加可） | 人かエージェントが出典つきで書く。LLM が編纂・書き換えはしない |
 | `index.md`（LLM が更新する目次） | hub リポの `index/catalog.md` | CLI が決定的に再生成する。LLM は触らない |
 | `log.md`（追記式の履歴） | `git log` と `catalog.md` の diff | 専用ファイルを持たない |
-| lint（矛盾・陳腐化の検出） | 週次レビュー（規約は `braindex init` のテンプレに同梱予定） | 検出の機械部分は CLI、判断は人 |
+| lint（矛盾・陳腐化の検出） | 週次レビュー（`braindex review` が索引の増減・差分ファイル・放置 TODO・アーカイブ候補を集計し、スキル `braindex-review` が判断を埋める） | 集計は CLI、判断は人 |
 
 ## やらないこと
 
@@ -126,10 +149,25 @@ Karpathy の LLM wiki 型（2026-04・`raw/` の素材から LLM が `wiki/` の
 go install github.com/pilefort/braindex/cmd/braindex@latest   # CLI を入れる
 mkdir hub && cd hub && braindex init                           # hub リポの骨格を展開(既存ファイルは上書きしない)
 braindex                                                       # 索引 index/catalog.md を生成
+braindex review                                                # 週に 1 回: レビューの下書き work/review/<今日>.md
 ```
 
 `braindex init -repo <dir>` は各プロジェクトのリポに `docs/notes/{common,project}/`・`docs/decisions.md`・`work/{APPROVALS,TODO}.md` の骨格を置く。
 どちらも既存ファイルは上書きしないので、再実行しても安全。hub には週次レビューのスキル（`.claude/skills/braindex-review/SKILL.md`）も入る。
+
+**エージェントに横断検索させる**: hub の `CLAUDE.md` には「索引を grep → 実ファイルを読む」の手順が入るが、hub の外のリポで作業している
+セッションからも引かせるには、利用者のグローバル `CLAUDE.md`（Claude Code なら `~/.claude/CLAUDE.md`）に次の 3 行を足す（`<hub>` は hub の場所）:
+
+```md
+- 複数リポにまたがる知識を答える前に、`<hub>/index/catalog.md` を `grep -i <語>` で引く（記憶で答えない）
+- ヒット行のパス（root 相対）の実ファイルを読む。要旨は 80 字の手がかりであって、内容の代わりではない
+- 何も当たらなければ、そう言う。ノートや決定をでっち上げない
+```
+
+**定期実行**: 判断は人が行うので自動化するのは下書きの作成だけ。週に 1 回、hub で `braindex review` を動かす。
+cron なら `0 9 * * 1 cd <hub> && braindex review`、Windows のタスクスケジューラなら
+`schtasks /Create /SC WEEKLY /D MON /ST 09:00 /TN braindex-review /TR "cmd /c cd /d <hub> && braindex review"`。
+同じ日に 2 回動いても、既にある下書きは上書きしない。
 
 ## ライセンス
 
