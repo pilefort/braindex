@@ -29,6 +29,6 @@ Windows のタスクスケジューラなら `schtasks /Create /SC WEEKLY /D MON
 | 場所 | 何が入るか |
 |---|---|
 | `index/catalog.md` | 索引。`braindex` が生成する。手で編集しない |
-| `braindex.json` | 走査の設定: `root`・`notes_dirs`・`extra`。週次レビューの閾値: `review` |
+| `braindex.json` | 走査の設定: `root`・`notes_dirs`・`extra`。週次レビューの設定（記録の置き場と閾値）: `review` |
 | `docs/` | 蓄積するもの: `overview.md`・`glossary.md`・`decisions.md`・`notes/`・`conventions.md` |
 | `work/` | 揮発するもの: `APPROVALS.md`（判断待ち）・`TODO.md`・`review/`（週次レビューの記録） |
