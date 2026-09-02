@@ -383,3 +383,64 @@ func containsSub(ss []string, sub string) bool {
 	}
 	return false
 }
+
+// 自動規則で拾ったファイルを extra が重ねて指しても、索引には 1 回だけ載る(先に拾った自動規則のラベルが勝つ)。
+func TestScan_ExtraDoesNotDuplicateAutoFiles(t *testing.T) {
+	cfg := Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: "docs", Recursive: true, Kind: "x"}}}
+	files, _, err := Scan(cfg)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	count := map[string]int{}
+	kind := map[string]string{}
+	for _, f := range files {
+		count[f.Rel]++
+		kind[f.Rel] = f.Kind
+	}
+	if count["ext/docs/notes/project/extnote.md"] != 1 {
+		t.Errorf("自動規則と extra で二重に載っている: %d 回", count["ext/docs/notes/project/extnote.md"])
+	}
+	if kind["ext/docs/notes/project/extnote.md"] != "notes/project" {
+		t.Errorf("先に拾った自動規則のラベルが勝つべき: %q", kind["ext/docs/notes/project/extnote.md"])
+	}
+	if count["ext/docs/guides/style.md"] != 1 || kind["ext/docs/guides/style.md"] != "x/guides" {
+		t.Errorf("extra だけが指すファイルは extra のラベルで 1 回: count=%d kind=%q", count["ext/docs/guides/style.md"], kind["ext/docs/guides/style.md"])
+	}
+}
+
+// notes_dirs と extra.path はリポ内の相対パスに限る。".." を含む・絶対パスは設定の誤りなのでエラー。
+func TestScan_RejectsEscapingPaths(t *testing.T) {
+	cases := []struct {
+		desc string
+		cfg  Config
+	}{
+		{"notes_dirs に ..", Config{Root: "testdata/root", NotesDirs: []string{"../outside"}}},
+		{"notes_dirs に途中の ..", Config{Root: "testdata/root", NotesDirs: []string{"docs/../../x"}}},
+		{"notes_dirs に絶対パス", Config{Root: "testdata/root", NotesDirs: []string{absPath(t)}}},
+		{"extra.path に ..", Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: "../repo-flat", Kind: "x"}}}},
+		{"extra.path に絶対パス", Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: absPath(t), Kind: "x"}}}},
+		{"extra.repo に区切り", Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext/docs", Path: ".", Kind: "x"}}}},
+	}
+	for _, c := range cases {
+		if _, _, err := Scan(c.cfg); err == nil {
+			t.Errorf("[%s] エラーになっていない", c.desc)
+		}
+	}
+	// "." と "" はリポ直下の意味で許す
+	if _, _, err := Scan(Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: ".", Kind: "x"}}}); err != nil {
+		t.Errorf("extra.path \".\" が拒否された: %v", err)
+	}
+}
+
+func absPath(t *testing.T) string {
+	t.Helper()
+	return t.TempDir()
+}
+
+// root が空のときの scan のエラー文は CLI のフラグ名を含まない(ヒントは main が付ける)。
+func TestScan_EmptyRootErrorHasNoCLIHint(t *testing.T) {
+	_, _, err := Scan(Config{Root: ""})
+	if err == nil || strings.Contains(err.Error(), "-root") {
+		t.Errorf("scan のエラー文が CLI を知っている: %v", err)
+	}
+}

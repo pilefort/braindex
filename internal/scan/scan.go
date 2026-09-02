@@ -66,7 +66,18 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	for _, nd := range notesDirs {
+		if err := checkRepoRelative("notes_dirs", nd); err != nil {
+			return nil, nil, err
+		}
+	}
 	for _, ex := range cfg.Extra {
+		if ex.Repo == "" || strings.ContainsAny(ex.Repo, `/\\`) || ex.Repo == "." || ex.Repo == ".." {
+			return nil, nil, fmt.Errorf("extra: repo は root 直下のディレクトリ名だけを書く: %q", ex.Repo)
+		}
+		if err := checkRepoRelative("extra "+ex.Repo+"/path", ex.Path); err != nil {
+			return nil, nil, err
+		}
 		for _, pat := range ex.Exclude {
 			if _, err := path.Match(pat, ""); err != nil {
 				return nil, nil, fmt.Errorf("extra %s/%s: exclude のパターンが不正: %q", ex.Repo, ex.Path, pat)
@@ -76,6 +87,7 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 	warn := func(format string, a ...any) {
 		warnings = append(warnings, fmt.Sprintf(format, a...))
 	}
+	seen := map[string]bool{} // 同一ファイルの重複排除(絶対パス)。先に拾った方(自動規則 → extra の順)のラベルが勝つ
 
 	// 自動規則: root 直下の各ディレクトリを走査
 	entries, err := os.ReadDir(rootAbs)
@@ -91,8 +103,6 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 			continue // .git などは対象外
 		}
 		repoDir := filepath.Join(rootAbs, name)
-
-		seen := map[string]bool{} // 同一ファイルの重複排除(絶対パス)。先に拾った方のラベルが勝つ
 
 		// docs/decisions.md(notes_dirs より先に拾い、種別 decisions を優先する)
 		decPath := filepath.Join(repoDir, "docs", "decisions.md")
@@ -126,9 +136,15 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 		}
 	}
 
-	// 例外規則
+	// 例外規則。自動規則で拾い済みのファイルは載せない(重複排除)
 	for _, ex := range cfg.Extra {
-		files = append(files, collectExtra(rootAbs, ex, warn)...)
+		for _, f := range collectExtra(rootAbs, ex, warn) {
+			if seen[f.Abs] {
+				continue
+			}
+			seen[f.Abs] = true
+			files = append(files, f)
+		}
 	}
 
 	return files, warnings, nil
@@ -136,6 +152,24 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 
 // warnFunc は走査中に飛ばしたものを報告する。
 type warnFunc func(format string, a ...any)
+
+// checkRepoRelative は設定のパス(notes_dirs・extra.path)がリポ内の相対パスであることを確かめる。
+// ".." セグメントや絶対パスはリポの外へ出てしまい、root 相対でない行が索引に載るので設定の誤りとして弾く。
+// "" と "." はリポ直下の意味で許す。
+func checkRepoRelative(what, p string) error {
+	if p == "" || p == "." {
+		return nil
+	}
+	if filepath.IsAbs(p) || filepath.IsAbs(filepath.FromSlash(p)) || strings.HasPrefix(p, "/") {
+		return fmt.Errorf("%s: 絶対パスは書けない(リポ内の相対パスにする): %q", what, p)
+	}
+	for _, seg := range strings.Split(filepath.ToSlash(p), "/") {
+		if seg == ".." {
+			return fmt.Errorf("%s: \"..\" でリポの外を指せない: %q", what, p)
+		}
+	}
+	return nil
+}
 
 // collectNotes は notesDir 以下の *.md を再帰収集する。archive セグメントは除外。
 // label は直下の種別ラベル(サブディレクトリ配下は label/<先頭セグメント>)。
