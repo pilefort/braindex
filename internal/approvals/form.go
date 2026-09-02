@@ -102,7 +102,8 @@ func renderItem(b *strings.Builder, it *Item, pos int) {
 		fmt.Fprintf(b, "<label class=\"opt%s\"><input type=\"radio\" name=\"c%d\" value=\"%s\"><span class=\"key\">%s</span><span class=\"lab\">%s%s</span>",
 			cls, pos, o.Key, o.Key, inline(o.Label), badge)
 		if o.Desc != "" {
-			fmt.Fprintf(b, "<div class=\"desc\">%s</div>", inline(o.Desc))
+			// label の中身は phrasing content だけ。div は不正なので span で置く(.opt が grid なので見た目は同じ)
+			fmt.Fprintf(b, "<span class=\"desc\">%s</span>", inline(o.Desc))
 		}
 		b.WriteString("</label>")
 	}

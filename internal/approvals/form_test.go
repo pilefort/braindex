@@ -95,6 +95,21 @@ func TestRenderForm_DuplicateHeadingNumbers(t *testing.T) {
 	}
 }
 
+// <label> の中身は phrasing content だけ(div を置くと HTML として不正)。
+// .opt は display:grid なので span でもグリッド項目として同じ位置に置かれる。
+func TestRenderForm_LabelHasNoBlockElement(t *testing.T) {
+	h := string(RenderForm(Parse(load(t, "two-items.md")), sampleMeta()))
+	labels := regexp.MustCompile(`(?s)<label\b.*?</label>`).FindAllString(h, -1)
+	if len(labels) == 0 {
+		t.Fatal("label が 1 つも無い")
+	}
+	for _, l := range labels {
+		if strings.Contains(l, "<div") {
+			t.Errorf("label の中に div がある: %s", l)
+		}
+	}
+}
+
 // 出力は LF 固定(設計判断 2026-08-07)。埋め込みの CSS/JS に CRLF が紛れ込むと checkout 結果とずれる。
 func TestRenderForm_LFOnly(t *testing.T) {
 	h := RenderForm(Parse(load(t, "two-items.md")), sampleMeta())
