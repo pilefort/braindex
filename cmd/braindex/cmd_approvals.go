@@ -32,6 +32,7 @@ var approvalsSubs = []struct {
 }{
 	{"serve", "フォームを 127.0.0.1 で配信して既定ブラウザで開き、回答を 1 回受けて一時置き場に書く", runApprovalsServe},
 	{"apply", "受けた回答を docs/decisions.md(3 段で追記)と APPROVALS.md(消し込み・保留)に反映する", runApprovalsApply},
+	{"status", "id・置き場・項目数・未反映の回答・記載漏れを表示する(書き込みなし)", runApprovalsStatus},
 }
 
 // approvalsOnReady はテスト用のフック。serve が待ち受けを始めた URL を受け取る。
@@ -110,14 +111,17 @@ func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	var f approvalsFileFlags
 	var timeoutSec float64
-	var noOpen bool
+	var noOpen, apply bool
+	var decisionsPath string
 	f.bind(fs)
 	fs.Float64Var(&timeoutSec, "timeout", 0, "回答を待つ秒数(0 で無期限)。過ぎたら終了コード 2")
 	fs.BoolVar(&noOpen, "no-open", false, "ブラウザを開かず URL を表示するだけ")
+	fs.BoolVar(&apply, "apply", false, "回答を受けたら続けて反映する(braindex approvals apply と同じ)。Monitor に張って 1 手で済ませる用")
+	fs.StringVar(&decisionsPath, "decisions", "", "-apply のとき決定を追記するファイル(既定: <hub>/docs/decisions.md)")
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "使い方: braindex approvals serve [-file work/APPROVALS.md] [-timeout 秒] [-no-open] [-dir <置き場>]")
+		fmt.Fprintln(stderr, "使い方: braindex approvals serve [-file work/APPROVALS.md] [-timeout 秒] [-no-open] [-apply] [-decisions docs/decisions.md] [-dir <置き場>]")
 		fmt.Fprintln(stderr, "  判断待ちをフォームにして 127.0.0.1 の空きポートで配信し、既定ブラウザで開く。「決定を送信」を 1 回受けたら")
-		fmt.Fprintln(stderr, "  回答を <置き場>/approvals-<id>.reply.json に書いて終わる(常駐しない)。反映は braindex approvals apply。")
+		fmt.Fprintln(stderr, "  回答を <置き場>/approvals-<id>.reply.json に書いて終わる(常駐しない)。反映は braindex approvals apply(-apply で続けて行う)。")
 		fmt.Fprintln(stderr, "  終了コード: 0 回答あり / 1 失敗 / 2 時間切れ")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
@@ -185,6 +189,9 @@ func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "reply: %s\n", p.Reply)
 	for _, line := range summarizeReply(rep) {
 		fmt.Fprintln(stdout, line)
+	}
+	if apply {
+		return applyReply(p, "", decisionsPath, time.Now().Format("2006-01-02"), stdout, stderr)
 	}
 	fmt.Fprintln(stdout, "next: braindex approvals apply")
 	return 0
