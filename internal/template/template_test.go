@@ -57,7 +57,10 @@ func TestInstall_NeverOverwrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	files, _ := Files(KindHub)
+	files, err := Files(KindHub)
+	if err != nil {
+		t.Fatalf("Files: %v", err)
+	}
 	if len(res.Created) != len(files) || len(res.Skipped) != 0 {
 		t.Errorf("初回: created=%d skipped=%d want %d/0", len(res.Created), len(res.Skipped), len(files))
 	}
@@ -84,7 +87,11 @@ func TestInstall_NeverOverwrites(t *testing.T) {
 	if len(res.Created) != 0 || len(res.Skipped) != len(files) {
 		t.Errorf("2 回目: created=%d skipped=%d want 0/%d", len(res.Created), len(res.Skipped), len(files))
 	}
-	if b, _ := os.ReadFile(readme); string(b) != "edited by user\n" {
+	b, err := os.ReadFile(readme)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != "edited by user\n" {
 		t.Errorf("既存ファイルが上書きされた: %q", b)
 	}
 }
@@ -105,8 +112,12 @@ func TestInstall_Partial(t *testing.T) {
 	if strings.Join(res.Skipped, ",") != "docs/decisions.md" {
 		t.Errorf("skipped=%v want [docs/decisions.md]", res.Skipped)
 	}
-	if b, _ := os.ReadFile(filepath.Join(dst, "docs", "decisions.md")); string(b) != "# mine\n" {
-		t.Errorf("既存ファイルが上書きされた")
+	b, err := os.ReadFile(filepath.Join(dst, "docs", "decisions.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != "# mine\n" {
+		t.Errorf("既存ファイルが上書きされた: %q", b)
 	}
 	if _, err := os.Stat(filepath.Join(dst, "index")); err == nil {
 		t.Errorf("index/ は braindex 実行時に作るので雛形には含めない")
