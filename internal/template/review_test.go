@@ -30,7 +30,7 @@ func TestHub_ReviewSkillMatchesCLI(t *testing.T) {
 	if !strings.Contains(byPath["braindex.json"], `"review"`) {
 		t.Errorf("braindex.json に review 節が無い")
 	}
-	for _, p := range []string{"CLAUDE.md", "docs/conventions.md"} {
+	for _, p := range []string{"README.md", "CLAUDE.md", "docs/conventions.md"} {
 		if !strings.Contains(byPath[p], "`braindex review`") {
 			t.Errorf("%s が braindex review に触れていない", p)
 		}
