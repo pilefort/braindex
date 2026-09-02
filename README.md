@@ -40,13 +40,13 @@ v0（2026-09-02）: 設計文書のみ。CLI とテンプレートはこの文�
 ## LLM wiki 型との対応
 
 Karpathy の LLM wiki 型（2026-04・`raw/` の素材から LLM が `wiki/` のページを編纂し `index.md` と `log.md` を維持する）と
-似た部品を持つが、役割の置き方が違う。ノート置き場の名前は設定 `notes_dir`（既定 `docs/notes`）で変えられるので、
-`wiki/` を使う運用でもそのまま走査できる。
+似た部品を持つが、役割の置き方が違う。ノート置き場は設定 `notes_dirs`（配列・既定 `["docs/notes"]`）で変えたり足したりできるので、
+`wiki/` を使う運用でも、`docs/notes` と `wiki` を並走させる移行中でも、そのまま走査できる。
 
 | LLM wiki 型 | braindex | 違い |
 |---|---|---|
 | `raw/`（素材） | 各リポの作業そのもの（コード・調査・会話） | 素材を 1 か所に集めない |
-| `wiki/`（LLM が編纂したページ） | 各リポの `docs/notes/`（`notes_dir` で変更可） | 人かエージェントが出典つきで書く。LLM が編纂・書き換えはしない |
+| `wiki/`（LLM が編纂したページ） | 各リポの `docs/notes/`（`notes_dirs` で変更・追加可） | 人かエージェントが出典つきで書く。LLM が編纂・書き換えはしない |
 | `index.md`（LLM が更新する目次） | hub リポの `index/catalog.md` | CLI が決定的に再生成する。LLM は触らない |
 | `log.md`（追記式の履歴） | `git log` と `catalog.md` の diff | 専用ファイルを持たない |
 | lint（矛盾・陳腐化の検出） | 週次レビュー（`docs/conventions.md`） | 検出の機械部分は CLI、判断は人 |
