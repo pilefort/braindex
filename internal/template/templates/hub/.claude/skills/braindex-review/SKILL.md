@@ -1,6 +1,6 @@
 ---
 name: braindex-review
-description: 知識ハブの週次レビュー。複数リポ横断の索引を再生成し、前回レビュー以降の変更を集め、review/YYYY-MM-DD.md の下書きを作る。「週次レビューをして」「前回から何が変わった」と言われたら使う。
+description: 知識ハブの週次レビュー。複数リポ横断の索引を再生成し、前回レビュー以降の変更を集め、work/review/YYYY-MM-DD.md の下書きを作る。「週次レビューをして」「前回から何が変わった」と言われたら使う。
 model: claude-opus-4-8
 ---
 

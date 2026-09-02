@@ -3,6 +3,7 @@ package template
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -129,5 +130,12 @@ func TestFiles_Hygiene(t *testing.T) {
 				t.Errorf("%s に %q が含まれる", f.Path, bad)
 			}
 		}
+		// 週次レビューの記録は work/review/(2026-09-02 決定)。原型の review/ 直下を書き残さない
+		if m := bareReview.FindString(s); m != "" {
+			t.Errorf("%s に work/ 配下でない %q がある", f.Path, m)
+		}
 	}
 }
+
+// bareReview は "work/" の付かないレビュー記録のパス(review/YYYY-MM-DD.md)を見つける。
+var bareReview = regexp.MustCompile(`(^|[^/])review/YYYY`)
