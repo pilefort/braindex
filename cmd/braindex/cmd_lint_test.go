@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -186,4 +187,109 @@ func TestLint_Git(t *testing.T) {
 		t.Errorf("未追跡の exit=%d 出力=%s", code, so.String())
 	}
 	_ = os.Remove(q)
+}
+
+// ISSUE-*.md 以外の .md はノートの曖昧さ検査になる。指摘は「パス:行: [種別] 内容」。
+func TestLint_NoteAuto(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "note.md")
+	writeFile(t, p, "# 例\n\n記録日: 2026-09-01\n\n最近かなり増えた。\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", p}, &so, &se); code != 2 {
+		t.Fatalf("exit=%d want 2\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	s := so.String()
+	if !strings.Contains(s, filepath.ToSlash(p)+":5: [曖昧な数量詞] 〔最近〕") || !strings.Contains(s, "〔かなり〕") {
+		t.Errorf("ノート検査の形でない: %s", s)
+	}
+	if strings.Contains(s, "いまここ") {
+		t.Errorf("ノートに ISSUE の検査が走った: %s", s)
+	}
+	if !strings.Contains(s, "指摘 2 件") {
+		t.Errorf("要約の件数が違う: %s", s)
+	}
+}
+
+// -kind issue でノートを ISSUE として検査でき、-kind note で ISSUE-*.md をノートとして検査できる。誤った値は 1。
+func TestLint_KindOverride(t *testing.T) {
+	dir := t.TempDir()
+	note := filepath.Join(dir, "note.md")
+	writeFile(t, note, "# 例\n\n記録日: 2026-09-01\n\n本文。\n")
+	issue := filepath.Join(dir, "ISSUE-a.md")
+	writeFile(t, issue, goodIssue)
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", "-no-git", "-date", "2026-09-02", "-kind", "issue", note}, &so, &se); code != 2 || !strings.Contains(so.String(), "いまここ") {
+		t.Errorf("-kind issue: exit=%d stdout=%s", code, so.String())
+	}
+	so.Reset()
+	if code := dispatch([]string{"lint", "-kind", "note", issue}, &so, &se); code != 0 || !strings.Contains(so.String(), "指摘 0 件") {
+		t.Errorf("-kind note: exit=%d stdout=%s", code, so.String())
+	}
+	so.Reset()
+	se.Reset()
+	if code := dispatch([]string{"lint", "-kind", "memo", note}, &so, &se); code != 1 || !strings.Contains(se.String(), "-kind は issue か note") {
+		t.Errorf("誤った -kind: exit=%d stderr=%s", code, se.String())
+	}
+}
+
+// -kind note でディレクトリを渡すと直下の *.md。
+func TestLint_NoteDir(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a.md"), "2026-09-01 の記録。\n")
+	writeFile(t, filepath.Join(dir, "b.md"), "日付なし。\n")
+	writeFile(t, filepath.Join(dir, "c.txt"), "日付なし。\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", "-kind", "note", dir}, &so, &se); code != 2 {
+		t.Fatalf("exit=%d want 2\n%s%s", code, so.String(), se.String())
+	}
+	if !strings.Contains(so.String(), "b.md: [日付なし]") || !strings.Contains(so.String(), "2 ファイル") || strings.Contains(so.String(), "c.txt") {
+		t.Errorf("対象が違う: %s", so.String())
+	}
+}
+
+// 用語集: -glossary で渡すか、ノートのあるリポの docs/glossary.md を自動で探す。無ければ未定義用語は見ない。
+func TestLint_Glossary(t *testing.T) {
+	repo := t.TempDir()
+	note := filepath.Join(repo, "docs", "notes", "n.md")
+	writeFile(t, note, "2026-09-01 「新語」と「既知語」。\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", note}, &so, &se); code != 0 {
+		t.Errorf("用語集なし: exit=%d stdout=%s", code, so.String())
+	}
+	writeFile(t, filepath.Join(repo, "docs", "glossary.md"), "## 既知語\n定義。\n")
+	so.Reset()
+	if code := dispatch([]string{"lint", note}, &so, &se); code != 2 || !strings.Contains(so.String(), "[未定義用語(候補)] 用語「新語」") || strings.Contains(so.String(), "「既知語」") {
+		t.Errorf("自動検出: exit=%d stdout=%s", code, so.String())
+	}
+	other := filepath.Join(t.TempDir(), "g.md")
+	writeFile(t, other, "新語: 定義。\n")
+	so.Reset()
+	if code := dispatch([]string{"lint", "-glossary", other, note}, &so, &se); code != 2 || !strings.Contains(so.String(), "用語「既知語」") || strings.Contains(so.String(), "用語「新語」") {
+		t.Errorf("-glossary: exit=%d stdout=%s", code, so.String())
+	}
+	se.Reset()
+	if code := dispatch([]string{"lint", "-glossary", filepath.Join(repo, "nope.md"), note}, &so, &se); code != 1 || !strings.Contains(se.String(), "用語集を読めない") {
+		t.Errorf("無い用語集: exit=%d stderr=%s", code, se.String())
+	}
+}
+
+// -json は指摘の配列(path・line・msg・kind・severity)だけを stdout に出す。指摘なしは空配列。
+func TestLint_JSON(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "note.md")
+	writeFile(t, p, "最近の話。\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", "-json", p}, &so, &se); code != 2 {
+		t.Fatalf("exit=%d want 2\n%s%s", code, so.String(), se.String())
+	}
+	var got []map[string]any
+	if err := json.Unmarshal(so.Bytes(), &got); err != nil {
+		t.Fatalf("JSON でない: %v\n%s", err, so.String())
+	}
+	if len(got) != 2 || got[0]["kind"] != "no_date" || got[0]["severity"] != "warn" || got[1]["line"] != float64(1) || got[1]["kind"] != "vague_quantifier" {
+		t.Errorf("内容が違う: %s", so.String())
+	}
+	writeFile(t, p, "2026-09-01 の記録。\n")
+	so.Reset()
+	if code := dispatch([]string{"lint", "-json", p}, &so, &se); code != 0 || strings.TrimSpace(so.String()) != "[]" {
+		t.Errorf("指摘なし: exit=%d stdout=%q", code, so.String())
+	}
 }
