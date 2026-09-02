@@ -30,7 +30,7 @@ func ParseCatalog(b []byte) ([]render.Entry, error) {
 		}
 		cells := splitRow(t)
 		if len(cells) != 5 {
-			return nil, fmt.Errorf("catalog %d 行目: 表の列が 5 でない(%d 列)。手で編集されている", i+1, len(cells))
+			return nil, fmt.Errorf("catalog %d 行目: 表の列が 5 でない(%d 列)。braindex が書いた形でない", i+1, len(cells))
 		}
 		if isHeaderRow(cells) || isSeparatorRow(cells) {
 			continue

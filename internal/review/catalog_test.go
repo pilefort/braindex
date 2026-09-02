@@ -70,7 +70,7 @@ func TestParseCatalog_Broken(t *testing.T) {
 		name, src, want string
 	}{
 		{"見出しより前の表", "| 日付 | 種別 | タイトル | 要旨 | パス |\n", "1 行目: リポの見出し"},
-		{"列が足りない", "## r\n| 日付 | 種別 | タイトル | 要旨 | パス |\n|---|---|---|---|---|\n| 2026-01-02 | notes | T | r/t.md |\n", "4 行目: 表の列が 5 でない(4 列)"},
+		{"列が足りない", "## r\n| 日付 | 種別 | タイトル | 要旨 | パス |\n|---|---|---|---|---|\n| 2026-01-02 | notes | T | r/t.md |\n", "4 行目: 表の列が 5 でない(4 列)。braindex が書いた形でない"},
 	}
 	for _, c := range cases {
 		_, err := ParseCatalog([]byte(c.src))
