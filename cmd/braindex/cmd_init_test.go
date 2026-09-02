@@ -15,7 +15,7 @@ func TestInit_Hub(t *testing.T) {
 	if code := dispatch([]string{"init", dir}, &so, &se); code != 0 {
 		t.Fatalf("exit=%d want 0\nstderr=%s", code, se.String())
 	}
-	for _, p := range []string{"README.md", "braindex.json", "docs/conventions.md", "work/review/.gitkeep", ".claude/skills/braindex-review/SKILL.md", ".claude/skills/retro/SKILL.md"} {
+	for _, p := range []string{"README.md", "braindex.json", "docs/conventions.md", "work/review/.gitkeep", ".claude/skills/braindex-review/SKILL.md", ".claude/skills/retro/SKILL.md", ".claude/skills/record-lint/SKILL.md", ".claude/skills/contradiction-scan/SKILL.md"} {
 		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(p))); err != nil {
 			t.Errorf("作られていない: %s", p)
 		}
