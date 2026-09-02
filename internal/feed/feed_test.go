@@ -141,6 +141,42 @@ func TestParse_Charset(t *testing.T) {
 	}
 }
 
+// DTD で宣言された実体は展開しない。外部実体(file://)はファイルを読まず、
+// 入れ子の実体(実体爆弾)も膨らまない。どちらも参照は文字のまま残る。
+func TestParse_DoesNotExpandEntities(t *testing.T) {
+	secret := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(secret, []byte("秘密の中身"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// file:///tmp/x(POSIX)・file:///C:/…(Windows)のどちらでも成り立つ形にする
+	fileURL := "file:///" + strings.TrimPrefix(filepath.ToSlash(secret), "/")
+	external := `<?xml version="1.0"?><!DOCTYPE rss [<!ENTITY xxe SYSTEM "` + fileURL + `">]>` +
+		`<rss version="2.0"><channel><title>T</title><item><title>A&xxe;B</title>` +
+		`<link>https://example.com/x</link></item></channel></rss>`
+	d, err := ParseBytes([]byte(external))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Entries) != 1 {
+		t.Fatalf("entries=%d", len(d.Entries))
+	}
+	if strings.Contains(d.Entries[0].Title, "秘密の中身") {
+		t.Errorf("外部実体が展開されてファイルの中身が入った: %q", d.Entries[0].Title)
+	}
+
+	bomb := `<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lol">` +
+		`<!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">` +
+		`<!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">]>` +
+		`<rss version="2.0"><channel><title>&lol3;</title></channel></rss>`
+	d2, err := ParseBytes([]byte(bomb))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d2.Title) > len("&lol3;") {
+		t.Errorf("入れ子の実体が展開された(題名 %d バイト)", len(d2.Title))
+	}
+}
+
 // 未定義の実体参照(&nbsp;)が混じっていても落ちない。
 func TestParse_LenientEntities(t *testing.T) {
 	in := `<rss version="2.0"><channel><title>T</title><item><title>A&nbsp;B</title><link>https://example.com/x</link></item></channel></rss>`
