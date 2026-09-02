@@ -21,7 +21,7 @@ var retroLoc = time.Local
 func init() {
 	register(&command{
 		name:    "retro",
-		summary: "セッションログの訂正率を測る(stats)・閾値超えを知らせる(check)。本文はどこにも書かず送らない",
+		summary: "セッションログの訂正率を測る(stats)・閾値超えを知らせる(check)・ダイジェストを一時ディレクトリに書く(extract)。本文は送らない",
 		run:     runRetro,
 	})
 }
@@ -29,7 +29,7 @@ func init() {
 func retroUsage(w io.Writer) {
 	fmt.Fprintln(w, "使い方: braindex retro <サブコマンド> [フラグ]")
 	fmt.Fprintln(w, "  Claude Code のセッションログ(既定 ~/.claude/projects)を読み、人間の発話のうち訂正(辞書照合)の割合を出す。")
-	fmt.Fprintln(w, "  判定は決定論で、発話の本文はどこにも書かず送らない。")
+	fmt.Fprintln(w, "  判定は決定論で、本文はどこにも送らない。本文を書くのは extract だけで、書き先は OS の一時ディレクトリ(リポには書かない)。")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "サブコマンド:")
 	fmt.Fprintln(w, "  stats   発話数・訂正数・率を、プロジェクト別／週別／セッション内位置の区間別の表で出す")
