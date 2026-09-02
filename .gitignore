@@ -1,0 +1,17 @@
+# 作業状態(work/)と設計メモ(docs/)は、このリポでは git 管理しない(2026-09-02 決定)。
+# 作者のローカルにだけ置き、公開物はコード・README・テンプレに限る
+/work/
+/docs/
+
+# Go のビルド生成物(go run で実行する。バイナリはコミットしない)
+/braindex
+/braindex.exe
+*.exe
+*.test
+
+# Python のキャッシュ(将来の contrib/ 用)
+__pycache__/
+*.pyc
+
+# Claude Code のマシン固有設定(push 許可など)。共有しない
+/.claude/settings.local.json

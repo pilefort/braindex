@@ -1,0 +1,4 @@
+# 改行は LF に統一する。braindex が生成する catalog.md は LF 固定で出力するため、
+# git の自動 CRLF 変換が入ると「生成結果」と「checkout 結果」がズレて毎回 diff になり、
+# 「git diff = 前回からの差分」という決定性の設計が壊れる。それを防ぐ。
+* text=auto eol=lf
