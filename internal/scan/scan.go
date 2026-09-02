@@ -75,7 +75,8 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 		if ex.Repo == "" || strings.ContainsAny(ex.Repo, `/\\`) || ex.Repo == "." || ex.Repo == ".." {
 			return nil, nil, fmt.Errorf("extra: repo は root 直下のディレクトリ名だけを書く: %q", ex.Repo)
 		}
-		if err := checkRepoRelative("extra "+ex.Repo+"/path", ex.Path); err != nil {
+		// ラベルは「extra <repo> の path」。他の文言の "extra <repo>/<path>" と並んだとき /path が値に見えないように
+		if err := checkRepoRelative("extra "+ex.Repo+" の path", ex.Path); err != nil {
 			return nil, nil, err
 		}
 		for _, pat := range ex.Exclude {
