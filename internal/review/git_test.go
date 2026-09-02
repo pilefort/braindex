@@ -271,6 +271,29 @@ func TestNoCommits(t *testing.T) {
 	}
 }
 
+// 親リポの中のサブディレクトリ(root 自体が 1 つの git リポで、その直下の各ディレクトリをリポ扱いする形)でも、
+// --relative でパスは dir 相対になり、dir の外のファイルは入らず、show の ./<rel> も dir 基準で解決される。
+func TestSubdirOfRepo(t *testing.T) {
+	r := newTestRepo(t)
+	r.write("sub/docs/notes/x.md", "# x\n")
+	r.write("other/docs/notes/y.md", "# y\n")
+	r.write("sub/index/catalog.md", "c1\n")
+	r.commit("2026-08-20", "m")
+	sub := filepath.Join(r.dir, "sub")
+	rc, err := r.git.ChangedSince(sub, "2026-08-10", []string{"docs/notes", "docs/decisions.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ChangedFile{{Path: "docs/notes/x.md", Status: "追加"}}
+	if rc.Commits != 1 || !reflect.DeepEqual(rc.Files, want) {
+		t.Errorf("サブディレクトリ相対で、外の other/ は入らないはず: commits=%d files=%v", rc.Commits, rc.Files)
+	}
+	s, ok, err := r.git.FileAt(sub, "index/catalog.md", "2026-08-25")
+	if err != nil || !ok || string(s.Content) != "c1\n" {
+		t.Errorf("FileAt(sub): ok=%v err=%v content=%q", ok, err, s.Content)
+	}
+}
+
 func TestInRepo(t *testing.T) {
 	r := newTestRepo(t)
 	if !r.git.InRepo(r.dir) {
