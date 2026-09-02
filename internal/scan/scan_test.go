@@ -408,6 +408,30 @@ func TestScan_ExtraDoesNotDuplicateAutoFiles(t *testing.T) {
 	}
 }
 
+// extra が docs 全体を指しても、docs/decisions.md は自動規則の種別 decisions で 1 回だけ載る
+// (notes_dirs の入れ子と同じく decisions が勝つ。TestScan_NotesDirs_Dedupe の extra 版)。
+func TestScan_ExtraDoesNotDuplicateDecisions(t *testing.T) {
+	cfg := Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "repo-both", Path: "docs", Recursive: true, Kind: "x"}}}
+	files, _, err := Scan(cfg)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	count := map[string]int{}
+	kind := map[string]string{}
+	for _, f := range files {
+		count[f.Rel]++
+		kind[f.Rel] = f.Kind
+	}
+	for _, c := range []struct{ rel, want string }{
+		{"repo-both/docs/decisions.md", "decisions"},
+		{"repo-both/docs/notes/common/a.md", "notes/common"},
+	} {
+		if count[c.rel] != 1 || kind[c.rel] != c.want {
+			t.Errorf("%s: 1 回・種別 %q を期待: count=%d kind=%q", c.rel, c.want, count[c.rel], kind[c.rel])
+		}
+	}
+}
+
 // notes_dirs と extra.path はリポ内の相対パスに限る。".." を含む・絶対パスは設定の誤りなのでエラー。
 // エラー文は「どの設定の・何が」だめかを名指しする(root 不在など別の理由で落ちたのと区別できるように)。
 func TestScan_RejectsEscapingPaths(t *testing.T) {
