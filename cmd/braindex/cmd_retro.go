@@ -245,6 +245,9 @@ func runRetroCheck(args []string, stdout, stderr io.Writer) int {
 	}
 	if thresholdSet {
 		thr = o.threshold
+	} else if thr > 1 {
+		// 0 以下は WithDefaults が既定値に置き換えるが、1 超はそのまま通ると率が届くことが無い。設定の誤りとして止める
+		return fail(fmt.Errorf("設定 retro.threshold は 0 より大きく 1 以下(0.10 = 10%%): %g", thr))
 	}
 
 	w := retro.Recent(today, days, retroLoc)

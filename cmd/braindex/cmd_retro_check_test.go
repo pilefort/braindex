@@ -57,6 +57,26 @@ func TestRetroCheck_Quiet(t *testing.T) {
 	}
 }
 
+// 設定 retro.threshold が 1 を超えていたら、率が届くことは無いので設定の誤りとして 1(フラグの -threshold と同じ範囲)。
+func TestRetroCheck_ConfigThresholdOutOfRange(t *testing.T) {
+	fixUTC(t)
+	dir := t.TempDir()
+	abs, err := filepath.Abs(retroTestdata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "braindex.json"), `{"retro": {"sessions_dir": `+jsonString(abs)+`, "threshold": 1.5}}`)
+	code, so, se := execRetroCheck(t, "-config", filepath.Join(dir, "braindex.json"), "-date", "2026-09-01")
+	if code != 1 || so != "" || !strings.Contains(se, "retro.threshold") {
+		t.Errorf("exit=%d want 1 stdout=%q stderr=%q", code, so, se)
+	}
+	// フラグで有効な値を明示すれば、設定の誤りは使われないので通る
+	code, _, se = execRetroCheck(t, "-config", filepath.Join(dir, "braindex.json"), "-date", "2026-09-01", "-threshold", "0.5")
+	if code != 2 {
+		t.Errorf("フラグで上書き: exit=%d want 2 stderr=%q", code, se)
+	}
+}
+
 // 窓に発話が無ければ超えない(率 0)。
 func TestRetroCheck_NoUtterances(t *testing.T) {
 	fixUTC(t)
