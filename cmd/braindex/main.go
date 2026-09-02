@@ -1,7 +1,8 @@
 // braindex — 複数リポを横断する知識の索引 (index/catalog.md) を決定的に再生成する CLI。
 //
-// scan(スキャン対象の発見) → extract(タイトル・日付・要旨の抽出) → render(catalog.md 生成)
-// の順に処理する。hub リポ(索引を置くリポ)のルートで実行する。
+// 引数無し(フラグのみ)なら索引を生成する: scan(スキャン対象の発見) → extract(タイトル・日付・
+// 要旨の抽出) → render(catalog.md 生成)。hub リポ(索引を置くリポ)のルートで実行する。
+// 最初の引数がサブコマンド名(init など)なら、そのサブコマンドを実行する(commands.go)。
 //
 // 終了コード:
 //   - 0: 成功
@@ -10,27 +11,26 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/pilefort/braindex/internal/catalog"
+	"github.com/pilefort/braindex/internal/config"
 	"github.com/pilefort/braindex/internal/scan"
 )
 
 const (
-	defaultConfig = "braindex.json"    // カレントディレクトリ基準
+	defaultConfig = config.DefaultPath // カレントディレクトリ基準
 	defaultOut    = "index/catalog.md" // 設定ファイルのディレクトリ基準(設定が無ければカレント)
 )
 
-// options はコマンドラインで与える値。空は「未指定」。
+// options は索引生成のコマンドラインで与える値。空は「未指定」。
 type options struct {
 	config string // -config。未指定なら既定 braindex.json(無くてもよい)
 	root   string // -root。設定ファイルの root より優先
@@ -39,17 +39,29 @@ type options struct {
 }
 
 func main() {
-	o, code, done := parseArgs(os.Args[1:], os.Stderr)
-	if done {
-		os.Exit(code)
-	}
-	os.Exit(run(o, os.Stdout, os.Stderr))
+	os.Exit(dispatch(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-// parseArgs はコマンドラインを解釈する。-h、解釈できないフラグ、位置引数のときはメッセージを stderr に
-// 出し、done=true と終了コード(-h は 0、それ以外は 1)を返す。
+// dispatch は最初の引数が登録済みのサブコマンド名ならそれを実行し、そうでなければフラグを解釈して
+// 索引を生成する。未登録の語は parseArgs が位置引数として拒否する(終了コード 1)。
+func dispatch(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		if c, ok := commands[args[0]]; ok {
+			return c.run(args[1:], stdout, stderr)
+		}
+	}
+	o, code, done := parseArgs(args, stderr)
+	if done {
+		return code
+	}
+	return run(o, stdout, stderr)
+}
+
+// parseArgs は索引生成のコマンドラインを解釈する。-h、解釈できないフラグ、位置引数のときはメッセージを
+// stderr に出し、done=true と終了コード(-h は 0、それ以外は 1)を返す。
 // flag パッケージ既定の ExitOnError は誤りで 2 を返すが、2 は「警告つきで完了」に使っているので区別する。
-// 位置引数はサブコマンド未実装のうちは受け付けない(`braindex init -root x` が黙って通常の走査に入らないように)。
+// 位置引数は受け付けない(登録済みのサブコマンドは dispatch が先に拾う。それ以外の語が黙って通常の走査に
+// 入らないようにする)。
 func parseArgs(args []string, stderr io.Writer) (o options, code int, done bool) {
 	fs := flag.NewFlagSet("braindex", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -57,6 +69,19 @@ func parseArgs(args []string, stderr io.Writer) (o options, code int, done bool)
 	fs.StringVar(&o.root, "root", "", "走査のルート。直下の各ディレクトリを 1 リポとみなす(設定ファイルの root より優先)")
 	fs.StringVar(&o.out, "out", "", "索引の出力先(既定: 設定ファイルと同じディレクトリの index/catalog.md)")
 	fs.StringVar(&o.date, "date", "", "先頭行に載せる生成日 YYYY-MM-DD(既定: 今日)。再現可能な出力が要るときに使う")
+	fs.Usage = func() {
+		fmt.Fprintln(stderr, "使い方:")
+		fmt.Fprintln(stderr, "  braindex [フラグ]              索引(index/catalog.md)を生成する")
+		fmt.Fprintln(stderr, "  braindex <コマンド> [引数]     サブコマンドを実行する(フラグは braindex <コマンド> -h)")
+		fmt.Fprintln(stderr)
+		fmt.Fprintln(stderr, "フラグ:")
+		fs.PrintDefaults()
+		if len(commands) > 0 {
+			fmt.Fprintln(stderr)
+			fmt.Fprintln(stderr, "コマンド:")
+			printCommands(stderr)
+		}
+	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return o, 0, true
@@ -64,14 +89,14 @@ func parseArgs(args []string, stderr io.Writer) (o options, code int, done bool)
 		return o, 1, true // fs.Parse が誤りと使い方を stderr に書いている
 	}
 	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "braindex: 引数 %q は受け付けない(フラグだけを渡す)\n", fs.Args())
+		fmt.Fprintf(stderr, "braindex: 引数 %q は受け付けない(サブコマンドの一覧は braindex -h。索引生成はフラグだけを渡す)\n", fs.Args())
 		fs.Usage()
 		return o, 1, true
 	}
 	return o, 0, false
 }
 
-// run は終了コードを返す。メッセージは stdout / stderr に書く(テストから差し替えられるように引数で受ける)。
+// run は索引を生成し、終了コードを返す。メッセージは stdout / stderr に書く(テストから差し替えられるように引数で受ける)。
 func run(o options, stdout, stderr io.Writer) int {
 	cfg, outPath, genDate, err := resolve(o)
 	if err != nil {
@@ -111,13 +136,14 @@ func resolve(o options) (cfg scan.Config, outPath, genDate string, err error) {
 	if !explicit {
 		cfgPath = defaultConfig
 	}
-	cfg, found, err := loadConfig(cfgPath)
+	fc, found, err := config.Load(cfgPath)
 	if err != nil {
 		return cfg, "", "", err
 	}
 	if explicit && !found {
 		return cfg, "", "", fmt.Errorf("設定ファイルが見つからない: %s", cfgPath)
 	}
+	cfg = fc.Config
 	baseDir := "."
 	if found {
 		baseDir = filepath.Dir(cfgPath)
@@ -148,28 +174,6 @@ func resolve(o options) (cfg scan.Config, outPath, genDate string, err error) {
 		return cfg, "", "", fmt.Errorf("-date は YYYY-MM-DD で指定する: %q", genDate)
 	}
 	return cfg, outPath, genDate, nil
-}
-
-// loadConfig は設定ファイル(JSON)を読む。ファイルが無ければ found=false でゼロ値を返す(エラーにしない)。
-// 未知のキーと、オブジェクトの後ろに続く余分な内容はエラーにする(notes_dir のような打ち間違いや
-// 壊れたファイルを無言で通さないため。Decoder は先頭の 1 値しか読まないので末尾を自分で確かめる)。
-func loadConfig(path string) (cfg scan.Config, found bool, err error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return cfg, false, nil
-		}
-		return cfg, false, fmt.Errorf("設定ファイルを読めない: %w", err)
-	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&cfg); err != nil {
-		return cfg, true, fmt.Errorf("設定ファイル %s: %w", path, err)
-	}
-	if _, err := dec.Token(); err != io.EOF {
-		return cfg, true, fmt.Errorf("設定ファイル %s: 末尾に余分な内容がある(JSON のオブジェクト 1 つだけを書く)", path)
-	}
-	return cfg, true, nil
 }
 
 // joinIfRelative は p が相対パスなら base と結合し、絶対パスならそのまま返す。
