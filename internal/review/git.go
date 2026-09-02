@@ -26,8 +26,11 @@ func LookGit() (g Git, ok bool) {
 }
 
 // run は dir をカレントにして git を実行し、stdout を返す。失敗時は stderr の要点をエラーに含める。
+// core.quotePath を切るのは、既定(true)だと ASCII 以外のパスが "\346\227\245..." と八進エスケープされ、
+// 索引のパスと突き合わせられず表示も読めないため(二重引用符・バックスラッシュ・制御文字は false でも
+// エスケープされる)。
 func (g Git) run(dir string, args ...string) (string, error) {
-	cmd := exec.Command(g.path, append([]string{"-C", dir}, args...)...)
+	cmd := exec.Command(g.path, append([]string{"-c", "core.quotePath=false", "-C", dir}, args...)...)
 	out, err := cmd.Output()
 	if err != nil {
 		var ee *exec.ExitError
@@ -45,6 +48,16 @@ func (g Git) InRepo(dir string) bool {
 	return err == nil && strings.TrimSpace(out) == "true"
 }
 
+// noCommits は dir が git 管理下で、まだコミットが 1 つも無い(git init 直後で HEAD の指す先が無い)かを返す。
+// git log はこの状態を失敗にするので、呼び出し側は log が失敗したときにこれで見分けて「無し」に倒す。
+func (g Git) noCommits(dir string) bool {
+	if !g.InRepo(dir) {
+		return false
+	}
+	_, err := g.run(dir, "rev-parse", "--verify", "--quiet", "HEAD")
+	return err != nil
+}
+
 // Snapshot は前回日時点の索引のコミット。
 type Snapshot struct {
 	Content []byte
@@ -58,6 +71,9 @@ type Snapshot struct {
 func (g Git) FileAt(dir, rel, until string) (s Snapshot, ok bool, err error) {
 	out, err := g.run(dir, "log", "-1", "--format=%h %as", "--until="+until+" 23:59:59", "--", rel)
 	if err != nil {
+		if g.noCommits(dir) {
+			return s, false, nil
+		}
 		return s, false, err
 	}
 	line := strings.TrimSpace(out)
@@ -86,17 +102,22 @@ type RepoChanges struct {
 	Files   []ChangedFile
 }
 
-var hashLine = regexp.MustCompile(`^[0-9a-f]{40}$`)
+// hashLine は --format=%H のコミット行。SHA-1 なら 40 桁、SHA-256 のリポ(--object-format=sha256)なら 64 桁。
+var hashLine = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 
 // ChangedSince は dir で since(YYYY-MM-DD。その日を含む)以降のコミットが pathspecs の範囲で触ったファイルを集める。
 // 同じファイルが複数のコミットに現れたら 1 行にまとめ、前回日の時点と今の有無で 追加／変更／削除 を決める。
 // 窓の中で作られて消えたファイルは載せない(前回にも今にも無い)。リネームは旧パスを削除・新パスを追加として扱う。
 // パスは dir 相対(--relative)。dir の外のファイルは含まれない。
 func (g Git) ChangedSince(dir, since string, pathspecs []string) (RepoChanges, error) {
-	args := []string{"log", "--since=" + since, "--name-status", "--relative", "--format=%H", "--"}
+	// 時刻を明示する。日付だけだと git は「その日の今の時刻」と解釈し、0 時〜実行時刻のコミットが落ちる
+	args := []string{"log", "--since=" + since + " 00:00:00", "--name-status", "--relative", "--format=%H", "--"}
 	args = append(args, pathspecs...)
 	out, err := g.run(dir, args...)
 	if err != nil {
+		if g.noCommits(dir) {
+			return RepoChanges{}, nil
+		}
 		return RepoChanges{}, err
 	}
 	return parseNameStatus(out), nil

@@ -41,7 +41,7 @@ func runReview(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	fs.StringVar(&o.config, "config", "", "設定ファイルのパス(既定: カレントの braindex.json。そのディレクトリを hub とみなす)")
 	fs.StringVar(&o.date, "date", "", "今日として使う日付 YYYY-MM-DD(既定: 実行日)。出力ファイル名と閾値の基準。再現可能な出力が要るときに使う")
-	fs.StringVar(&o.since, "since", "", "前回レビュー日 YYYY-MM-DD(既定: 記録の置き場にある最新の YYYY-MM-DD.md → 無ければ review.since_days 日前)")
+	fs.StringVar(&o.since, "since", "", "前回レビュー日 YYYY-MM-DD(既定: 記録の置き場にある今日より前で最新の YYYY-MM-DD.md → 無ければ review.since_days 日前)")
 	fs.StringVar(&o.out, "out", "", "出力先(既定: 設定 review.dir の <今日>.md)。既にあれば書かない")
 	fs.BoolVar(&o.stdout, "stdout", false, "ファイルに書かず標準出力に出す")
 	fs.Usage = func() {
@@ -161,7 +161,8 @@ func resolveSince(flagSince, reviewDir, dirRel, today string, sinceDays int) (si
 }
 
 // latestReviewBefore は dir にある YYYY-MM-DD.md のうち today より前で最新の日付を返す。無ければ ""。
-// 置き場が無いのは初回なので正常。
+// 置き場が無いのは初回なので正常。形だけ日付で実在しない日(2026-08-32.md)は他の名前と同じく無視する
+// (採ると前回日に不正な日付が載り、git の --since/--until にもそのまま渡る)。
 func latestReviewBefore(dir, today string) string {
 	des, err := os.ReadDir(dir)
 	if err != nil {
@@ -174,6 +175,9 @@ func latestReviewBefore(dir, today string) string {
 			continue
 		}
 		d := name[:len(name)-len(".md")]
+		if _, err := time.Parse("2006-01-02", d); err != nil {
+			continue
+		}
 		if d < today && d > best {
 			best = d
 		}
