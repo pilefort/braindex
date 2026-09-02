@@ -13,7 +13,7 @@ func TestExtract_Title(t *testing.T) {
 		name, content, want string
 	}{
 		{"f.md", "# タイトルX\n\n本文", "タイトルX"},
-		{"no-title.md", "本文のみ\nもう一行", "no-title"},        // H1 無し → ファイル名
+		{"no-title.md", "本文のみ\nもう一行", "no-title"},       // H1 無し → ファイル名
 		{"h2first.md", "## これは H2\n# 本当のH1\n", "本当のH1"}, // H2 はタイトルにしない
 	}
 	for _, c := range cases {
