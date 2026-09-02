@@ -135,9 +135,10 @@ braindex retro extract [-since YYYY-MM-DD | -window-days N] [-out DIR]          
 - 位置: 各発話にセッション内の通し番号（何番目の人間の発話か）を持ち、`-by position` で区間（既定 `1-3,4-10,11-30,31-`。最初の 3 発話を分ける）別の率を出す。長いセッションで訂正が増えるかを見るため
 - ダイジェスト（`extract`）: 窓の中の人間の発話ごとに「直前のアシスタント本文 300 字 → 発話（2000 字まで）」。訂正辞書のヒットは `★`、感情辞書は `☆` を見出しに付ける。
   出力は `sessions/<プロジェクト>/<開始日時>_<ID>.md` と `index.tsv`。既定の出力先は OS の一時ディレクトリの `braindex-retro`。
+  出力先の `sessions/` と `index.tsv` は実行のたびに書き直す（前回の分は消える。出力先の他のファイルは触らない）。
   セッションログには機微が含まれるので、`-out` でリポの中に向けるのは自己責任で
 
-設定（`braindex.json` の `retro` 節。設定ファイルが無くても動く。`retro` は hub を要らない）:
+設定（`braindex.json` の `retro` 節。設定ファイルが無くても動き、`root`（hub）も要らない）:
 
 | キー | 意味 |
 |---|---|
@@ -233,7 +234,8 @@ braindex review                                                # 週に 1 回: �
 ```
 
 `braindex init -repo <dir>` は各プロジェクトのリポに `docs/notes/{common,project}/`・`docs/decisions.md`・`work/{APPROVALS,TODO}.md` の骨格を置く。
-どちらも既存ファイルは上書きしないので、再実行しても安全。hub には週次レビューのスキル（`.claude/skills/braindex-review/SKILL.md`）も入る。
+どちらも既存ファイルは上書きしないので、再実行しても安全。hub には週次レビューのスキル（`.claude/skills/braindex-review/SKILL.md`）と
+振り返りのスキル（`.claude/skills/retro/SKILL.md`）も入る。
 
 **エージェントに横断検索させる**: hub の `CLAUDE.md` には「索引を grep → 実ファイルを読む」の手順が入るが、hub の外のリポで作業している
 セッションからも引かせるには、利用者のグローバル `CLAUDE.md`（Claude Code なら `~/.claude/CLAUDE.md`）に次の 3 行を足す（`<hub>` は hub の場所）:
