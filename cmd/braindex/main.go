@@ -2,6 +2,11 @@
 //
 // scan(スキャン対象の発見) → extract(タイトル・日付・要旨の抽出) → render(catalog.md 生成)
 // の順に処理する。hub リポ(索引を置くリポ)のルートで実行する。
+//
+// 終了コード:
+//   - 0: 成功
+//   - 1: 失敗(設定・root が読めない等。索引は書かない)
+//   - 2: 警告つきで完了(読めないファイルや存在しない extra を飛ばした。索引は書く)
 package main
 
 import (
@@ -16,29 +21,37 @@ import (
 )
 
 func main() {
-	if err := run("braindex.json", "index/catalog.md", time.Now().Format("2006-01-02")); err != nil {
-		fmt.Fprintln(os.Stderr, "braindex:", err)
-		os.Exit(1)
-	}
+	os.Exit(run("braindex.json", "index/catalog.md", time.Now().Format("2006-01-02")))
 }
 
-func run(cfgPath, outPath, genDate string) error {
+func run(cfgPath, outPath, genDate string) int {
 	cfg, err := loadConfig(cfgPath)
 	if err != nil {
-		return err
+		fmt.Fprintln(os.Stderr, "braindex:", err)
+		return 1
 	}
-	out, n, err := catalog.Build(cfg, genDate)
+	res, err := catalog.Build(cfg, genDate)
 	if err != nil {
-		return err
+		fmt.Fprintln(os.Stderr, "braindex:", err)
+		return 1
+	}
+	for _, w := range res.Warnings {
+		fmt.Fprintln(os.Stderr, "braindex: 警告:", w)
 	}
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
-		return err
+		fmt.Fprintln(os.Stderr, "braindex:", err)
+		return 1
 	}
-	if err := os.WriteFile(outPath, out, 0o644); err != nil {
-		return err
+	if err := os.WriteFile(outPath, res.Catalog, 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, "braindex:", err)
+		return 1
 	}
-	fmt.Printf("catalog 生成: %d 件 → %s\n", n, outPath)
-	return nil
+	fmt.Printf("catalog 生成: %d 件 → %s\n", res.Entries, outPath)
+	if len(res.Warnings) > 0 {
+		fmt.Fprintf(os.Stderr, "braindex: 警告 %d 件(終了コード 2)\n", len(res.Warnings))
+		return 2
+	}
+	return 0
 }
 
 // loadConfig は braindex.json を読む。root 未指定なら ".."(hub リポの親ディレクトリ)。

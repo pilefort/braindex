@@ -4,6 +4,8 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/pilefort/braindex/internal/scan"
@@ -23,12 +25,16 @@ func e2eConfig() scan.Config {
 }
 
 func TestBuild_E2EGolden(t *testing.T) {
-	got, n, err := Build(e2eConfig(), "2026-08-07")
+	res, err := Build(e2eConfig(), "2026-08-07")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	if n != 12 {
-		t.Errorf("件数: want=12 got=%d", n)
+	got := res.Catalog
+	if res.Entries != 12 {
+		t.Errorf("件数: want=12 got=%d", res.Entries)
+	}
+	if len(res.Warnings) != 0 {
+		t.Errorf("警告なしを期待: %q", res.Warnings)
 	}
 
 	golden := filepath.Join("testdata", "golden.md")
@@ -51,10 +57,39 @@ func TestBuild_E2EGolden(t *testing.T) {
 	}
 }
 
+// 読めないファイルは警告にして飛ばし、残りは索引に載せる(無言スキップにしない)。
+func TestBuild_UnreadableFileWarns(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Getuid() == 0 {
+		t.Skip("chmod 000 で読めなくする方法が使えない環境")
+	}
+	root := t.TempDir()
+	notes := filepath.Join(root, "r", "docs", "notes")
+	if err := os.MkdirAll(notes, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(notes, "ok.md"), []byte("# ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bad := filepath.Join(notes, "bad.md")
+	if err := os.WriteFile(bad, []byte("# bad\n"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Build(scan.Config{Root: root}, "2026-08-07")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if res.Entries != 1 || !strings.Contains(string(res.Catalog), "ok.md") {
+		t.Errorf("読める方だけ載るべき: entries=%d\n%s", res.Entries, res.Catalog)
+	}
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "bad.md") {
+		t.Errorf("警告 1 件(bad.md)を期待: %q", res.Warnings)
+	}
+}
+
 func TestBuild_Deterministic(t *testing.T) {
-	a, _, _ := Build(e2eConfig(), "2026-08-07")
-	b, _, _ := Build(e2eConfig(), "2026-08-07")
-	if string(a) != string(b) {
+	a, _ := Build(e2eConfig(), "2026-08-07")
+	b, _ := Build(e2eConfig(), "2026-08-07")
+	if string(a.Catalog) != string(b.Catalog) {
 		t.Errorf("2 回生成でバイト不一致(決定性違反)")
 	}
 }

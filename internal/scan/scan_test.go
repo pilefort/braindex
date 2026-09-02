@@ -20,7 +20,7 @@ func testConfig() Config {
 }
 
 func TestScan_FoundSet(t *testing.T) {
-	files, err := Scan(testConfig())
+	files, _, err := Scan(testConfig())
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestScan_FoundSet(t *testing.T) {
 }
 
 func TestScan_Exclusions(t *testing.T) {
-	files, err := Scan(testConfig())
+	files, _, err := Scan(testConfig())
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestScan_Exclusions(t *testing.T) {
 // notes_dirs を [wiki] にすると、docs/notes でなく wiki/ を走査し、種別ラベルは末尾セグメント(wiki)になる。
 // docs/decisions.md は notes_dir と無関係に拾う。archive は従来どおり除外。
 func TestScan_NotesDir(t *testing.T) {
-	files, err := Scan(Config{Root: "testdata/root-wiki", NotesDirs: []string{"wiki"}})
+	files, _, err := Scan(Config{Root: "testdata/root-wiki", NotesDirs: []string{"wiki"}})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestScan_NotesDir(t *testing.T) {
 
 // notes_dirs に複数を並べると、それぞれを走査し、ラベルは各ディレクトリの末尾セグメントになる。
 func TestScan_NotesDirs_Multiple(t *testing.T) {
-	files, err := Scan(Config{Root: "testdata/root-wiki", NotesDirs: []string{"wiki", "docs/notes"}})
+	files, _, err := Scan(Config{Root: "testdata/root-wiki", NotesDirs: []string{"wiki", "docs/notes"}})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestScan_NotesDirs_Multiple(t *testing.T) {
 // (docs 起点なら docs/notes/ignored.md は "docs/notes"。後の docs/notes 起点なら "notes" になるはずのもの)。
 // docs/decisions.md は notes_dirs に含まれていても種別 decisions のまま。
 func TestScan_NotesDirs_Dedupe(t *testing.T) {
-	files, err := Scan(Config{Root: "testdata/root-wiki", NotesDirs: []string{"docs", "docs/notes"}})
+	files, _, err := Scan(Config{Root: "testdata/root-wiki", NotesDirs: []string{"docs", "docs/notes"}})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -166,6 +166,28 @@ func TestScan_NotesDirs_Dedupe(t *testing.T) {
 	}
 	if got["repo-w/docs/decisions.md"] != "decisions" {
 		t.Errorf("decisions.md の種別が decisions でない: got=%q", got["repo-w/docs/decisions.md"])
+	}
+}
+
+// 存在しない extra の起点は警告(エラーにも無言スキップにもしない)。root が空・存在しなければエラー。
+func TestScan_WarningsAndErrors(t *testing.T) {
+	cfg := Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: "no-such-dir", Kind: "x"}}}
+	files, warns, err := Scan(cfg)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(files) == 0 {
+		t.Errorf("警告があっても自動規則の結果は返すべき")
+	}
+	if len(warns) != 1 || !strings.Contains(warns[0], "no-such-dir") {
+		t.Errorf("警告 1 件(起点のパス入り)を期待: %q", warns)
+	}
+
+	if _, _, err := Scan(Config{Root: ""}); err == nil {
+		t.Errorf("root 空でエラーになっていない")
+	}
+	if _, _, err := Scan(Config{Root: "testdata/no-such-root"}); err == nil {
+		t.Errorf("root 不在でエラーになっていない")
 	}
 }
 

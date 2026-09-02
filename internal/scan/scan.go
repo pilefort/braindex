@@ -14,6 +14,8 @@
 package scan
 
 import (
+	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -49,26 +51,29 @@ type File struct {
 const DefaultNotesDir = "docs/notes"
 
 // Scan は cfg に従って対象ファイルを発見する。
-func Scan(cfg Config) ([]File, error) {
-	root := cfg.Root
-	if root == "" {
-		root = ".."
+//
+// 戻り値の warnings は「飛ばしたもの」の説明(読めないディレクトリ・存在しない extra の起点など)。
+// 無言でスキップせず呼び出し側に伝え、走査自体は続ける。root が空・読めない場合は error。
+func Scan(cfg Config) (files []File, warnings []string, err error) {
+	if cfg.Root == "" {
+		return nil, nil, errors.New("root が未指定(-root を渡すか、設定ファイルに root を書く)")
 	}
 	notesDirs := cfg.NotesDirs
 	if len(notesDirs) == 0 {
 		notesDirs = []string{DefaultNotesDir}
 	}
-	rootAbs, err := filepath.Abs(root)
+	rootAbs, err := filepath.Abs(cfg.Root)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
-	var files []File
+	warn := func(format string, a ...any) {
+		warnings = append(warnings, fmt.Sprintf(format, a...))
+	}
 
 	// 自動規則: root 直下の各ディレクトリを走査
 	entries, err := os.ReadDir(rootAbs)
 	if err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("root を読めない: %w", err)
 	}
 	for _, de := range entries {
 		if !de.IsDir() {
@@ -97,10 +102,7 @@ func Scan(cfg Config) ([]File, error) {
 			}
 			// 種別ラベルは各ディレクトリの末尾セグメント(docs/notes → notes、wiki → wiki)。既定の挙動は従来どおり
 			label := path.Base(nd)
-			notes, err := collectNotes(rootAbs, name, filepath.Join(repoDir, filepath.FromSlash(nd)), label)
-			if err != nil {
-				continue
-			}
+			notes := collectNotes(rootAbs, name, filepath.Join(repoDir, filepath.FromSlash(nd)), label, warn)
 			for _, f := range notes {
 				if seen[f.Abs] {
 					continue
@@ -113,23 +115,34 @@ func Scan(cfg Config) ([]File, error) {
 
 	// 例外規則
 	for _, ex := range cfg.Extra {
-		files = append(files, collectExtra(rootAbs, ex)...)
+		files = append(files, collectExtra(rootAbs, ex, warn)...)
 	}
 
-	return files, nil
+	return files, warnings, nil
 }
+
+// warnFunc は走査中に飛ばしたものを報告する。
+type warnFunc func(format string, a ...any)
 
 // collectNotes は notesDir 以下の *.md を再帰収集する。archive セグメントは除外。
 // label は直下の種別ラベル(サブディレクトリ配下は label/<先頭セグメント>)。
-func collectNotes(rootAbs, repo, notesDir, label string) ([]File, error) {
+// notesDir が無いのは「そのリポにノートが無い」だけなので警告しない。読めない場合は警告する。
+func collectNotes(rootAbs, repo, notesDir, label string, warn warnFunc) []File {
 	var out []File
 	info, err := os.Stat(notesDir)
-	if err != nil || !info.IsDir() {
-		return out, err
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			warn("%s: %v", notesDir, err)
+		}
+		return out
 	}
-	err = filepath.WalkDir(notesDir, func(path string, d fs.DirEntry, err error) error {
+	if !info.IsDir() {
+		return out
+	}
+	filepath.WalkDir(notesDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil // 読めないものは黙ってスキップ
+			warn("%s: %v", path, err) // 読めないものは警告して飛ばす
+			return nil
 		}
 		if d.IsDir() {
 			if d.Name() == "archive" {
@@ -142,18 +155,27 @@ func collectNotes(rootAbs, repo, notesDir, label string) ([]File, error) {
 		}
 		rel, err := filepath.Rel(notesDir, path)
 		if err != nil {
+			warn("%s: %v", path, err)
 			return nil
 		}
 		out = append(out, mkFile(rootAbs, repo, kindFromRel(rel, label), path))
 		return nil
 	})
-	return out, err
+	return out
 }
 
 // collectExtra は例外規則に従ってファイルを収集する。
-func collectExtra(rootAbs string, ex ExtraRule) []File {
+// 起点が無い・読めないのは設定の誤りなので警告する(自動規則の notesDir 不在とは違う)。
+func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 	base := filepath.Join(rootAbs, ex.Repo, filepath.FromSlash(ex.Path))
 	var out []File
+	if info, err := os.Stat(base); err != nil {
+		warn("extra %s/%s: %v", ex.Repo, ex.Path, err)
+		return out
+	} else if !info.IsDir() {
+		warn("extra %s/%s: ディレクトリではない", ex.Repo, ex.Path)
+		return out
+	}
 
 	add := func(path, name, kind string) {
 		if !isMarkdown(name) || excluded(name, ex.Exclude) || hasArchiveSeg(path) {
@@ -165,6 +187,7 @@ func collectExtra(rootAbs string, ex ExtraRule) []File {
 	if ex.Recursive {
 		filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
+				warn("%s: %v", path, err)
 				return nil
 			}
 			if d.IsDir() {
@@ -181,6 +204,7 @@ func collectExtra(rootAbs string, ex ExtraRule) []File {
 
 	des, err := os.ReadDir(base)
 	if err != nil {
+		warn("%s: %v", base, err)
 		return out
 	}
 	for _, de := range des {
