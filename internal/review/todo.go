@@ -107,23 +107,40 @@ func lineDates(g *Git, repoDir, path string, n int) (dates []string, approx bool
 }
 
 // LineDates は dir 相対 rel の各行が最後に変わった日(YYYY-MM-DD・著者のタイムゾーン)を git blame で返す。
-// 未追跡・git 管理外・git の失敗なら ok=false(呼び出し側が mtime に倒す)。
+// 未追跡・git 管理外・git の失敗・出力が読めないなら ok=false(呼び出し側が mtime に倒す)。
 // まだコミットされていない行は blame が「今」を返すので、放置扱いにはならない。
 func (g Git) LineDates(dir, rel string) (dates []string, ok bool) {
 	out, err := g.run(dir, "blame", "--line-porcelain", "--", rel)
 	if err != nil {
 		return nil, false
 	}
+	return parseBlame(out)
+}
+
+// parseBlame は git blame --line-porcelain の出力を、行ごとの日付(著者のタイムゾーン)にする。
+// 出力は行ごとに「ヘッダ(author-time・author-tz など)→ タブで始まる行本体」の繰り返し。root コミットの行に付く
+// boundary や、未コミットの行(author が Not Committed Yet・author-time は今)も同じ形で、ここでは区別しない。
+// author-time が無い・読めない行があれば ok=false(1970-01-01 のような日付を作って放置に数えない)。
+func parseBlame(out string) (dates []string, ok bool) {
 	var t int64
+	haveTime := false
 	tz := "+0000"
 	for _, line := range strings.Split(out, "\n") {
 		switch {
 		case strings.HasPrefix(line, "author-time "):
-			t, _ = strconv.ParseInt(strings.TrimSpace(line[len("author-time "):]), 10, 64)
+			v, err := strconv.ParseInt(strings.TrimSpace(line[len("author-time "):]), 10, 64)
+			if err != nil {
+				return nil, false
+			}
+			t, haveTime = v, true
 		case strings.HasPrefix(line, "author-tz "):
 			tz = strings.TrimSpace(line[len("author-tz "):])
 		case strings.HasPrefix(line, "\t"): // 行本体。ここまでのヘッダで 1 行分が確定する
+			if !haveTime {
+				return nil, false
+			}
 			dates = append(dates, formatEpoch(t, tz))
+			haveTime = false
 		}
 	}
 	return dates, true

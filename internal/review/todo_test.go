@@ -86,6 +86,41 @@ func TestLineDates(t *testing.T) {
 	}
 }
 
+// blameSample は 3 行の TODO.md に対する git blame --line-porcelain の実出力(git 2.x・2026-09-03 に採取。ハッシュは架空)。
+// 1 行目は root コミット(boundary 付き・2026-07-02T01:00+09:00 = UTC では 07-01)、2 行目は別コミット(08-25 UTC)、
+// 3 行目は未コミット(author-time は採取時の「今」)。
+const blameSample = "1111111111111111111111111111111111111111 1 1 1\n" +
+	"author t\nauthor-mail <t@example.com>\nauthor-time 1782921600\nauthor-tz +0900\n" +
+	"committer t\ncommitter-mail <t@example.com>\ncommitter-time 1782921600\ncommitter-tz +0900\n" +
+	"summary first\nboundary\nfilename work/TODO.md\n\t- [ ] a\n" +
+	"2222222222222222222222222222222222222222 2 2 1\n" +
+	"author t\nauthor-mail <t@example.com>\nauthor-time 1787659200\nauthor-tz +0000\n" +
+	"committer t\ncommitter-mail <t@example.com>\ncommitter-time 1787659200\ncommitter-tz +0000\n" +
+	"summary second\nprevious 1111111111111111111111111111111111111111 work/TODO.md\nfilename work/TODO.md\n\t- [ ] b2\n" +
+	"0000000000000000000000000000000000000000 3 3 1\n" +
+	"author Not Committed Yet\nauthor-mail <not.committed.yet>\nauthor-time 1788365997\nauthor-tz +0900\n" +
+	"committer Not Committed Yet\ncommitter-mail <not.committed.yet>\ncommitter-time 1788365997\ncommitter-tz +0900\n" +
+	"summary Version of work/TODO.md from work/TODO.md\nprevious 2222222222222222222222222222222222222222 work/TODO.md\nfilename work/TODO.md\n\t\n"
+
+// blame の解析: 行本体(タブ始まり)ごとに直前の author-time を author-tz で日付にする。boundary・未コミット・空行も 1 行。
+// author-time が無い・読めない行があれば ok=false(1970-01-01 のような日付を作らず、mtime に倒す)。
+func TestParseBlame(t *testing.T) {
+	dates, ok := parseBlame(blameSample)
+	want := []string{"2026-07-02", "2026-08-25", "2026-09-03"}
+	if !ok || strings.Join(dates, ",") != strings.Join(want, ",") {
+		t.Errorf("want %v ok=true, got %v ok=%v", want, dates, ok)
+	}
+	if dates, ok := parseBlame(""); !ok || len(dates) != 0 {
+		t.Errorf("空ファイル: dates=%v ok=%v", dates, ok)
+	}
+	if dates, ok := parseBlame(strings.Replace(blameSample, "author-time 1787659200", "author-time x", 1)); ok {
+		t.Errorf("author-time が読めないのに ok: %v", dates)
+	}
+	if dates, ok := parseBlame("\t- [ ] a\n"); ok {
+		t.Errorf("author-time が無いのに ok: %v", dates)
+	}
+}
+
 func TestFormatEpoch(t *testing.T) {
 	// 2026-07-01T23:30:00+09:00 = 2026-07-01T14:30:00Z。UTC で見れば同日、-10:00 なら前日
 	epoch := time.Date(2026, 7, 1, 14, 30, 0, 0, time.UTC).Unix()
