@@ -1,5 +1,6 @@
 {
   "root": "..",
   "notes_dirs": ["docs/notes"],
-  "extra": []
+  "extra": [],
+  "review": { "dir": "work/review", "since_days": 14, "stale_todo_weeks": 4, "archive_months": 6 }
 }

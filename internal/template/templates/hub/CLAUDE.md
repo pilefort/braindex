@@ -17,6 +17,11 @@
 - ISSUE を更新したら `braindex lint` で形（必須の節・「← いまここ」・最終更新・チェック項目の消失）を確かめる。
 - 書いたら `braindex` を実行し、`index/catalog.md` をノートと一緒にコミットする。
 
+## 回す（週に 1 回）
+
+- `braindex review` で `work/review/<今日>.md` の下書きを作り、スキル `braindex-review` の手順で判断の節を埋める。
+  索引を再生成して、下書きと一緒にコミットする。集計は CLI、判断は人。
+
 ## してはいけないこと
 
 - `index/catalog.md` を手で編集する（再生成で消える）。
