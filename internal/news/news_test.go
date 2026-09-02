@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/pilefort/braindex/internal/feed"
+	"github.com/pilefort/braindex/internal/interest"
 )
 
 func TestSettings_Defaults(t *testing.T) {
@@ -186,7 +187,7 @@ func TestDigest(t *testing.T) {
 	}
 	want := `# ニュースダイジェスト 2026-08-15（daily 層）
 
-新着 4 件（フィード 3 本）
+新着 4 件（フィード 3 本）・採点なし
 
 ## A（tech・新着 3 件）
 - 2026-08-14 [記事 ［1］](https://x/1)
@@ -199,15 +200,61 @@ func TestDigest(t *testing.T) {
 ## 取得失敗
 - B: HTTP 404
 `
-	got := string(Digest(res, "daily", "2026-08-15", 2))
+	o := DigestOptions{Layer: "daily", Today: "2026-08-15", Cap: 2}
+	got := string(Digest(res, o))
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
-	if string(Digest(res, "daily", "2026-08-15", 2)) != got {
+	if string(Digest(res, o)) != got {
 		t.Error("2 回の生成が一致しない")
 	}
-	empty := string(Digest(nil, "all", "2026-08-15", 20))
-	if !strings.Contains(empty, "新着 0 件（フィード 0 本）") || strings.Contains(empty, "取得失敗") {
+	empty := string(Digest(nil, DigestOptions{Layer: "all", Today: "2026-08-15", Cap: 20}))
+	if !strings.Contains(empty, "新着 0 件（フィード 0 本）・採点なし") || strings.Contains(empty, "取得失敗") {
 		t.Errorf("空:\n%s", empty)
+	}
+}
+
+// 採点あり: 主要(関心度 降順)と関心外の二段。当たった語を添える。各段に上限。
+func TestDigest_Ranked(t *testing.T) {
+	p := interest.Profile{Terms: []interest.Term{{Word: "ゴルーチン", Weight: 2}, {Word: "パース", Weight: 1}, {Word: "rust", Weight: 0.4}}}
+	res := []Result{{Source: Source{Name: "A"}, New: []feed.Entry{
+		{ID: "1", Title: "Rust 入門", Link: "https://x/1"},
+		{ID: "2", Title: "関係ない", Link: "https://x/2"},
+		{ID: "3", Title: "ゴルーチン", Link: "https://x/3", Summary: "Rust から パース"}, // 3.4/2 = 1.7 → 3
+		{ID: "4", Title: "ゴルーチン の話", Link: "https://x/4"},
+		{ID: "5", Title: "無関係 2", Link: "https://x/5"},
+		{ID: "6", Title: "無関係 3", Link: "https://x/6"},
+	}}}
+	rk := Rank(res, p)
+	if rk["3"].Value != 3 || rk["4"].Value != 2 || rk["1"].Value != 1 || rk["2"].Value != 0 {
+		t.Fatalf("Rank: %v", rk)
+	}
+	main, low := Split(res[0].New, rk, 2)
+	if ids(main) != "3,4" || ids(low) != "1,2,5,6" {
+		t.Errorf("Split: main=%s low=%s", ids(main), ids(low))
+	}
+	want := `# ニュースダイジェスト 2026-08-15（daily 層）
+
+新着 6 件（フィード 1 本）・関心度 2 以上を主要表示
+
+## A（新着 6 件・主要 2 件）
+- [ゴルーチン](https://x/3) ★3（ゴルーチン・パース・rust）
+- [ゴルーチン の話](https://x/4) ★2（ゴルーチン）
+- 関心外と判定 4 件:
+  - [Rust 入門](https://x/1) ★1（rust）
+  - [関係ない](https://x/2) ★0
+  - （上限 2 件を超えた 2 件は省略）
+
+`
+	got := string(Digest(res, DigestOptions{Layer: "daily", Today: "2026-08-15", Cap: 2, Ranking: rk, MinScore: 2}))
+	if got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+	// 空のプロファイルは採点無し
+	if Rank(res, interest.Profile{}) != nil {
+		t.Error("空のプロファイルで採点した")
+	}
+	if m, l := Split(res[0].New, nil, 2); len(m) != 6 || l != nil {
+		t.Error("採点無しで分けた")
 	}
 }

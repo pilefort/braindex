@@ -55,12 +55,14 @@ func runNews(args []string, stdout, stderr io.Writer) int {
 
 // newsFetchOptions は braindex news fetch のコマンドライン。空は「未指定」。
 type newsFetchOptions struct {
-	config string // -config。hub の位置を兼ねるので必須(既定パスに無ければエラー)
-	date   string // -date。今日の固定(既定: 実行日)
-	layer  string // -layer。フィードの層(既定 all)
-	replay bool   // -replay。既読を無視して全件を出し、既読も更新しない
-	stdout bool   // -stdout。ファイルに書かず標準出力へ(既読は更新する)
-	out    string // -out。出力先(既定: <news.dir>/digest_<日付>_<層>.md。既にあれば -2, -3 … を付ける)
+	config   string // -config。hub の位置を兼ねるので必須(既定パスに無ければエラー)
+	date     string // -date。今日の固定(既定: 実行日)
+	layer    string // -layer。フィードの層(既定 all)
+	replay   bool   // -replay。既読を無視して全件を出し、既読も更新しない
+	stdout   bool   // -stdout。ファイルに書かず標準出力へ(既読は更新する)
+	out      string // -out。出力先(既定: <news.dir>/digest_<日付>_<層>.md。既にあれば -2, -3 … を付ける)
+	noScore  bool   // -no-score。関心プロファイルで採点しない(全件を主要表示)
+	sessions string // -sessions。関心プロファイルのセッションログの置き場(news profile と同じ既定)
 }
 
 // runNewsFetch は braindex news fetch を実行する。
@@ -76,11 +78,15 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&o.replay, "replay", false, "既読を無視して全記事を出し、既読も更新しない(見出しの再生成用)")
 	fs.BoolVar(&o.stdout, "stdout", false, "ファイルに書かず標準出力に出す(既読は更新する)")
 	fs.StringVar(&o.out, "out", "", "出力先(既定: 設定 news.dir の digest_<日付>_<層>.md。既にあれば -2, -3 … を付けて別名にする)")
+	fs.BoolVar(&o.noScore, "no-score", false, "関心プロファイルで採点しない(全件を主要表示・出典を読まない)")
+	fs.StringVar(&o.sessions, "sessions", "", "関心プロファイルが読むセッションログの置き場(既定: news profile と同じ)")
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "使い方: braindex news fetch [-config braindex.json] [-date YYYY-MM-DD] [-layer <層>] [-replay] [-stdout] [-out <path>]")
+		fmt.Fprintln(stderr, "使い方: braindex news fetch [-config braindex.json] [-date YYYY-MM-DD] [-layer <層>] [-replay] [-stdout] [-out <path>] [-no-score] [-sessions DIR]")
 		fmt.Fprintln(stderr, "  hub のルートで実行し、news/feeds.json のフィードを GET して、既読(news/.seen.json)に無い記事を")
-		fmt.Fprintln(stderr, "  news/digest_<日付>_<層>.md に書く。外へ出る通信はフィードの GET だけ。")
-		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗(全フィードの取得失敗を含む。何も書かない) / 2 一部のフィードが取得できなかった")
+		fmt.Fprintln(stderr, "  news/digest_<日付>_<層>.md に書く。関心プロファイル(braindex news profile)で採点し、関心度 news.show_min_score")
+		fmt.Fprintln(stderr, "  以上を主要表示、未満を「関心外と判定」に分ける。外へ出る通信はフィードの GET だけ(セッション本文は送らない)。")
+		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗(全フィードの取得失敗を含む。何も書かない) / 2 警告つきで完了(一部のフィードが取得できなかった・")
+		fmt.Fprintln(stderr, "  採点の出典(索引・セッションの置き場)が無かった)")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
 		fs.PrintDefaults()
@@ -151,7 +157,24 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		return fail(errors.New("全フィードの取得に失敗した(ネットワークとフィードの URL を確認する)"))
 	}
 
-	digest := news.Digest(results, o.layer, today, s.Cap(o.layer))
+	// 採点(関心プロファイル)。出典が無い警告は fetch の警告として数える
+	var ranking news.Ranking
+	profileWarnings := 0
+	if !o.noScore {
+		p, ws, err := loadProfile(fc, hubDir, today, 0, o.sessions)
+		if err != nil {
+			return fail(err)
+		}
+		for _, w := range ws {
+			fmt.Fprintln(stderr, "braindex news fetch: 警告:", w)
+		}
+		profileWarnings = len(ws)
+		ranking = news.Rank(results, p)
+		if ranking == nil {
+			fmt.Fprintln(stdout, "関心プロファイルが空なので採点なし(全件を主要表示)")
+		}
+	}
+	digest := news.Digest(results, news.DigestOptions{Layer: o.layer, Today: today, Cap: s.Cap(o.layer), Ranking: ranking, MinScore: s.ShowMinScore})
 	if o.stdout {
 		if _, err := stdout.Write(digest); err != nil {
 			return fail(err)
@@ -185,8 +208,8 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	if failed := news.Failed(results); len(failed) > 0 {
-		fmt.Fprintf(stderr, "braindex news fetch: 取得失敗 %d 本(終了コード 2)\n", len(failed))
+	if n := len(news.Failed(results)) + profileWarnings; n > 0 {
+		fmt.Fprintf(stderr, "braindex news fetch: 警告 %d 件(取得失敗 %d 本・終了コード 2)\n", n, len(news.Failed(results)))
 		return 2
 	}
 	return 0

@@ -72,8 +72,6 @@ func runNewsProfile(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "braindex news profile:", err)
 		return 1
 	}
-	var warnings []string
-	warn := func(format string, a ...any) { warnings = append(warnings, fmt.Sprintf(format, a...)) }
 
 	cfgPath := o.config
 	if cfgPath == "" {
@@ -92,87 +90,7 @@ func runNewsProfile(args []string, stdout, stderr io.Writer) int {
 	} else if _, perr := time.Parse("2006-01-02", today); perr != nil {
 		return fail(fmt.Errorf("-date は YYYY-MM-DD で指定する: %q", today))
 	}
-	hubDir := filepath.Dir(cfgPath)
-	s := fc.News.WithDefaults()
-	newsDir := filepath.Join(hubDir, filepath.FromSlash(s.Dir))
-	days := o.days
-	if days <= 0 {
-		days = s.ProfileDays
-	}
-	in := interest.Input{Today: today, Days: days}
-
-	// 出典 1: 索引
-	catalogPath := filepath.Join(hubDir, filepath.FromSlash(defaultOut))
-	if b, err := os.ReadFile(catalogPath); err == nil {
-		in.Catalog, err = review.ParseCatalog(b)
-		if err != nil {
-			return fail(fmt.Errorf("%s: %w", catalogPath, err))
-		}
-	} else if errors.Is(err, iofs.ErrNotExist) {
-		warn("索引 %s が無いので飛ばした(braindex で生成する)", catalogPath)
-	} else {
-		return fail(err)
-	}
-
-	// 出典 2: セッション
-	sessDir := o.sessions
-	if sessDir == "" {
-		sessDir = s.SessionsDir
-	}
-	if sessDir == "" {
-		sessDir = fc.Retro.SessionsDir
-	}
-	if sessDir == "" {
-		sessDir, err = sessions.DefaultDir()
-		if err != nil {
-			return fail(err)
-		}
-	}
-	since, err := time.Parse("2006-01-02", today)
-	if err != nil {
-		return fail(err)
-	}
-	since = since.AddDate(0, 0, -days)
-	if _, err := os.Stat(sessDir); errors.Is(err, iofs.ErrNotExist) {
-		warn("セッションログの置き場 %s が無いので飛ばした", sessDir)
-	} else if err != nil {
-		return fail(err)
-	} else {
-		ss, ws, err := sessions.Dir{Path: sessDir}.Sessions(sessions.Options{Since: since})
-		if err != nil {
-			return fail(err)
-		}
-		warnings = append(warnings, ws...)
-		in.Sessions = ss
-	}
-
-	// 出典 3: keep 履歴
-	keepDir := filepath.Join(newsDir, news.KeepDir)
-	if names, err := os.ReadDir(keepDir); err == nil {
-		sort.Slice(names, func(i, j int) bool { return names[i].Name() < names[j].Name() })
-		for _, de := range names {
-			m := keepFileName.FindStringSubmatch(de.Name())
-			if m == nil || de.IsDir() {
-				continue
-			}
-			b, err := os.ReadFile(filepath.Join(keepDir, de.Name()))
-			if err != nil {
-				return fail(err)
-			}
-			in.Keeps = append(in.Keeps, interest.ParseKeep(m[1], string(b))...)
-		}
-	} else if !errors.Is(err, iofs.ErrNotExist) {
-		return fail(err)
-	}
-
-	// 出典 4: 補助ファイル
-	if b, err := os.ReadFile(filepath.Join(newsDir, news.InterestsFile)); err == nil {
-		in.Extra = strings.Split(string(b), "\n")
-	} else if !errors.Is(err, iofs.ErrNotExist) {
-		return fail(err)
-	}
-
-	p, err := interest.Build(in)
+	p, warnings, err := loadProfile(fc, filepath.Dir(cfgPath), today, o.days, o.sessions)
 	if err != nil {
 		return fail(err)
 	}
@@ -196,4 +114,95 @@ func runNewsProfile(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return 0
+}
+
+// loadProfile は 4 つの出典を読んで関心プロファイルを作る(news profile と news fetch が共有)。
+// days <= 0 なら設定 news.profile_days。sessionsDir が空なら news.sessions_dir → retro.sessions_dir → ~/.claude/projects。
+// 索引やセッションの置き場が無ければ警告にして飛ばす(エラーにしない)。
+func loadProfile(fc config.Config, hubDir, today string, days int, sessionsDir string) (interest.Profile, []string, error) {
+	var warnings []string
+	warn := func(format string, a ...any) { warnings = append(warnings, fmt.Sprintf(format, a...)) }
+	s := fc.News.WithDefaults()
+	newsDir := filepath.Join(hubDir, filepath.FromSlash(s.Dir))
+	if days <= 0 {
+		days = s.ProfileDays
+	}
+	in := interest.Input{Today: today, Days: days}
+
+	// 出典 1: 索引
+	catalogPath := filepath.Join(hubDir, filepath.FromSlash(defaultOut))
+	if b, err := os.ReadFile(catalogPath); err == nil {
+		in.Catalog, err = review.ParseCatalog(b)
+		if err != nil {
+			return interest.Profile{}, nil, fmt.Errorf("%s: %w", catalogPath, err)
+		}
+	} else if errors.Is(err, iofs.ErrNotExist) {
+		warn("索引 %s が無いので飛ばした(braindex で生成する)", catalogPath)
+	} else {
+		return interest.Profile{}, nil, err
+	}
+
+	// 出典 2: セッション
+	sessDir := sessionsDir
+	if sessDir == "" {
+		sessDir = s.SessionsDir
+	}
+	if sessDir == "" {
+		sessDir = fc.Retro.SessionsDir
+	}
+	if sessDir == "" {
+		var err error
+		if sessDir, err = sessions.DefaultDir(); err != nil {
+			return interest.Profile{}, nil, err
+		}
+	}
+	since, err := time.Parse("2006-01-02", today)
+	if err != nil {
+		return interest.Profile{}, nil, err
+	}
+	since = since.AddDate(0, 0, -days)
+	if _, err := os.Stat(sessDir); errors.Is(err, iofs.ErrNotExist) {
+		warn("セッションログの置き場 %s が無いので飛ばした", sessDir)
+	} else if err != nil {
+		return interest.Profile{}, nil, err
+	} else {
+		ss, ws, err := sessions.Dir{Path: sessDir}.Sessions(sessions.Options{Since: since})
+		if err != nil {
+			return interest.Profile{}, nil, err
+		}
+		warnings = append(warnings, ws...)
+		in.Sessions = ss
+	}
+
+	// 出典 3: keep 履歴
+	keepDir := filepath.Join(newsDir, news.KeepDir)
+	if names, err := os.ReadDir(keepDir); err == nil {
+		sort.Slice(names, func(i, j int) bool { return names[i].Name() < names[j].Name() })
+		for _, de := range names {
+			m := keepFileName.FindStringSubmatch(de.Name())
+			if m == nil || de.IsDir() {
+				continue
+			}
+			b, err := os.ReadFile(filepath.Join(keepDir, de.Name()))
+			if err != nil {
+				return interest.Profile{}, nil, err
+			}
+			in.Keeps = append(in.Keeps, interest.ParseKeep(m[1], string(b))...)
+		}
+	} else if !errors.Is(err, iofs.ErrNotExist) {
+		return interest.Profile{}, nil, err
+	}
+
+	// 出典 4: 補助ファイル
+	if b, err := os.ReadFile(filepath.Join(newsDir, news.InterestsFile)); err == nil {
+		in.Extra = strings.Split(string(b), "\n")
+	} else if !errors.Is(err, iofs.ErrNotExist) {
+		return interest.Profile{}, nil, err
+	}
+
+	p, err := interest.Build(in)
+	if err != nil {
+		return interest.Profile{}, nil, err
+	}
+	return p, warnings, nil
 }

@@ -3,10 +3,12 @@ package news
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
 	"github.com/pilefort/braindex/internal/feed"
+	"github.com/pilefort/braindex/internal/interest"
 )
 
 // Fetcher はフィードを取得する側。実体は feed.Fetcher。テストでは差し替える。
@@ -78,11 +80,56 @@ func AllFailed(results []Result) bool {
 	return len(Failed(results)) == len(results)
 }
 
-// Digest は新着のダイジェスト(Markdown・LF)を組む。新着が無いフィードは書かず、失敗は末尾に列挙する。
-// 各フィードは cap 件まで書き、超えた分は件数だけ書く。同じ入力からは同じバイト列になる。
-func Digest(results []Result, layer, today string, cap int) []byte {
+// Ranking は新着の関心度。記事 ID → 採点。nil なら採点無し(全件を主要表示)。
+type Ranking map[string]interest.Score
+
+// Rank は各フィードの新着を関心プロファイルで採点する。プロファイルが空なら nil(採点無し)。
+// 照合する文字列は 見出し＋概要。
+func Rank(results []Result, p interest.Profile) Ranking {
+	if len(p.Terms) == 0 {
+		return nil
+	}
+	rk := Ranking{}
+	for _, r := range results {
+		for _, e := range r.New {
+			rk[e.ID] = interest.Rate(p, e.Title+" "+e.Summary)
+		}
+	}
+	return rk
+}
+
+// Split は新着を 主要(関心度 minScore 以上・降順・同点は記載順)と 関心外(未満・記載順)に分ける。
+// rk が nil なら全件が主要(記載順)。
+func Split(entries []feed.Entry, rk Ranking, minScore int) (main, low []feed.Entry) {
+	if rk == nil {
+		return entries, nil
+	}
+	for _, e := range entries {
+		if rk[e.ID].Value >= minScore {
+			main = append(main, e)
+		} else {
+			low = append(low, e)
+		}
+	}
+	sort.SliceStable(main, func(i, j int) bool { return rk[main[i].ID].Value > rk[main[j].ID].Value })
+	return main, low
+}
+
+// DigestOptions はダイジェストの体裁。
+type DigestOptions struct {
+	Layer    string  // 層の名前(見出し)
+	Today    string  // 日付(見出し)
+	Cap      int     // 1 フィードあたりの表示上限(主要・関心外それぞれ)
+	Ranking  Ranking // 採点。nil なら一段(全件を主要)
+	MinScore int     // 主要に入れる最低の関心度(Ranking が nil なら使わない)
+}
+
+// Digest は新着のダイジェスト(Markdown・LF)を組む。
+// フィードごとに 主要(関心度 降順) → 関心外と判定(折りたたみ相当) の二段。新着が無いフィードは書かず、失敗は末尾に列挙する。
+// 各段は Cap 件まで書き、超えた分は件数だけ書く。同じ入力からは同じバイト列になる。
+func Digest(results []Result, o DigestOptions) []byte {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "# ニュースダイジェスト %s（%s 層）\n\n", today, layer)
+	fmt.Fprintf(&sb, "# ニュースダイジェスト %s（%s 層）\n\n", o.Today, o.Layer)
 	total, feeds := 0, 0
 	for _, r := range results {
 		if r.Err == nil {
@@ -90,26 +137,31 @@ func Digest(results []Result, layer, today string, cap int) []byte {
 			total += len(r.New)
 		}
 	}
-	fmt.Fprintf(&sb, "新着 %d 件（フィード %d 本）\n\n", total, feeds)
+	fmt.Fprintf(&sb, "新着 %d 件（フィード %d 本）", total, feeds)
+	if o.Ranking == nil {
+		sb.WriteString("・採点なし")
+	} else {
+		fmt.Fprintf(&sb, "・関心度 %d 以上を主要表示", o.MinScore)
+	}
+	sb.WriteString("\n\n")
 	for _, r := range results {
 		if r.Err != nil || len(r.New) == 0 {
 			continue
 		}
+		main, low := Split(r.New, o.Ranking, o.MinScore)
 		fmt.Fprintf(&sb, "## %s（", r.Source.Name)
 		if r.Source.Category != "" {
 			fmt.Fprintf(&sb, "%s・", r.Source.Category)
 		}
-		fmt.Fprintf(&sb, "新着 %d 件）\n", len(r.New))
-		for i, e := range r.New {
-			if i >= cap {
-				fmt.Fprintf(&sb, "- （上限 %d 件を超えた %d 件は省略）\n", cap, len(r.New)-cap)
-				break
-			}
-			sb.WriteString("- ")
-			if e.Published != "" {
-				fmt.Fprintf(&sb, "%s ", e.Published)
-			}
-			fmt.Fprintf(&sb, "[%s](%s)\n", escapeTitle(e.Title), e.Link)
+		fmt.Fprintf(&sb, "新着 %d 件", len(r.New))
+		if o.Ranking != nil {
+			fmt.Fprintf(&sb, "・主要 %d 件", len(main))
+		}
+		sb.WriteString("）\n")
+		writeTier(&sb, main, o, "")
+		if len(low) > 0 {
+			fmt.Fprintf(&sb, "- 関心外と判定 %d 件:\n", len(low))
+			writeTier(&sb, low, o, "  ")
 		}
 		sb.WriteString("\n")
 	}
@@ -120,6 +172,29 @@ func Digest(results []Result, layer, today string, cap int) []byte {
 		}
 	}
 	return []byte(sb.String())
+}
+
+// writeTier は 1 段を書く。indent は行頭の字下げ(関心外は 2 段目のリスト)。
+func writeTier(sb *strings.Builder, entries []feed.Entry, o DigestOptions, indent string) {
+	for i, e := range entries {
+		if o.Cap > 0 && i >= o.Cap {
+			fmt.Fprintf(sb, "%s- （上限 %d 件を超えた %d 件は省略）\n", indent, o.Cap, len(entries)-o.Cap)
+			break
+		}
+		sb.WriteString(indent + "- ")
+		if e.Published != "" {
+			fmt.Fprintf(sb, "%s ", e.Published)
+		}
+		fmt.Fprintf(sb, "[%s](%s)", escapeTitle(e.Title), e.Link)
+		if o.Ranking != nil {
+			s := o.Ranking[e.ID]
+			fmt.Fprintf(sb, " ★%d", s.Value)
+			if len(s.Matched) > 0 {
+				fmt.Fprintf(sb, "（%s）", strings.Join(s.Matched, "・"))
+			}
+		}
+		sb.WriteString("\n")
+	}
 }
 
 // escapeTitle はリンクの文字列にできない文字を避ける(角括弧だけ。Markdown の他の記号はそのまま)。
