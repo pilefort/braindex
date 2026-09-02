@@ -12,7 +12,7 @@ v0（2026-09-02）: 索引 CLI（Phase 1）を原型から移植して可搬化�
 週次レビューの集計 `braindex review`（Phase 2）を足した。
 原型は作者の私用「第二の脳」で 2026-08-07 から運用しているもの（非公開・20 リポ 307 ノートを索引中）。
 
-予定: 訂正率トリガのレトロスペクティブ → ニュースサジェスト（この順。2026-09-02 決定）。
+訂正率トリガのレトロスペクティブ（`braindex retro`）は 2026-09-03 に実装。予定: ニュースサジェスト（順は 2026-09-02 決定）。
 
 ## 使い方
 
@@ -39,6 +39,7 @@ Go 1.26 以降。依存は標準ライブラリのみ。
 | `notes_dirs` | 各リポのノート置き場。既定 `["docs/notes"]`。`["wiki"]` や、移行中の `["docs/notes", "wiki"]` も可。種別ラベルは末尾セグメント |
 | `extra` | 規約外の置き場を個別に足す配列。各要素は `repo`（root 直下のリポ名）・`path`（リポ内の起点。`"."` はリポ直下）・`recursive`（`true` でサブディレクトリも走査）・`kind`（種別ラベル）・`exclude`（グロブの配列。`/` を含むパターンは起点からの相対パス、含まなければファイル名に掛ける。大文字小文字は区別する） |
 | `review` | 週次レビュー（`braindex review`）の節。`dir`（記録の置き場。既定 `work/review`）・`since_days`（前回の記録が無いときに遡る日数。既定 14）・`stale_todo_weeks`（TODO を放置とみなす週数。既定 4）・`archive_months`（何か月より前をアーカイブ候補にするか。既定 6）。省略可 |
+| `retro` | 振り返り（`braindex retro`）の節。`sessions_dir`・`window_days`・`threshold`・`position_bins`・`dictionary`・`dictionary_extra`。省略可。詳細は「振り返り」の節 |
 
 未知のキーはエラーにする（`notes_dir` のような打ち間違いを無言で無視しない）。
 
@@ -114,6 +115,58 @@ git が無い・git 管理外のファイルは HEAD 比較を飛ばす（要約
 なぜ: ISSUE は「次のセッションが 1 枚読んで再開できる状態」を目的にするが、更新のたびに丸ごと書き直すので、既存の項目を落とす事故が起きる。
 エージェントの実行状態をランタイムが検証して不正なら差し戻す設計（SKILL.state, arXiv:2608.26263）と同じ形で、機械が形を確かめ、判断は人がする。
 
+## 振り返り（braindex retro）
+
+Claude Code のセッションログ（既定 `~/.claude/projects/<slug>/*.jsonl`）から「人間の発話のうち、エージェントの振る舞いへの訂正の割合」（訂正率）を
+決定論で測り、閾値を超えたら振り返り（レトロスペクティブ）を促す。計測は CLI、振り返り本体の判断は人か、hub に入るスキル `retro`。
+発話の本文はどこにも書かず送らない（リポに残るのは数値と所見だけ）。
+
+```
+braindex retro stats [-since YYYY-MM-DD | -window-days N] [-by project,week,position]   # 発話数・訂正数・率の表
+braindex retro check [-window-days N] [-threshold 0.1] [-quiet]                          # 窓の率を閾値と比べて 1 行。超えたら終了コード 3
+braindex retro extract [-since YYYY-MM-DD | -window-days N] [-out DIR]                  # セッションごとの md ダイジェストと index.tsv を一時ディレクトリへ
+```
+
+- 分母（人間の発話）: `type: user` で本文がある行から、サブエージェント（`isSidechain`）・tool_result だけの行・スラッシュコマンド・継続要約・中断・
+  `<system-reminder>` を除くと空の行・`isMeta`（Skill 起動の文脈など、人が打っていない行）・`<task-notification>`（サブエージェントの完了通知）を除いたもの
+- 分子（訂正）: 訂正辞書に当たった発話。辞書は 1 行 1 正規表現の平文（`#` はコメント）で、既定を CLI に埋め込む。設定 `retro.dictionary` で差し替え、
+  `retro.dictionary_extra` で追加。不満・好例の語（`sentiment` 辞書）は率に入れず、ダイジェストの印に使う。判定の精度より「同じ基準で継続して測れる」を優先する
+- 窓: 既定は直近 14 日（その日の 0 時起点。同じ日の間は何度実行しても同じ結果）。週の境界と 0 時は実行環境のタイムゾーン
+- 位置: 各発話にセッション内の通し番号（何番目の人間の発話か）を持ち、`-by position` で区間（既定 `1-3,4-10,11-30,31-`。最初の 3 発話を分ける）別の率を出す。長いセッションで訂正が増えるかを見るため
+- ダイジェスト（`extract`）: 窓の中の人間の発話ごとに「直前のアシスタント本文 300 字 → 発話（2000 字まで）」。訂正辞書のヒットは `★`、感情辞書は `☆` を見出しに付ける。
+  出力は `sessions/<プロジェクト>/<開始日時>_<ID>.md` と `index.tsv`。既定の出力先は OS の一時ディレクトリの `braindex-retro`。
+  出力先の `sessions/` と `index.tsv` は実行のたびに書き直す（前回の分は消える。出力先の他のファイルは触らない）。
+  セッションログには機微が含まれるので、`-out` でリポの中に向けるのは自己責任で
+
+設定（`braindex.json` の `retro` 節。設定ファイルが無くても動き、`root`（hub）も要らない）:
+
+| キー | 意味 |
+|---|---|
+| `sessions_dir` | セッションログの置き場。既定 `~/.claude/projects`（`~` は展開する。相対パスは設定ファイルのディレクトリ基準） |
+| `window_days` | `check` の窓（直近何日か）。既定 14 |
+| `threshold` | 訂正率の閾値（0〜1）。既定 0.08（試用後に見直す前提の暫定値） |
+| `position_bins` | 位置の区間。既定 `"1-3,4-10,11-30,31-"`（`下限-上限` か `下限-` をコンマ区切り） |
+| `dictionary` / `dictionary_extra` | 訂正辞書のファイル（差し替え／追加）。省略で埋め込みの既定辞書 |
+
+フラグ: 共通 `-config` `-sessions DIR`（設定より優先）`-date YYYY-MM-DD`（今日の固定）。`stats`／`extract` は `-since` か `-window-days`（同時は不可）。
+`check` は `-window-days`・`-threshold`（明示したものだけが設定を上書き）・`-quiet`（超えたときだけ出力。警告も出さない）。
+終了コード: `stats`／`extract` は 0 成功／1 失敗／2 警告つき（読めないログを飛ばした）。`check` は 0 閾値以下／1 失敗／2 閾値以下だが警告つき／3 閾値超え（警告があっても 3）。
+
+組み込みの例。Claude Code の hook（`~/.claude/settings.json`）の `SessionStart` に置くと、超えたときだけ 1 行がセッションに入る（`|| true` は、hook が終了コード 0 のときだけ標準出力をセッションに入れるため）:
+
+```json
+{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "braindex retro check -quiet || true" } ] } ] } }
+```
+
+定期実行なら週 1 回。cron: `0 9 * * 1 braindex retro check; [ $? -eq 3 ] && <通知コマンド>`。Windows のタスクスケジューラなら、
+`braindex retro check` を回して終了コード 3 のときだけ通知する `.cmd` を登録する。`braindex` が定期実行の環境の PATH に無ければフルパスで書く。
+
+閾値超えの後は、hub のスキル `retro`（`braindex init` が展開する `.claude/skills/retro/SKILL.md`）の手順で `braindex retro extract` のダイジェストを読み、
+所見（訂正の型・繰り返し指示・うまくいった協働）と規約への反映案を hub の `docs/notes/retro-YYYY-MM-DD.md` に残す。規約の書き換えは承認の後。
+
+なぜ: 原型（作者の 2026-07〜08 のログ 530 セッション）を人手と LLM で分類したら、訂正の多くは「規約が無い」のではなく「規約があるのに出力時に効いていない」型だった。
+だから訂正率を同じ基準で測り続け、上がったときに振り返る回路を置く。
+
 ## 何をするか
 
 - **引く**: `braindex` を実行すると `<root>/*/docs/notes/**/*.md` と `<root>/*/docs/decisions.md` を走査し、
@@ -164,7 +217,7 @@ Karpathy の LLM wiki 型（2026-04・`raw/` の素材から LLM が `wiki/` の
 
 | 場所 | 何が入るか |
 |---|---|
-| `cmd/braindex` `internal/` | 索引 CLI の実装（scan → extract → render → catalog）と `init`・`lint` |
+| `cmd/braindex` `internal/` | 索引 CLI の実装（scan → extract → render → catalog）と `init`・`lint`・`review`・`retro`（`internal/sessions` はセッションログの読み取り。`internal/retro` は辞書・集計・ダイジェスト） |
 | `braindex.example.json` | 設定ファイルの雛形 |
 | `CONTRIBUTING.md` | 開発の決まり（テスト・決定性・持ち込まないもの） |
 | `docs/` `work/` | 作者の設計メモと作業状態。git 管理外（`.gitignore`。2026-09-02 決定） |
@@ -181,7 +234,8 @@ braindex review                                                # 週に 1 回: �
 ```
 
 `braindex init -repo <dir>` は各プロジェクトのリポに `docs/notes/{common,project}/`・`docs/decisions.md`・`work/{APPROVALS,TODO}.md` の骨格を置く。
-どちらも既存ファイルは上書きしないので、再実行しても安全。hub には週次レビューのスキル（`.claude/skills/braindex-review/SKILL.md`）も入る。
+どちらも既存ファイルは上書きしないので、再実行しても安全。hub には週次レビューのスキル（`.claude/skills/braindex-review/SKILL.md`）と
+振り返りのスキル（`.claude/skills/retro/SKILL.md`）も入る。
 
 **エージェントに横断検索させる**: hub の `CLAUDE.md` には「索引を grep → 実ファイルを読む」の手順が入るが、hub の外のリポで作業している
 セッションからも引かせるには、利用者のグローバル `CLAUDE.md`（Claude Code なら `~/.claude/CLAUDE.md`）に次の 3 行を足す（`<hub>` は hub の場所）:

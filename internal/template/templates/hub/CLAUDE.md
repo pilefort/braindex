@@ -17,10 +17,13 @@
 - ISSUE を更新したら `braindex lint` で形（必須の節・「← いまここ」・最終更新・チェック項目の消失）を確かめる。
 - 書いたら `braindex` を実行し、`index/catalog.md` をノートと一緒にコミットする。
 
-## 回す（週に 1 回）
+## 回す
 
-- `braindex review` で `work/review/<今日>.md` の下書きを作り、スキル `braindex-review` の手順で判断の節を埋める。
+- 週に 1 回、`braindex review` で `work/review/<今日>.md` の下書きを作り、スキル `braindex-review` の手順で判断の節を埋める。
   索引を再生成して、下書きと一緒にコミットする。集計は CLI、判断は人。
+- `braindex retro check` が訂正率の閾値超え（終了コード 3）を知らせたら、スキル `retro` の手順で `braindex retro extract` の
+  ダイジェストを読み、所見と規約への反映案を `docs/notes/retro-YYYY-MM-DD.md` に残す。規約の書き換えは承認の後。
+  セッションログの本文はリポに書かない（残すのは数値と所見だけ）。
 
 ## してはいけないこと
 
