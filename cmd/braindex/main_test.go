@@ -1,0 +1,139 @@
+package main
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// writeFile はテスト用にファイルを書く(親ディレクトリも作る)。
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// makeRoot は <tmp>/root/repo-a/docs/notes/a.md を持つ最小のルートを作り、root のパスを返す。
+func makeRoot(t *testing.T) string {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "root")
+	writeFile(t, filepath.Join(root, "repo-a", "docs", "notes", "a.md"), "# A\n\n結論: a\n記録日: 2026-01-02\n")
+	return root
+}
+
+func runOK(t *testing.T, o options) (stdout, stderr string) {
+	t.Helper()
+	var out, errb bytes.Buffer
+	if code := run(o, &out, &errb); code != 0 {
+		t.Fatalf("exit=%d want 0\nstderr=%s", code, errb.String())
+	}
+	return out.String(), errb.String()
+}
+
+// -root と -out だけで、設定ファイル無しでも動く。
+func TestRun_FlagsOnlyWithoutConfig(t *testing.T) {
+	root := makeRoot(t)
+	out := filepath.Join(t.TempDir(), "sub", "catalog.md")
+	runOK(t, options{root: root, out: out, date: "2026-01-03"})
+	b, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("出力が無い: %v", err)
+	}
+	s := string(b)
+	if !strings.Contains(s, "repo-a/docs/notes/a.md") || !strings.Contains(s, "2026-01-03") {
+		t.Errorf("出力内容が不正:\n%s", s)
+	}
+}
+
+// 設定ファイルの root は設定ファイルのディレクトリ基準で解決し、
+// 出力先の既定はそのディレクトリの index/catalog.md。
+func TestRun_ConfigRelativePaths(t *testing.T) {
+	root := makeRoot(t)
+	hub := filepath.Join(root, "hub")
+	cfg := filepath.Join(hub, "braindex.json")
+	writeFile(t, cfg, `{"root": ".."}`)
+	runOK(t, options{config: cfg, date: "2026-01-03"})
+	if _, err := os.Stat(filepath.Join(hub, "index", "catalog.md")); err != nil {
+		t.Errorf("既定の出力先 hub/index/catalog.md が無い: %v", err)
+	}
+}
+
+// -root は設定ファイルの root より優先する。
+func TestRun_RootFlagOverridesConfig(t *testing.T) {
+	root := makeRoot(t)
+	cfg := filepath.Join(t.TempDir(), "braindex.json")
+	writeFile(t, cfg, `{"root": "/nonexistent/should-not-be-used"}`)
+	out := filepath.Join(t.TempDir(), "catalog.md")
+	runOK(t, options{config: cfg, root: root, out: out, date: "2026-01-03"})
+}
+
+// root がフラグにも設定にも無ければ失敗(終了コード 1)し、索引は書かない。
+func TestRun_MissingRootFails(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "catalog.md")
+	cfg := filepath.Join(t.TempDir(), "braindex.json")
+	writeFile(t, cfg, `{}`)
+	var so, se bytes.Buffer
+	if code := run(options{config: cfg, out: out}, &so, &se); code != 1 {
+		t.Errorf("exit=%d want 1", code)
+	}
+	if !strings.Contains(se.String(), "root") {
+		t.Errorf("stderr に root の説明が無い: %s", se.String())
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Errorf("失敗時に索引を書いてしまった")
+	}
+}
+
+// -config で明示した設定ファイルが無ければ失敗する(既定パスの不在とは区別する)。
+func TestRun_ExplicitConfigMissingFails(t *testing.T) {
+	var so, se bytes.Buffer
+	code := run(options{config: filepath.Join(t.TempDir(), "nope.json"), root: makeRoot(t)}, &so, &se)
+	if code != 1 {
+		t.Errorf("exit=%d want 1", code)
+	}
+}
+
+// 設定ファイルの未知のキー(notes_dir など打ち間違い)は無視せずエラーにする。
+func TestRun_UnknownConfigKeyFails(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "braindex.json")
+	writeFile(t, cfg, `{"root": "..", "notes_dir": "wiki"}`)
+	var so, se bytes.Buffer
+	if code := run(options{config: cfg}, &so, &se); code != 1 {
+		t.Errorf("exit=%d want 1", code)
+	}
+	if !strings.Contains(se.String(), "notes_dir") {
+		t.Errorf("stderr に未知のキー名が無い: %s", se.String())
+	}
+}
+
+// -date は YYYY-MM-DD だけを受け付ける。
+func TestRun_BadDateFails(t *testing.T) {
+	var so, se bytes.Buffer
+	if code := run(options{root: makeRoot(t), out: filepath.Join(t.TempDir(), "c.md"), date: "2026/01/03"}, &so, &se); code != 1 {
+		t.Errorf("exit=%d want 1", code)
+	}
+}
+
+// 存在しない extra は警告を stderr に出し、索引は書いたうえで終了コード 2。
+func TestRun_WarningsExitTwo(t *testing.T) {
+	root := makeRoot(t)
+	cfg := filepath.Join(t.TempDir(), "braindex.json")
+	writeFile(t, cfg, `{"root": "`+filepath.ToSlash(root)+`", "extra": [{"repo": "repo-a", "path": "missing", "kind": "x"}]}`)
+	out := filepath.Join(t.TempDir(), "catalog.md")
+	var so, se bytes.Buffer
+	if code := run(options{config: cfg, out: out, date: "2026-01-03"}, &so, &se); code != 2 {
+		t.Errorf("exit=%d want 2\nstderr=%s", code, se.String())
+	}
+	if !strings.Contains(se.String(), "missing") {
+		t.Errorf("stderr に警告が無い: %s", se.String())
+	}
+	if _, err := os.Stat(out); err != nil {
+		t.Errorf("警告ありでも索引は書くべき: %v", err)
+	}
+}
