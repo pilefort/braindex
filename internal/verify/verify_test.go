@@ -76,6 +76,23 @@ func TestCheckQuoteText(t *testing.T) {
 	}
 }
 
+// 出典ページの &nbsp; や全角空白も「空白の揺れ」として畳む(原型 Python の \s は Unicode の空白を含む)。
+// これを ASCII の空白だけで畳むと、日本語のページで実在する引用が NOT FOUND になる。
+func TestCheckQuoteText_UnicodeSpace(t *testing.T) {
+	page := "<p>これは&nbsp;テストの文章です。全角空白　を含む長い引用の照合。</p>"
+	quote := "これは テストの文章です。全角空白 を含む長い引用の照合。"
+	if got, detail := CheckQuoteText(page, quote); got != Found {
+		t.Errorf("CheckQuoteText = %s (%s), want %s", got, detail, Found)
+	}
+	// 引用の側に全角空白・改行が入っていても同じ。
+	if got, _ := CheckQuoteText(page, "これは\nテストの文章です。全角空白　を含む長い引用の照合。"); got != Found {
+		t.Errorf("引用側の空白の揺れで %s になった", got)
+	}
+	if got := StripHTML("a b　c"); got != "a b c" {
+		t.Errorf("StripHTML = %q, want %q", got, "a b c")
+	}
+}
+
 // 各照合の判定表(固定レスポンス・ネットワークに出ない)。
 func TestChecks(t *testing.T) {
 	f := fakeFetcher{

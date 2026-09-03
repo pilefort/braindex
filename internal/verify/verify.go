@@ -11,6 +11,7 @@ import (
 	"html"
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -92,8 +93,15 @@ var (
 	scriptRE = regexp.MustCompile(`(?is)<script\b.*?</script\s*>`)
 	styleRE  = regexp.MustCompile(`(?is)<style\b.*?</style\s*>`)
 	tagRE    = regexp.MustCompile(`<[^>]*>`)
-	spaceRE  = regexp.MustCompile(`\s+`)
 )
+
+// collapseSpace は空白の連なりを半角空白 1 個に畳み、前後を落とす。
+// 全角空白(U+3000)・ノーブレークスペース(&nbsp; = U+00A0)も空白として扱う。Go の正規表現の \s は
+// ASCII の 5 文字だけで、原型 Python の \s(Unicode の空白を含む)より狭い。狭いままだと日本語の
+// 出典ページで実在する引用が NOT FOUND になる。
+func collapseSpace(s string) string {
+	return strings.Join(strings.FieldsFunc(s, unicode.IsSpace), " ")
+}
 
 // StripHTML は HTML を平文にする。script/style を除き、タグを空白に置換し、実体参照を戻し、空白を畳む。
 func StripHTML(page string) string {
@@ -101,13 +109,13 @@ func StripHTML(page string) string {
 	t = styleRE.ReplaceAllString(t, " ")
 	t = tagRE.ReplaceAllString(t, " ")
 	t = html.UnescapeString(t)
-	return strings.TrimSpace(spaceRE.ReplaceAllString(t, " "))
+	return collapseSpace(t)
 }
 
 // CheckQuoteText は引用が出典 HTML の本文に逐語で存在するかを返す。許すのは空白の揺れだけで、
 // 言い換えを弾くのが目的なので曖昧一致にしない。MinQuoteLen 未満は照合拒否(Error)。
 func CheckQuoteText(page, quote string) (status, detail string) {
-	q := strings.TrimSpace(spaceRE.ReplaceAllString(quote, " "))
+	q := collapseSpace(quote)
 	if utf8.RuneCountInString(q) < MinQuoteLen {
 		return Error, fmt.Sprintf("%d 字未満の引用は照合しない", MinQuoteLen)
 	}
