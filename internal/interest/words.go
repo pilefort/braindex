@@ -80,6 +80,12 @@ func Words(text string) []string {
 
 // isKatakana は全角カタカナと長音・中黒。
 func isKatakana(r rune) bool {
+	// 中黒(U+30FB)はカタカナのコードブロックに入るが、語の区切りとして扱う(決定 2026-09-03)。
+	// 除かないと「ファイル・フォルダ」が 1 語として残り、「ファイル」「フォルダ」が
+	// どちらもストップワードなのに語彙に入る。
+	if r == '・' {
+		return false
+	}
 	return (r >= 0x30A0 && r <= 0x30FF) || r == 'ー'
 }
 
