@@ -64,7 +64,7 @@ type newsFetchOptions struct {
 	layer    string // -layer。フィードの層(既定 all)
 	replay   bool   // -replay。既読を無視して全件を出し、既読も更新しない
 	stdout   bool   // -stdout。ファイルに書かず標準出力へ(既読は更新する)
-	out      string // -out。出力先(既定: <news.dir>/digest_<日付>_<層>.md。既にあれば -2, -3 … を付ける)
+	out      string // -out。出力先(既定: <news.dir>/digest_<日付>_<層>.md。既にあれば書かない)
 	inbox    string // -inbox。選別 JSON を探すディレクトリ(既定 ~/Downloads)
 	noOpen   bool   // -no-open。HTML を既定ブラウザで開かない
 	noScore  bool   // -no-score。関心プロファイルで採点しない(全件を主要表示)
@@ -73,7 +73,7 @@ type newsFetchOptions struct {
 
 // runNewsFetch は braindex news fetch を実行する。
 //
-// 終了コード: 0 成功 / 1 失敗(全フィードの取得失敗を含む。何も書かない) /
+// 終了コード: 0 成功 / 1 失敗(出力先が既にある・全フィードの取得失敗を含む。何も書かない) /
 // 2 警告つきで完了(一部のフィードが取得できなかった・採点の出典(索引・セッションの置き場)が無かった・
 // 選別や統計を取り込めなかった)。
 func runNewsFetch(args []string, stdout, stderr io.Writer) int {
@@ -85,7 +85,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.layer, "layer", news.LayerAll, "取得するフィードの層(feeds.json の layer)。all は全件")
 	fs.BoolVar(&o.replay, "replay", false, "既読を無視して全記事を出し、既読も更新しない(見出しの再生成用)")
 	fs.BoolVar(&o.stdout, "stdout", false, "Markdown をファイルに書かず標準出力に出す(進捗は stderr。既読は更新する。HTML は作らず開かない)")
-	fs.StringVar(&o.out, "out", "", "Markdown の出力先(既定: 設定 news.dir の digest_<日付>_<層>.md。既にあれば -2, -3 … を付けて別名にする)。HTML は拡張子を .html にした同名")
+	fs.StringVar(&o.out, "out", "", "Markdown の出力先(既定: 設定 news.dir の digest_<日付>_<層>.md。既にあれば書かずに終了コード 1)。HTML は拡張子を .html にした同名")
 	fs.StringVar(&o.inbox, "inbox", "", "選別 JSON を探すディレクトリ(既定: ~/Downloads。<news.dir>/inbox はいつも見る)")
 	fs.BoolVar(&o.noOpen, "no-open", false, "HTML を既定ブラウザで開かない(定期実行やテスト用)")
 	fs.BoolVar(&o.noScore, "no-score", false, "関心プロファイルで採点しない(全件を主要表示・出典を読まない)")
@@ -97,7 +97,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "  関心プロファイル(braindex news profile)で採点し、関心度 news.show_min_score 以上を主要表示、未満を「関心外と判定」に")
 		fmt.Fprintln(stderr, "  折りたたむ。HTML の「選別を書き出す」が出す JSON は braindex news apply が取り込む。")
 		fmt.Fprintln(stderr, "  外へ出る通信はフィードの GET だけ(セッション本文は送らない)。HTML は外部の JS / CSS を参照しない。")
-		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗(全フィードの取得失敗を含む。何も書かない) / 2 警告つきで完了(一部のフィードが取得できなかった・")
+		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗(出力先が既にある・全フィードの取得失敗。何も書かない) / 2 警告つきで完了(一部のフィードが取得できなかった・")
 		fmt.Fprintln(stderr, "  採点の出典(索引・セッションの置き場)が無かった・選別や統計を取り込めなかった)")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
@@ -166,6 +166,20 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		progress = stderr
 	}
 
+	// 出力先は取得の前に確かめる。既にあれば書かない(braindex review と同じ規則・決定 2026-09-03)。
+	// 取得の後に落とすと、既読だけ進んで手元に何も残らない回ができる。
+	outPath := o.out
+	if outPath == "" {
+		outPath = filepath.Join(newsDir, fmt.Sprintf("digest_%s_%s.md", today, o.layer))
+	}
+	if !o.stdout {
+		if _, serr := os.Lstat(outPath); serr == nil {
+			return fail(fmt.Errorf("既にある: %s(同じ日の 2 回目は上書きしない。-out で別名を指定するか、-stdout で標準出力に出す)", outPath))
+		} else if !errors.Is(serr, iofs.ErrNotExist) {
+			return fail(serr)
+		}
+	}
+
 	// 前回の選別 JSON を取り込む(keep と統計に反映。今回の関心プロファイルにも効く)。
 	// 取り込めなくても今日の新着は出す。ここで止めると、壊れた JSON が 1 つ残っているだけで
 	// ダイジェストが出なくなる(リポの規約: 完了できるものは警告つき完了の 2)。
@@ -218,15 +232,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 			return fail(err)
 		}
 	} else {
-		// md(記録用)と html(選別 UI)を同名で書く。md の名前が空いていれば html も空いているとみなす(対で作るため)
-		outPath := o.out
-		if outPath == "" {
-			outPath = filepath.Join(newsDir, fmt.Sprintf("digest_%s_%s.md", today, o.layer))
-		}
-		outPath, err = unusedPath(outPath)
-		if err != nil {
-			return fail(err)
-		}
+		// md(記録用)と html(選別 UI)を同名で書く。md の名前は上で確かめてある(既にあればここへ来ない)
 		if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
 			return fail(err)
 		}
@@ -274,7 +280,8 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 }
 
 // unusedPath は path が無ければそのまま、あれば拡張子の前に -2, -3 … を付けた未使用の名前を返す。
-// 同じ日に 2 回取得したとき、前の回の新着(既読になっている)を上書きで失わないため。
+// 使うのは -out に .html を渡された場合だけ: md と html を同じ名前に書くと md を消してしまう。
+// 同じ日の 2 回目そのものは、出力先が既にあれば書かない(決定 2026-09-03)。
 func unusedPath(path string) (string, error) {
 	ext := filepath.Ext(path)
 	base := path[:len(path)-len(ext)]
