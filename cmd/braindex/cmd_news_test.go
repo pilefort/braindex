@@ -103,20 +103,22 @@ func TestNewsFetch_Open(t *testing.T) {
 	h := readFile(t, htmlPath)
 	mustContain(t, "html", h, "<!doctype html>", "<h3>B（新着 1 件）</h3>", `data-id="`+feedIDOf("https://example.com/3")+`"`, `const META={date:"2026-08-15",layer:"weekly"};`)
 
-	// -no-open: 書くが開かない
+	// -no-open: 書くが開かない(同じ日の 2 回目なので -out で別名にする)
 	opened = nil
-	code, _, _ = newsFetch(t, hub, "-layer", "weekly", "-replay")
+	out2 := filepath.Join(hub, "news", "second.md")
+	code, _, se2 := newsFetch(t, hub, "-layer", "weekly", "-replay", "-out", out2)
 	if code != 0 || len(opened) != 0 {
-		t.Errorf("-no-open: exit=%d opened=%v", code, opened)
+		t.Errorf("-no-open: exit=%d opened=%v %s", code, opened, se2)
 	}
-	if _, err := os.Stat(filepath.Join(hub, "news", "digest_2026-08-15_weekly-2.html")); err != nil {
+	if _, err := os.Stat(filepath.Join(hub, "news", "second.html")); err != nil {
 		t.Errorf("2 回目の html: %v", err)
 	}
 
 	// 開けない: 警告して 2
 	openInBrowser = func(string) error { return errors.New("ブラウザで開けない: なし") }
 	se.Reset()
-	code = dispatch([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-layer", "weekly", "-no-score", "-replay"}, &so, &se)
+	out3 := filepath.Join(hub, "news", "third.md")
+	code = dispatch([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-layer", "weekly", "-no-score", "-replay", "-out", out3}, &so, &se)
 	if code != 2 || !strings.Contains(se.String(), "警告: ブラウザで開けない") {
 		t.Errorf("開けない: exit=%d %s", code, se.String())
 	}
@@ -174,17 +176,19 @@ func TestNewsFetch_Flow(t *testing.T) {
 		t.Errorf("既読:\n%s", seen)
 	}
 
-	// 2 回目: 新着なし。前のダイジェストは上書きせず -2 を付ける
+	// 2 回目: 同じ日の出力先が既にあるので書かずに終了コード 1(braindex review と同じ規則・決定 2026-09-03)。
+	// 取得の前に確かめるので、既読も進まない
+	seenBefore := readFile(t, filepath.Join(hub, "news", ".seen.json"))
 	code, so, se = newsFetch(t, hub)
-	if code != 2 { // C は 2 回目も 404 なので警告つき完了のまま
-		t.Fatalf("2 回目 exit=%d\n%s%s", code, so, se)
+	if code != 1 {
+		t.Fatalf("2 回目 exit=%d want 1\n%s%s", code, so, se)
 	}
-	mustContain(t, "stdout 2 回目", so, "A: 新着 0 / 全 2", "digest_2026-08-15_all-2.md")
-	if got := readFile(t, filepath.Join(hub, "news", "digest_2026-08-15_all-2.md")); !strings.Contains(got, "新着 0 件（フィード 2 本）") || strings.Contains(got, "## A") {
-		t.Errorf("2 回目:\n%s", got)
-	}
+	mustContain(t, "stderr 2 回目", se, "既にある", "digest_2026-08-15_all.md", "-out で別名", "-stdout")
 	if readFile(t, out) != want {
 		t.Error("1 回目のダイジェストが変わった")
+	}
+	if readFile(t, filepath.Join(hub, "news", ".seen.json")) != seenBefore {
+		t.Error("書けなかったのに既読が進んだ")
 	}
 
 	// -replay: 既読を無視して全件、既読ファイルは変えない
