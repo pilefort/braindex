@@ -48,7 +48,7 @@ func Load(path string) (cfg Config, found bool, err error) {
 	}
 	// UTF-8 BOM (EF BB BF) を除去。Windows PowerShell 5.1 の Set-Content -Encoding utf8 は
 	// BOM を付けるので、設定ファイルをそれで書いた利用者が踏む。残ったままだと encoding/json が
-	// 先頭バイトで invalid character 'ï' を返す(internal/extract と同じく、ソースに BOM リテラルを
+	// 先頭バイトで invalid character を返す(internal/extract と同じく、ソースに BOM リテラルを
 	// 置かずバイトで判定する)。落とすのは先頭の 1 個だけで、値の中の U+FEFF は触らない。
 	if len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF {
 		b = b[3:]

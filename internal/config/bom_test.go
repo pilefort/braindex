@@ -10,8 +10,9 @@ import (
 //
 // Windows PowerShell 5.1 の `Set-Content -Encoding utf8` は BOM を付けるので、
 // 設定ファイルを PowerShell で書き出した利用者が踏む(2026-09-03 に schedule の実機確認で遭遇)。
-// BOM が残ると encoding/json が先頭バイトで
-// `invalid character 'ï' looking for beginning of value` を返して落ちる。
+// BOM が残ると encoding/json が先頭バイトで `invalid character ... looking for
+// beginning of value` を返して落ちる(2026-09-03 の実測では '\ufeff' と 'ï' の両方の
+// 表示を見たが、どちらの条件でそうなるかは特定できていない。どちらにせよ落ちる)。
 func TestLoad_BOM(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "braindex.json")
@@ -35,15 +36,19 @@ func TestLoad_BOM(t *testing.T) {
 	}
 }
 
-// BOM を落とすのは先頭の 1 個だけ。途中に現れた場合は JSON の誤りとして落とす
-// (BOM を無条件に全部消すと、文字列の中の U+FEFF まで変わってしまう)。
+// BOM を落とすのは先頭の 1 個だけ。値の中の U+FEFF は JSON 文字列の合法な文字なので、
+// そのまま値として保たれる(無条件に全部消すと文字列の中身まで変わってしまう)。
+//
+// 入力は生バイト、期待値は Go のエスケープ、という非対称がこのテストの肝。
+// 生の BOM を Go のソースに置けない(illegal byte order mark)のは期待値の側だけで、
+// 入力を "\ufeff" とエスケープで書くと JSON デコーダが解釈する 6 文字の ASCII になり、
+// BOM 除去コードが触りうるバイトが 1 つも無いテストになってしまう。
 func TestLoad_BOM_途中のものは消さない(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "braindex.json")
-	// 値の側に U+FEFF を含める。読めたうえで値が保たれることを見る
-	// (Go のソースに生の BOM は置けない=illegal byte order mark。エスケープで書く)
-	body := "{\"root\": \"..\", \"notes_dirs\": [\"docs/\\ufeffnotes\"]}"
-	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+	// 値の中に生の BOM バイト(EF BB BF)を置く
+	body := []byte("{\"root\": \"..\", \"notes_dirs\": [\"docs/\xEF\xBB\xBFnotes\"]}")
+	if err := os.WriteFile(p, body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg, _, err := Load(p)
