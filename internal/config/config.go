@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"os"
 
+	"github.com/pilefort/braindex/internal/approvals"
 	"github.com/pilefort/braindex/internal/news"
 	"github.com/pilefort/braindex/internal/retro"
 	"github.com/pilefort/braindex/internal/review"
@@ -28,10 +29,11 @@ const DefaultPath = "braindex.json"
 // Config は braindex.json の内容。
 type Config struct {
 	scan.Config
-	Review   review.Settings   `json:"review"`   // 週次レビュー(braindex review)の節。省略可
-	Retro    retro.Settings    `json:"retro"`    // レトロスペクティブ(braindex retro)の節。省略可
-	News     news.Settings     `json:"news"`     // ニュースサジェスト(braindex news)の節。省略可
-	Schedule schedule.Settings `json:"schedule"` // 定期実行(braindex schedule)の節。省略可
+	Review    review.Settings    `json:"review"`    // 週次レビュー(braindex review)の節。省略可
+	Retro     retro.Settings     `json:"retro"`     // レトロスペクティブ(braindex retro)の節。省略可
+	News      news.Settings      `json:"news"`      // ニュースサジェスト(braindex news)の節。省略可
+	Schedule  schedule.Settings  `json:"schedule"`  // 定期実行(braindex schedule)の節。省略可
+	Approvals approvals.Settings `json:"approvals"` // 判断待ちフォーム(braindex approvals)の節。省略可
 }
 
 // Load は path の設定ファイル(JSON)を読む。

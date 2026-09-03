@@ -23,7 +23,7 @@ hub が持つのは索引と週次レビューだけで、知識の正本は各�
 ```text
 parent/                            ← braindex.json の root（既定 ".."＝hub の親）
 ├── hub/                           ← 索引を置くリポ。braindex はここで実行する
-│   ├── braindex.json              設定（root / notes_dirs / extra / review / retro / news / schedule）
+│   ├── braindex.json              設定（root / notes_dirs / extra / review / retro / news / approvals / schedule）
 │   ├── index/catalog.md           ■ 索引：1 ノート 1 行（日付・種別・タイトル・要旨・パス）
 │   ├── work/review/2026-09-03.md  週次レビューの下書き（braindex review）
 │   ├── news/                      ニュースの置き場（ダイジェストと、選別で残した見出し keep/）
@@ -382,8 +382,21 @@ braindex approvals apply          # 受けた回答を反映する（聞くの�
 
 選んだ項目は `docs/decisions.md` に 3 段（結論 → 理由 → 根拠）で追記して `APPROVALS.md` から消し、保留は項目を残して
 「**保留（日付）:**」を付ける。反映した回答 JSON は `.applied.json` に改名するので、2 回反映されない。
-フラグ: `-file`（既定 `work/APPROVALS.md`）`-dir`（回答 JSON の置き場。既定は OS の一時ディレクトリの `braindex-approvals`）
-`-timeout 秒`（0 で無期限）`-no-open` `-apply` `-decisions` `-date` `-reply`。
+フラグ: `-file`（判断待ちのファイル）`-dir`（回答 JSON の置き場。既定は OS の一時ディレクトリの `braindex-approvals`）
+`-config`（設定ファイル。既定はカレントの `braindex.json`。無くてもよい）`-timeout 秒`（0 で無期限）`-no-open` `-apply` `-decisions` `-date` `-reply`。
+
+設定（`braindex.json` の `approvals` 節。節ごと省略してよく、設定ファイルが無くても動く）:
+
+```json
+{ "approvals": { "file": "work/APPROVALS.md", "decisions": "docs/decisions.md", "timeout_sec": 0 } }
+```
+
+- `file` — 判断待ちのファイル。既定 `work/APPROVALS.md`
+- `decisions` — 決定の追記先。既定 `docs/decisions.md`
+- `timeout_sec` — `serve` が回答を待つ秒数。既定 `0`（無期限）。負の値は設定の誤りとして止める
+
+相対パスは **`braindex.json` のある場所**からの相対で解く（コマンドを打ったカレントからではない）。
+優先順位は **フラグ > 設定 > 既定** で、`-file` などを明示したときはフラグが勝つ。
 終了コード: `serve` 0 回答あり／3 時間切れ、`apply` 0 反映した・回答なし／2 反映できなかった項目がある、`status` 0 ／2 記載漏れか未反映の回答あり。いずれも 1 は失敗。
 
 ### braindex answer — 回答の HTML 化

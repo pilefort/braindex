@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/pilefort/braindex/internal/approvals"
+	"github.com/pilefort/braindex/internal/config"
 )
 
 func init() {
@@ -73,20 +74,69 @@ func runApprovals(args []string, stdout, stderr io.Writer) int {
 
 // approvalsFileFlags は各サブコマンド共通の置き場のフラグ。
 type approvalsFileFlags struct {
-	file string // -file。APPROVALS.md(既定: work/APPROVALS.md)
-	dir  string // -dir。回答 JSON の置き場(既定: OS の一時ディレクトリの braindex-approvals)
+	file   string // -file。APPROVALS.md(既定: 設定 approvals.file → work/APPROVALS.md)
+	dir    string // -dir。回答 JSON の置き場(既定: OS の一時ディレクトリの braindex-approvals)
+	config string // -config。braindex.json(既定: カレントの braindex.json。無くてもよい)
 }
 
 func (f *approvalsFileFlags) bind(fs *flag.FlagSet) {
-	fs.StringVar(&f.file, "file", filepath.Join("work", "APPROVALS.md"), "判断待ちのファイル")
+	fs.StringVar(&f.file, "file", "", "判断待ちのファイル(既定: 設定 approvals.file。無ければ work/APPROVALS.md)")
 	fs.StringVar(&f.dir, "dir", "", "回答 JSON の置き場(既定: OS の一時ディレクトリの braindex-approvals)")
+	fs.StringVar(&f.config, "config", "", "設定ファイル(既定: カレントの braindex.json。無くてもよい)")
+}
+
+// settings は braindex.json の approvals 節を既定込みで返す。
+//
+// 設定ファイルが「既定の置き場に無い」のは正常(フラグと既定だけで動く)。
+// -config で明示したのに無いときだけエラーにする(打ち間違いを黙って無視しないため)。
+// 戻り値の 2 つめは設定ファイルのパス。設定に書いた相対パスは「設定ファイルのある場所」を
+// 基準に解く(コマンドを打ったカレント基準にすると、hub の外から呼んだときに壊れる)。
+func (f approvalsFileFlags) settings() (approvals.Settings, string, error) {
+	path := f.config
+	if path == "" {
+		path = config.DefaultPath
+	}
+	cfg, found, err := config.Load(path)
+	if err != nil {
+		return approvals.Settings{}, path, err
+	}
+	if !found {
+		if f.config != "" {
+			return approvals.Settings{}, path, fmt.Errorf("設定ファイルが無い: %s", f.config)
+		}
+		return approvals.Settings{}.WithDefaults(), path, nil
+	}
+	if err := cfg.Approvals.Validate(); err != nil {
+		return approvals.Settings{}, path, err
+	}
+	return cfg.Approvals.WithDefaults(), path, nil
 }
 
 // loadApprovals は APPROVALS.md を読み、解析結果と置き場を返す。
+// 置き場はフラグ > 設定 > 既定 の順で決める。
 func loadApprovals(f approvalsFileFlags) (approvals.Doc, approvals.Paths, error) {
-	p, err := approvals.Resolve(f.file, f.dir)
+	s, cfgPath, err := f.settings()
+	if err != nil {
+		return approvals.Doc{}, approvals.Paths{}, err
+	}
+	base := filepath.Dir(cfgPath) // 設定ファイルのある場所 = hub
+	file := f.file
+	if file == "" {
+		file = filepath.FromSlash(s.File)
+		if !filepath.IsAbs(file) {
+			file = filepath.Join(base, file)
+		}
+	}
+	p, err := approvals.Resolve(file, f.dir)
 	if err != nil {
 		return approvals.Doc{}, p, err
+	}
+	// 決定の追記先も設定で差し替える(相対なら hub 基準。Resolve の既定と同じ値なら結果は変わらない)
+	if d := filepath.FromSlash(s.Decisions); d != "" {
+		if !filepath.IsAbs(d) {
+			d = filepath.Join(p.Project, d)
+		}
+		p.Decisions = d
 	}
 	b, err := os.ReadFile(p.Approvals)
 	if err != nil {
@@ -143,6 +193,20 @@ func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 	}
 	if fs.NArg() > 0 {
 		return fail(fmt.Errorf("引数 %q は受け付けない(フラグだけを渡す)", fs.Args()))
+	}
+	// -timeout を明示していなければ設定の approvals.timeout_sec を使う(フラグ > 設定 > 既定)
+	explicitTimeout := false
+	fs.Visit(func(fl *flag.Flag) {
+		if fl.Name == "timeout" {
+			explicitTimeout = true
+		}
+	})
+	if !explicitTimeout {
+		s, _, serr := f.settings()
+		if serr != nil {
+			return fail(serr)
+		}
+		timeoutSec = float64(s.TimeoutSec)
 	}
 	timeout, err := serveTimeout(timeoutSec)
 	if err != nil {
