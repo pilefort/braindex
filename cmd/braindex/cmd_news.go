@@ -203,6 +203,14 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 			return fail(err)
 		}
 		htmlPath := strings.TrimSuffix(outPath, filepath.Ext(outPath)) + ".html"
+		if strings.EqualFold(htmlPath, outPath) {
+			// -out に .html を渡された場合。同じ名前に書くと md を消してしまうので、md と同じ連番の規則で別名にする
+			// (Windows は大文字小文字を区別しないので .HTML も同じ扱い)
+			htmlPath, err = unusedPath(htmlPath)
+			if err != nil {
+				return fail(err)
+			}
+		}
 		if err := os.WriteFile(htmlPath, news.RenderHTML(results, do), 0o644); err != nil {
 			return fail(err)
 		}

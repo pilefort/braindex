@@ -90,6 +90,24 @@ func TestNewsFetch_Open(t *testing.T) {
 
 func feedIDOf(link string) string { return feed.EntryID(link, "") }
 
+// -out に .html を渡しても Markdown を上書きしない(html は md と同じ連番の規則で別名にする)。
+func TestNewsFetch_OutHTML(t *testing.T) {
+	hub, _ := newsHub(t)
+	out := filepath.Join(hub, "news", "mine.html")
+	code, so, se := newsFetch(t, hub, "-layer", "weekly", "-out", out)
+	if code != 0 {
+		t.Fatalf("exit=%d\n%s%s", code, so, se)
+	}
+	htmlPath := filepath.Join(hub, "news", "mine-2.html")
+	mustContain(t, "stdout", so, "news ダイジェスト: "+out, "news 選別 UI: "+htmlPath)
+	if md := readFile(t, out); !strings.HasPrefix(md, "# ニュースダイジェスト") {
+		t.Errorf("-out の md が html で上書きされた:\n%s", md)
+	}
+	if h := readFile(t, htmlPath); !strings.HasPrefix(h, "<!doctype html>") {
+		t.Errorf("html:\n%s", h)
+	}
+}
+
 // 取得 → ダイジェスト → 既読。2 回目は新着なし。一部失敗は終了コード 2。
 func TestNewsFetch_Flow(t *testing.T) {
 	hub, _ := newsHub(t)
