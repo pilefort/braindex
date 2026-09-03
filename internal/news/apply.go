@@ -162,12 +162,25 @@ const IngestedDir = ".ingested"
 func Ingest(newsDir string, dirs []string) (msgs []string, err error) {
 	var paths []string
 	for _, d := range dirs {
-		m, _ := filepath.Glob(filepath.Join(d, SelectionPrefix+"*.json"))
-		sort.Strings(m) // 名前に時刻が入るので昇順 = 時刻順。後勝ちで最新が残る
-		paths = append(paths, m...)
+		// glob ではなく走査する: 置き場の名前に [ や * が入っていてもパターンとして解釈されない。
+		// os.ReadDir はファイル名の昇順で返す。名前に時刻が入るので昇順 = 時刻順で、後勝ちで最新が残る
+		des, rerr := os.ReadDir(d)
+		if rerr != nil {
+			if !errors.Is(rerr, fs.ErrNotExist) { // 無い置き場は黙って飛ばす。読めない置き場は伝える(取り込みは続ける)
+				msgs = append(msgs, fmt.Sprintf("置き場を読めない(%v): %s", rerr, d))
+			}
+			continue
+		}
+		for _, de := range des {
+			n := de.Name()
+			if de.IsDir() || !strings.HasPrefix(n, SelectionPrefix) || !strings.HasSuffix(n, ".json") {
+				continue
+			}
+			paths = append(paths, filepath.Join(d, n))
+		}
 	}
 	if len(paths) == 0 {
-		return nil, nil
+		return msgs, nil
 	}
 	statsPath := filepath.Join(newsDir, StatsFile)
 	st, err := LoadStats(statsPath)

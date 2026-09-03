@@ -181,3 +181,29 @@ func TestIngest_CrossDevice(t *testing.T) {
 		t.Errorf("統計: err=%v %+v", err, st.Digests)
 	}
 }
+
+// 置き場の名前に glob の記号が入っていても拾う(ディレクトリ名をパターンとして解釈しない)。無い置き場は黙って飛ばす。
+func TestIngest_DirNameWithGlobMeta(t *testing.T) {
+	base := t.TempDir()
+	inbox := filepath.Join(base, "down[loads]")
+	if err := os.MkdirAll(inbox, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	name := SelectionPrefix + "2026-08-15_daily_20260815100000.json"
+	if err := os.WriteFile(filepath.Join(inbox, name), []byte(selectionJSON("2026-08-15", "daily",
+		`{"id": "a", "title": "残す記事", "link": "https://x/keep", "feed": "F1"}`,
+		`"F1": {"shown": 3, "kept": 1}`)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	newsDir := filepath.Join(base, "news")
+	msgs, err := Ingest(newsDir, []string{filepath.Join(base, "no-such-dir"), inbox})
+	if err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "取り込み: "+name) {
+		t.Errorf("msgs: %v", msgs)
+	}
+	if _, err := os.Stat(filepath.Join(newsDir, IngestedDir, name)); err != nil {
+		t.Errorf("取り込み済みに無い: %v", err)
+	}
+}
