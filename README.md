@@ -95,7 +95,7 @@ braindex review                                # 週に 1 回: レビューの�
 ```
 
 `braindex init` は設定 `braindex.json`（`"root": ".."`）・フォルダ規約のテンプレ・スキルを展開する。
-テンプレを使わずに始めるなら、`braindex.example.json` を `braindex.json` としてコピーするだけでもよい。
+設定の雛形はこれが正本で、リポジトリには別置きの雛形を持たない。
 
 **索引はコミットする。** hub が git 管理下にないと `braindex review` は索引の増減を常に 0 件と報告し、終了コード 2 で終わる。
 
@@ -511,7 +511,6 @@ v0.1.0（2026-09-03）: 索引 CLI（Phase 1）を原型から移植して可搬
 |---|---|
 | `cmd/braindex` | サブコマンドの登録とフラグ解析（`main.go`・`commands.go`・`cmd_*.go`） |
 | `internal/` | 索引の実装（`scan` → `extract` → `render` → `catalog`）と `config`・`template`（init）・`lint`・`review`・`sessions`／`retro`・`feed`／`interest`／`news`（ニュース）・`approvals`・`mdhtml`／`verify`（回答の HTML 化と照合）・`scope`・`schedule` |
-| `braindex.example.json` | 設定ファイルの雛形 |
 | `.github/workflows/ci.yml` | CI。ubuntu と windows で gofmt／vet／test に加え、同じ入力から 2 回生成してバイト一致することを確かめる |
 | `CONTRIBUTING.md` | 開発の決まり（テスト・決定性・持ち込まないもの） |
 | `docs/` `work/` | 作者の設計メモと作業状態。git 管理外（`.gitignore`。2026-09-02 決定） |
