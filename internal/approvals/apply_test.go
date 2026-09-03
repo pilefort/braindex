@@ -5,6 +5,30 @@ import (
 	"testing"
 )
 
+// 見出しが同じ項目が並んでいても、答えた項目だけを消す(消し込みを題で引くと、答えていない同題の項目まで消える)。
+func TestApply_DuplicateTitles(t *testing.T) {
+	src := []byte("# 承認待ち\n\n" +
+		"## 1. 命名\n\n**決めたいこと:** 索引の列名\n**なぜ今決めるか:** 次の PR\n**選択肢:**\n" +
+		"- A. path — 短い\n- B. file — 明確\n**私の案:** A — 短い\n**決めないとどうなるか:** 止まる\n\n" +
+		"## 2. 命名\n\n**決めたいこと:** 設定の鍵名\n**なぜ今決めるか:** 次の PR\n**選択肢:**\n" +
+		"- A. notes_dirs — 複数形\n- B. notes_dir — 単数形\n**私の案:** A — 複数形\n**決めないとどうなるか:** 止まる\n")
+	rep := Reply{ReceivedAt: "2026-03-04T10:00:00+09:00", Items: []ReplyItem{{N: 2, Title: "命名", Choice: "B"}}}
+	res := Apply(src, []byte("# 設計判断\n"), rep, "2026-03-04")
+	if res.Decided != 1 {
+		t.Fatalf("decided=%d summary=%v", res.Decided, res.Summary)
+	}
+	if !strings.Contains(string(res.Decisions), "## 命名 → B. notes_dir\n") {
+		t.Errorf("decisions =\n%s", res.Decisions)
+	}
+	d := Parse(res.Approvals)
+	if len(d.Items) != 1 {
+		t.Fatalf("残る項目 = %d 件（答えていない項目まで消えた）:\n%s", len(d.Items), res.Approvals)
+	}
+	if got := d.Items[0].Fields[FieldWhat]; got != "索引の列名" {
+		t.Errorf("残ったのが別の項目: %q\n%s", got, res.Approvals)
+	}
+}
+
 func TestApply_ChoiceAndHold(t *testing.T) {
 	rep := Reply{ReceivedAt: "2026-03-04T10:00:00+09:00", Items: []ReplyItem{
 		{N: 1, Title: "設定ファイルの形式を JSON にするか TOML にするか", Choice: "A", Comment: ""},

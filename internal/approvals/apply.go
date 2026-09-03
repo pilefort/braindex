@@ -25,26 +25,36 @@ type ApplyResult struct {
 // 転記する(work/ を git 管理しない hub では APPROVALS.md の履歴が残らないため、ここに残さないと失われる)。
 func Apply(approvalsMD, decisionsMD []byte, rep Reply, today string) ApplyResult {
 	d := Parse(approvalsMD)
-	byTitle := map[string]*Item{}
-	byN := map[int]*Item{}
+	// 見出しの題も番号も重なりうる(番号は書き手が振るだけ)ので、引き当ても消し込みも添字で持つ。
+	// 題で消し込むと、同じ題の答えていない項目まで一緒に消える。
+	byTitle := map[string]int{}
+	byN := map[int]int{}
 	for i := range d.Items {
-		byTitle[d.Items[i].Title] = &d.Items[i]
-		byN[d.Items[i].N] = &d.Items[i]
+		if _, dup := byTitle[d.Items[i].Title]; !dup {
+			byTitle[d.Items[i].Title] = i
+		}
+		if _, dup := byN[d.Items[i].N]; !dup {
+			byN[d.Items[i].N] = i
+		}
 	}
 	var res ApplyResult
-	decided := map[string]bool{}
-	holds := map[string]string{}
+	decided := map[int]bool{}
+	holds := map[int]string{}
 	var entries []string
 	for _, r := range rep.Items {
 		title := strings.TrimSpace(r.Title)
-		it := byTitle[title]
-		if it == nil && title == "" {
-			it = byN[r.N]
+		// 回答は番号と題の両方を持つ。番号の指す項目の題が一致すればそれ、違えば題で引く。
+		idx := -1
+		if i, ok := byN[r.N]; ok && (title == "" || d.Items[i].Title == title) {
+			idx = i
+		} else if i, ok := byTitle[title]; ok && title != "" {
+			idx = i
 		}
-		if it == nil {
+		if idx < 0 {
 			res.Summary = append(res.Summary, fmt.Sprintf("警告: 回答の項目 [%d] %s が APPROVALS.md に見つからない → 未反映", r.N, title))
 			continue
 		}
+		it := &d.Items[idx]
 		choice := strings.TrimSpace(r.Choice)
 		comment := strings.TrimSpace(r.Comment)
 		if choice == "hold" || (choice == "other" && comment == "") {
@@ -52,7 +62,7 @@ func Apply(approvalsMD, decisionsMD []byte, rep Reply, today string) ApplyResult
 			if choice == "other" {
 				note = "「その他」だがコメント無し → 保留扱い"
 			}
-			holds[it.Title] = note
+			holds[idx] = note
 			res.Held++
 			res.Summary = append(res.Summary, fmt.Sprintf("[%d] %s → 保留（%s）", it.N, it.Title, note))
 			continue
@@ -120,18 +130,18 @@ func Apply(approvalsMD, decisionsMD []byte, rep Reply, today string) ApplyResult
 		}
 		evidence += "。文面は braindex approvals apply の機械生成（結論文は整えてよい）"
 		entries = append(entries, fmt.Sprintf("\n## %s\n\n記録日: %s\n理由: %s\n根拠: %s\n", heading, today, reason, evidence))
-		decided[it.Title] = true
+		decided[idx] = true
 		res.Decided++
 	}
 
 	// APPROVALS.md を組み立て直す
 	var remaining []string
-	for _, it := range d.Items {
-		if decided[it.Title] {
+	for i, it := range d.Items {
+		if decided[i] {
 			continue
 		}
 		raw := it.Raw
-		if note, ok := holds[it.Title]; ok {
+		if note, ok := holds[i]; ok {
 			raw = strings.TrimRight(raw, "\n") + "\n**保留（" + today + "）:** " + note + "\n"
 		}
 		remaining = append(remaining, raw)
