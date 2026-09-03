@@ -20,24 +20,26 @@ import (
 
 // Settings は braindex.json の news 節。省略・0 は既定値。
 type Settings struct {
-	Dir         string         `json:"dir"`           // ニュースの置き場(hub 相対・スラッシュ区切り)。既定 news
-	Feeds       string         `json:"feeds"`         // フィード一覧の JSON(hub 相対)。既定 news/feeds.json
-	SeenDays    int            `json:"seen_days"`     // 既読を覚えておく日数。既定 90
-	CapPerLayer map[string]int `json:"cap_per_layer"` // 層ごとの 1 フィードあたり表示上限。無い層は DefaultCap
-	ProfileDays int            `json:"profile_days"`  // 関心プロファイルが見る直近の日数(索引・セッション)。既定 14
-	SessionsDir string         `json:"sessions_dir"`  // セッションログの置き場。空なら retro.sessions_dir → ~/.claude/projects
+	Dir          string         `json:"dir"`            // ニュースの置き場(hub 相対・スラッシュ区切り)。既定 news
+	Feeds        string         `json:"feeds"`          // フィード一覧の JSON(hub 相対)。既定 news/feeds.json
+	SeenDays     int            `json:"seen_days"`      // 既読を覚えておく日数。既定 90
+	CapPerLayer  map[string]int `json:"cap_per_layer"`  // 層ごとの 1 フィードあたり表示上限。無い層は DefaultCap
+	ProfileDays  int            `json:"profile_days"`   // 関心プロファイルが見る直近の日数(索引・セッション)。既定 14
+	SessionsDir  string         `json:"sessions_dir"`   // セッションログの置き場。空なら retro.sessions_dir → ~/.claude/projects
+	ShowMinScore int            `json:"show_min_score"` // この関心度(0〜3)以上を主要表示。未満は「関心外と判定」に折りたたむ。既定 2
 }
 
 // 既定値。
 const (
-	DefaultDir         = "news"
-	DefaultFeeds       = "news/feeds.json"
-	DefaultSeenDays    = 90
-	DefaultProfileDays = 14
-	KeepDir            = "keep"         // Dir の下。選別で残した見出し(YYYY-MM.md)。git 管理
-	InterestsFile      = "interests.md" // Dir の下。補助の関心ファイル(任意・1 行 1 語)
-	DefaultCap         = 20
-	SeenFile           = ".seen.json" // Dir の下。git 管理外(hub の .gitignore テンプレで除外)
+	DefaultDir          = "news"
+	DefaultFeeds        = "news/feeds.json"
+	DefaultSeenDays     = 90
+	DefaultProfileDays  = 14
+	DefaultShowMinScore = 2              // 原型と同じ(2026-08-15〜の運用値)
+	KeepDir             = "keep"         // Dir の下。選別で残した見出し(YYYY-MM.md)。git 管理
+	InterestsFile       = "interests.md" // Dir の下。補助の関心ファイル(任意・1 行 1 語)
+	DefaultCap          = 20
+	SeenFile            = ".seen.json" // Dir の下。git 管理外(hub の .gitignore テンプレで除外)
 )
 
 // DefaultCapPerLayer は cap_per_layer を省略したときの層別上限。
@@ -64,6 +66,9 @@ func (s Settings) WithDefaults() Settings {
 	}
 	if s.ProfileDays <= 0 {
 		s.ProfileDays = DefaultProfileDays
+	}
+	if s.ShowMinScore <= 0 {
+		s.ShowMinScore = DefaultShowMinScore
 	}
 	return s
 }

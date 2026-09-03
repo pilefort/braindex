@@ -28,6 +28,7 @@ func TestFiles_Hub(t *testing.T) {
 		"docs/notes/common/.gitkeep", "docs/notes/project/.gitkeep",
 		"work/APPROVALS.md", "work/TODO.md", "work/review/.gitkeep",
 		".claude/skills/braindex-review/SKILL.md", ".claude/skills/retro/SKILL.md",
+		".claude/skills/record-lint/SKILL.md", ".claude/skills/contradiction-scan/SKILL.md",
 	} {
 		if !got[want] {
 			t.Errorf("雛形に無い: %s", want)

@@ -33,7 +33,7 @@ type Term struct {
 type Profile struct {
 	Today   string         `json:"today"`
 	Days    int            `json:"days"`
-	Sources map[string]int `json:"sources"` // 出典 → 材料の数(index: 窓内のノート数、sessions: 窓内のセッション数、keep: 見出し数、extra: 語数)
+	Sources map[string]int `json:"sources"` // 出典 → 材料の数(index: 窓内のノート数、sessions: 窓内のセッション数、keep: 見出し数、extra: 補助ファイルの行数)
 	Terms   []Term         `json:"terms"`
 }
 
@@ -139,17 +139,21 @@ func Build(in Input) (Profile, error) {
 		}
 	}
 
-	// extra: 1 行 1 語。空行と # 始まりは読まない。語の規則は通さず、行をそのまま(小文字に畳んで)語にする
+	// extra: 1 行 1 語(句)。空行と # 始まりは読まない。行を語の規則に通す(記事の側も同じ規則で語にするので、
+	// 規則を通らない書き方だと照合できない)。規則で語にならない行は小文字に畳んでそのまま語にする
 	for _, line := range in.Extra {
 		line = strings.TrimSpace(strings.TrimPrefix(line, bom))
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		w := strings.ToLower(line)
-		if counts[SourceExtra][w] == 0 {
-			p.Sources[SourceExtra]++
+		ws := Words(line)
+		if len(ws) == 0 {
+			ws = []string{strings.ToLower(line)}
 		}
-		counts[SourceExtra][w] = 1
+		p.Sources[SourceExtra]++
+		for _, w := range ws {
+			counts[SourceExtra][w] = 1
+		}
 	}
 
 	// 正規化して合算

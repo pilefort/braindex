@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -26,20 +24,6 @@ func init() {
 
 // answersDir は回答 HTML の既定の置き場所。OS の一時ディレクトリ配下で、実行のたびに古いものを消す(HTML は一時物)。テストで差し替える。
 var answersDir = func() string { return filepath.Join(os.TempDir(), "braindex-answers") }
-
-// openInBrowser は既定のアプリでファイルを開く。テストで差し替える。
-var openInBrowser = func(path string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", "", path)
-	case "darwin":
-		cmd = exec.Command("open", path)
-	default:
-		cmd = exec.Command("xdg-open", path)
-	}
-	return cmd.Start()
-}
 
 // runAnswer は braindex answer [フラグ] <md> を実行する。
 // <md> を自己完結 HTML にして書き、既定ブラウザで開く。出力先の既定は一時置き場 <OS の一時 dir>/braindex-answers/<同名>.html。
