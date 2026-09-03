@@ -17,7 +17,7 @@ func runApprovalsStatus(args []string, stdout, stderr io.Writer) int {
 	var f approvalsFileFlags
 	f.bind(fs)
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "使い方: braindex approvals status [-file work/APPROVALS.md] [-dir <置き場>]")
+		fmt.Fprintln(stderr, "使い方: braindex approvals status [-config braindex.json] [-file work/APPROVALS.md] [-dir <置き場>]")
 		fmt.Fprintln(stderr, "  判断待ちの件数・記載漏れ・未反映の回答の有無を表示する(書き込みなし)。")
 		fmt.Fprintln(stderr, "  終了コード: 0 / 1 失敗 / 2 記載漏れか未反映の回答がある")
 		fmt.Fprintln(stderr)

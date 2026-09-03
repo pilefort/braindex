@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/pilefort/braindex/internal/approvals"
+	"github.com/pilefort/braindex/internal/config"
 )
 
 func init() {
@@ -73,18 +74,111 @@ func runApprovals(args []string, stdout, stderr io.Writer) int {
 
 // approvalsFileFlags は各サブコマンド共通の置き場のフラグ。
 type approvalsFileFlags struct {
-	file string // -file。APPROVALS.md(既定: work/APPROVALS.md)
-	dir  string // -dir。回答 JSON の置き場(既定: OS の一時ディレクトリの braindex-approvals)
+	file   string // -file。APPROVALS.md(既定: 設定 approvals.file → work/APPROVALS.md)
+	dir    string // -dir。回答 JSON の置き場(既定: OS の一時ディレクトリの braindex-approvals)
+	config string // -config。braindex.json(既定: カレントの braindex.json。無くてもよい)
 }
 
 func (f *approvalsFileFlags) bind(fs *flag.FlagSet) {
-	fs.StringVar(&f.file, "file", filepath.Join("work", "APPROVALS.md"), "判断待ちのファイル")
+	fs.StringVar(&f.file, "file", "", "判断待ちのファイル(既定: 設定 approvals.file。無ければ work/APPROVALS.md)")
 	fs.StringVar(&f.dir, "dir", "", "回答 JSON の置き場(既定: OS の一時ディレクトリの braindex-approvals)")
+	fs.StringVar(&f.config, "config", "", "設定ファイル(既定: カレントの braindex.json。無くてもよい)")
+}
+
+// settings は braindex.json の approvals 節を既定込みで返す。
+//
+// 設定ファイルが「既定の置き場に無い」のは正常(フラグと既定だけで動く)。
+// -config で明示したのに無いときだけエラーにする(打ち間違いを黙って無視しないため)。
+// 戻り値の 2 つめは設定ファイルのパス。設定に書いた相対パスは「設定ファイルのある場所」を
+// 基準に解く(コマンドを打ったカレント基準にすると、hub の外から呼んだときに壊れる)。
+// 戻り値の 3 つめは設定ファイルが見つかったか。見つからないときは設定を当てにせず
+// 従来どおりの既定(カレント相対の work/APPROVALS.md と、APPROVALS.md から推定した hub の
+// docs/decisions.md)を使う——ここで設定側の既定を混ぜると、設定ファイルの無い hub で
+// decisions.md が相対パスのまま使われる。
+func (f approvalsFileFlags) settings() (approvals.Settings, string, bool, error) {
+	path := f.config
+	if path == "" {
+		path = config.DefaultPath
+	}
+	cfg, found, err := config.Load(path)
+	if err != nil {
+		return approvals.Settings{}, path, false, err
+	}
+	if !found {
+		if f.config != "" {
+			return approvals.Settings{}, path, false, fmt.Errorf("設定ファイルが無い: %s(hub のルートで実行するか、-config で指定する)", f.config)
+		}
+		return approvals.Settings{}.WithDefaults(), path, false, nil
+	}
+	if err := cfg.Approvals.Validate(); err != nil {
+		return approvals.Settings{}, path, true, err
+	}
+	return cfg.Approvals.WithDefaults(), path, true, nil
+}
+
+// resolveApprovalsPaths は フラグ > 設定 > 既定 の順で置き場を決める。
+//
+// serve / status / apply のすべてがここを通す。apply だけ approvals.Resolve を直に呼ぶと、
+// -file を渡さないときに filepath.Abs("") ＝ カレントが APPROVALS.md 扱いになり、
+// Paths.ID が serve と別物になって「回答があるのに『回答はない』」で取りこぼす。
+//
+// 設定に書いた相対パスは file も decisions も同じ基準(braindex.json のある場所)で解く。
+// 基準を 2 つ持つと、APPROVALS.md を work/ 直下以外に置いた瞬間に追記先がずれる
+// (approvals.Resolve は親ディレクトリ名が "work" のときだけ 1 段上がるため)。
+// 既存の cmd_news.go・cmd_review.go も設定の相対パスを hub 基準で解いており、それに揃えている。
+func resolveApprovalsPaths(f approvalsFileFlags) (approvals.Paths, error) {
+	s, cfgPath, found, err := f.settings()
+	if err != nil {
+		return approvals.Paths{}, err
+	}
+	base := filepath.Dir(cfgPath) // 設定ファイルのある場所 = hub
+	if abs, aerr := filepath.Abs(base); aerr == nil {
+		base = abs // 相対のままだと status の出力だけ体裁が崩れ、(あり) の判定もカレント基準になる
+	}
+	fromHub := func(v string) string {
+		v = filepath.FromSlash(v)
+		if v == "" || filepath.IsAbs(v) {
+			return v
+		}
+		return filepath.Join(base, v)
+	}
+	file := f.file
+	if file == "" {
+		if found {
+			file = fromHub(s.File)
+		} else {
+			file = filepath.FromSlash(approvals.DefaultFile) // 設定が無ければ従来どおりカレント相対
+		}
+	}
+	p, err := approvals.Resolve(file, f.dir)
+	if err != nil {
+		return p, err
+	}
+	// 設定の decisions を採るのは、解決した APPROVALS.md が設定の hub の下にあるときだけ。
+	// -file で別プロジェクト(spoke)の APPROVALS.md を捌くときは、決定も相手側に書く
+	// (braindex init -repo は各プロジェクトに work/APPROVALS.md と docs/decisions.md の
+	// 両方を作るので、hub のカレントから spoke を捌くのは想定内の使い方)。
+	// 設定が無いときも Resolve の既定(推定した hub の docs/decisions.md)のままにする。
+	if found && underDir(base, p.Approvals) {
+		if d := fromHub(s.Decisions); d != "" {
+			p.Decisions = d
+		}
+	}
+	return p, nil
+}
+
+// underDir は path が dir と同じか、その下にあるかを返す。
+func underDir(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // loadApprovals は APPROVALS.md を読み、解析結果と置き場を返す。
 func loadApprovals(f approvalsFileFlags) (approvals.Doc, approvals.Paths, error) {
-	p, err := approvals.Resolve(f.file, f.dir)
+	p, err := resolveApprovalsPaths(f)
 	if err != nil {
 		return approvals.Doc{}, p, err
 	}
@@ -123,7 +217,7 @@ func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&apply, "apply", false, "回答を受けたら続けて反映する(braindex approvals apply と同じ)。聞く→反映を 1 コマンドで済ませる")
 	fs.StringVar(&decisionsPath, "decisions", "", "-apply のとき決定を追記するファイル(既定: <hub>/docs/decisions.md)")
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "使い方: braindex approvals serve [-file work/APPROVALS.md] [-timeout 秒] [-no-open] [-apply] [-decisions docs/decisions.md] [-dir <置き場>]")
+		fmt.Fprintln(stderr, "使い方: braindex approvals serve [-config braindex.json] [-file work/APPROVALS.md] [-timeout 秒] [-no-open] [-apply] [-decisions docs/decisions.md] [-dir <置き場>]")
 		fmt.Fprintln(stderr, "  判断待ちをフォームにして 127.0.0.1 の空きポートで配信し、既定ブラウザで開く。「決定を送信」を 1 回受けたら")
 		fmt.Fprintln(stderr, "  回答を <置き場>/approvals-<id>.reply.json に書いて終わる(常駐しない)。反映は braindex approvals apply(-apply で続けて行う)。")
 		fmt.Fprintln(stderr, "  終了コード: 0 回答あり / 1 失敗 / 3 時間切れ(-apply のときは反映の失敗も 1)")
@@ -143,6 +237,20 @@ func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 	}
 	if fs.NArg() > 0 {
 		return fail(fmt.Errorf("引数 %q は受け付けない(フラグだけを渡す)", fs.Args()))
+	}
+	// -timeout を明示していなければ設定の approvals.timeout_sec を使う(フラグ > 設定 > 既定)
+	explicitTimeout := false
+	fs.Visit(func(fl *flag.Flag) {
+		if fl.Name == "timeout" {
+			explicitTimeout = true
+		}
+	})
+	if !explicitTimeout {
+		s, _, _, serr := f.settings()
+		if serr != nil {
+			return fail(serr)
+		}
+		timeoutSec = float64(s.TimeoutSec)
 	}
 	timeout, err := serveTimeout(timeoutSec)
 	if err != nil {
