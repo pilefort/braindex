@@ -53,6 +53,18 @@ func newsFetch(t *testing.T, hub string, args ...string) (code int, so, se strin
 	return code, sob.String(), seb.String()
 }
 
+// 範囲外の show_min_score は既定に丸めず、設定の誤り(終了コード 1)にする。
+// 丸めると、書いた値と実際の動きが食い違ったまま気づけない(決定 2026-09-03)。
+func TestNewsFetch_設定の範囲外(t *testing.T) {
+	hub, _ := newsHub(t)
+	writeFile(t, filepath.Join(hub, "braindex.json"), `{"root": "..", "news": {"show_min_score": 4}}`)
+	code, _, se := newsFetch(t, hub)
+	if code != 1 {
+		t.Fatalf("exit=%d want 1\n%s", code, se)
+	}
+	mustContain(t, "stderr", se, "show_min_score", "0〜3")
+}
+
 // 選別の取り込み(統計ファイル)に失敗しても、その日のダイジェストは書いて警告つき完了(2)にする。
 // 壊れたファイルが 1 つ残っているだけでニュースが出なくなるのを避ける。
 func TestNewsFetch_取り込みに失敗しても書く(t *testing.T) {

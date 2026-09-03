@@ -156,11 +156,10 @@ func loadProfile(fc config.Config, hubDir, today string, days int, sessionsDir s
 			return interest.Profile{}, nil, err
 		}
 	}
-	since, err := time.Parse("2006-01-02", today)
+	since, err := profileSince(today, days)
 	if err != nil {
 		return interest.Profile{}, nil, err
 	}
-	since = since.AddDate(0, 0, -days)
 	if _, err := os.Stat(sessDir); errors.Is(err, iofs.ErrNotExist) {
 		warn("セッションログの置き場 %s が無いので飛ばした", sessDir)
 	} else if err != nil {
@@ -205,4 +204,16 @@ func loadProfile(fc config.Config, hubDir, today string, days int, sessionsDir s
 		return interest.Profile{}, nil, err
 	}
 	return p, warnings, nil
+}
+
+// profileSince は関心プロファイルが見る窓の起点(today の days 日前)を返す。
+//
+// 起点は retro と同じ「ローカル(retroLoc)の 0 時」にする(決定 2026-09-03)。UTC の 0 時にすると、
+// 同じ「N 日前から」が retro と別の日を指し、両方を定期実行に載せたときに食い違う。
+func profileSince(today string, days int) (time.Time, error) {
+	t, err := time.ParseInLocation("2006-01-02", today, retroLoc)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return t.AddDate(0, 0, -days), nil
 }

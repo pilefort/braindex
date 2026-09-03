@@ -175,7 +175,7 @@ braindex schedule uninstall  # この hub の登録を消す
 | `extra` | 規約外の置き場を個別に足す配列。各要素は `repo`（root 直下のリポ名）・`path`（リポ内の起点。`"."` はリポ直下。`notes_dirs` と同じくリポ内の相対パスに限る）・`recursive`（`true` でサブディレクトリも走査）・`kind`（種別ラベル）・`exclude`（グロブの配列。`/` を含むパターンは起点からの相対パス、含まなければファイル名に掛ける。大文字小文字は区別する） |
 | `review` | 週次レビュー（`braindex review`）の節。`dir`（記録の置き場。既定 `work/review`）・`since_days`（前回の記録が無いときに遡る日数。既定 14）・`stale_todo_weeks`（TODO を放置とみなす週数。既定 4）・`archive_months`（何か月より前をアーカイブ候補にするか。既定 6）。省略可 |
 | `retro` | 振り返り（`braindex retro`）の節。`sessions_dir`・`window_days`・`threshold`・`position_bins`・`dictionary`・`dictionary_extra`。省略可。詳細は `braindex retro` の節 |
-| `news` | ニュースサジェスト（`braindex news`）の節。`dir`（既定 `news`）・`feeds`（既定 `news/feeds.json`）・`seen_days`（既定 90）・`cap_per_layer`（層ごとの 1 フィード表示上限。既定 `{"daily": 15, "weekly": 25}`・表に無い層は 20）・`profile_days`（既定 14）・`sessions_dir`・`show_min_score`（既定 2）。省略可 |
+| `news` | ニュースサジェスト（`braindex news`）の節。`dir`（既定 `news`）・`feeds`（既定 `news/feeds.json`）・`seen_days`（既定 90）・`cap_per_layer`（層ごとの 1 フィード表示上限。既定 `{"daily": 15, "weekly": 25}`・表に無い層は 20）・`profile_days`（既定 14）・`sessions_dir`・`show_min_score`（主要表示にする関心度の下限。0〜3・既定 2。**0 は全件を主要表示**で、省略とは別の意味）。省略可。範囲外の値は設定の誤りとしてエラー |
 | `schedule` | 定期実行（`braindex schedule`）の節。`jobs` の配列（`name`・`args`・`when`）。省略すると既定の 2 本。省略可 |
 
 未知のキーはエラーにする（`notes_dir` のような打ち間違いを無言で無視しない）。
@@ -364,7 +364,7 @@ keep は次のプロファイルの出典になるので、**選別がそのま�
 | `news profile` | 関心プロファイル（語 → 重み・出典）を表示する。出典は索引の直近差分・直近のセッション内容・`news/keep/`・`news/interests.md` |
 | `news apply` | 選別 JSON を `<news.dir>/inbox` と `-inbox`（既定 `~/Downloads`）から取り込む |
 
-重みは出典ごとに最大を 1 に正規化した値の和で、決定論。LLM は使わない。
+重みは出典ごとに最大を 1 に正規化した値の和で、決定論。LLM は使わない。窓の起点は `retro` と同じローカルの 0 時。
 主なフラグ: `-config` `-date YYYY-MM-DD` `-layer` `-out` `-stdout` `-no-open` `-no-score`（採点せず全件を主要表示）
 `-replay`（既読を無視して再生成し、既読も更新しない）`-days` `-top` `-json` `-sessions` `-inbox`。
 終了コード: 0 成功／1 失敗（全フィードの取得失敗を含む。何も書かない）／2 警告つきで完了（一部のフィードが取れなかった・採点の出典が無かった）。

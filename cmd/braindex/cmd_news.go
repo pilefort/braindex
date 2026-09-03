@@ -140,6 +140,9 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		return fail(errors.New("-layer が空(all か feeds.json の layer を指定する)"))
 	}
 	hubDir := filepath.Dir(cfgPath)
+	if err := fc.News.Validate(); err != nil {
+		return fail(err)
+	}
 	s := fc.News.WithDefaults()
 	newsDir := filepath.Join(hubDir, filepath.FromSlash(s.Dir))
 
@@ -207,7 +210,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stdout, "関心プロファイルが空なので採点なし(全件を主要表示)")
 		}
 	}
-	do := news.DigestOptions{Layer: o.layer, Today: today, Cap: s.Cap(o.layer), Ranking: ranking, MinScore: s.ShowMinScore, Totals: stats.Totals()}
+	do := news.DigestOptions{Layer: o.layer, Today: today, Cap: s.Cap(o.layer), Ranking: ranking, MinScore: s.MinScore(), Totals: stats.Totals()}
 	digest := news.Digest(results, do)
 	openWarning := 0
 	if o.stdout {
