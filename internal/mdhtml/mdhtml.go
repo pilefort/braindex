@@ -11,6 +11,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/pilefort/braindex/internal/weblink"
 )
 
 var (
@@ -113,6 +115,10 @@ func inline(text string) string {
 	text = wikiRE.ReplaceAllString(text, `<span class="wl">$1</span>`)
 	text = linkRE.ReplaceAllStringFunc(text, func(m string) string {
 		sm := linkRE.FindStringSubmatch(m)
+		if !weblink.Safe(sm[2]) {
+			// javascript: のようなスキームは href に出さず、文字だけ残す(リンクの文言は消さない)
+			return sm[1]
+		}
 		u := strings.ReplaceAll(strings.ReplaceAll(sm[2], `"`, "%22"), " ", "%20")
 		return `<a href="` + u + `" target="_blank" rel="noopener">` + sm[1] + `</a>`
 	})

@@ -71,6 +71,28 @@ func TestRenderHTML(t *testing.T) {
 	}
 }
 
+// フィードのリンクは http(s) だけを載せる。javascript: などは href にも data-link にも出さず、題名だけ出す
+// (決定 2026-09-03)。data-link にも出さないのは、選別 JSON 経由で keep に入るのを止めるため。
+func TestRenderHTML_リンクのスキームを絞る(t *testing.T) {
+	res := []Result{{Source: Source{Name: "A"}, New: []feed.Entry{
+		{ID: "1", Title: "危ない", Link: "javascript:alert(1)"},
+		{ID: "2", Title: "普通", Link: "https://x/2"},
+	}}}
+	h := string(RenderHTML(res, DigestOptions{Layer: "daily", Today: "2026-08-15", Cap: 20}))
+	if strings.Contains(h, "javascript:") {
+		t.Errorf("javascript: が HTML に残っている:\n%s", h)
+	}
+	if !strings.Contains(h, `data-id="1" data-title="危ない" data-link=""`) {
+		t.Error("落としたリンクの data-link が空になっていない")
+	}
+	if !strings.Contains(h, `data-low="0" data-r=""><span class="btns"><button class="bk">残す</button><button class="bd">不要</button></span><span>危ない</span>`) {
+		t.Error("題名がそのまま(リンクなしで)出ていない")
+	}
+	if !strings.Contains(h, `<a href="https://x/2" target="_blank" rel="noopener">普通</a>`) {
+		t.Error("http(s) のリンクまで落としている")
+	}
+}
+
 // <script> の中は HTML エスケープが効かない(実体参照が復号されない)ので、JS の文字列として埋める。
 // layer は feeds.json と -layer が決める自由なラベルなので、記号が入りうる。
 func TestRenderHTML_ScriptContext(t *testing.T) {

@@ -128,6 +128,24 @@ func TestInline_Italic(t *testing.T) {
 	}
 }
 
+// Markdown リンクの href に載せるのは http(s) と、スキームの無いもの(相対パス・#見出し)だけ。
+// javascript: などをそのまま href に出すと、開いただけでコードが動く(決定 2026-09-03)。
+func TestInline_リンクのスキームを絞る(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"[表示](javascript:alert)", "表示"}, // 括弧を含む URL は既存の正規表現が途中で切るので、ここでは使わない
+		{"[表示](JavaScript:void)", "表示"},
+		{"[表示](data:text/html;base64,xxx)", "表示"},
+		{"[表示](https://example.com/a)", `<a href="https://example.com/a" target="_blank" rel="noopener">表示</a>`},
+		{"[節へ](#見出し)", `<a href="#見出し" target="_blank" rel="noopener">節へ</a>`},
+		{"[ノート](docs/notes/a.md)", `<a href="docs/notes/a.md" target="_blank" rel="noopener">ノート</a>`},
+	}
+	for _, c := range cases {
+		if got := inline(c.in); got != c.want {
+			t.Errorf("inline(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 // 原型の linkify は Markdown リンクの href の中まで再リンクして HTML を壊した。移植ではタグと <a>・<code>・<pre> の中を触らない。
 func TestLinkify(t *testing.T) {
 	in := `<p>see <a href="https://u.example/x" target="_blank" rel="noopener">t</a> and https://v.example/y <code>https://c.example/</code></p>` +

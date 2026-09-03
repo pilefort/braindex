@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/pilefort/braindex/internal/weblink"
 )
 
 // Selection は HTML の「選別を書き出す」が出す JSON。
@@ -257,7 +259,9 @@ func appendKeeps(path, month string, keeps []Keep, date, layer string) error {
 	}
 	var fresh []Keep
 	for _, k := range keeps {
-		if k.Link == "" || bytes.Contains(existing, []byte("]("+k.Link+")")) {
+		// keep は git 管理の蓄積側なので、載せるリンクは http(s) だけにする(決定 2026-09-03)。
+		// 落とす扱いはリンクの無い記事と同じ: 記録しない(題名だけ書くと、次回の重複判定に引っかからず毎回増える)。
+		if k.Link == "" || !weblink.Safe(k.Link) || bytes.Contains(existing, []byte("]("+k.Link+")")) {
 			continue
 		}
 		fresh = append(fresh, k)

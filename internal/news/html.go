@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/pilefort/braindex/internal/feed"
+	"github.com/pilefort/braindex/internal/weblink"
 )
 
 // SelectionType は選別 JSON の type。HTML の「選別を書き出す」が出し、news apply が読む。
@@ -177,11 +178,21 @@ func itemHTML(e feed.Entry, r Result, o DigestOptions, low bool) string {
 	if e.Summary != "" {
 		sum = "<div class=\"sum\">" + esc(e.Summary) + "</div>"
 	}
+	// フィード由来のリンクは信用しない。http(s) でなければ表示にも選別 JSON(data-link)にも載せず、
+	// 題名だけを出す(決定 2026-09-03「生成物のリンクは http(s) 以外を落とす」)。
+	link := e.Link
+	if !weblink.Safe(link) {
+		link = ""
+	}
+	title := esc(e.Title)
+	if link != "" {
+		title = "<a href=\"" + esc(link) + "\" target=\"_blank\" rel=\"noopener\">" + title + "</a>"
+	}
 	return fmt.Sprintf("<li class=\"%s\" data-id=\"%s\" data-title=\"%s\" data-link=\"%s\" data-feed=\"%s\" data-cat=\"%s\" data-low=\"%s\" data-r=\"%s\">"+
 		"<span class=\"btns\"><button class=\"bk\">残す</button><button class=\"bd\">不要</button></span>%s"+
-		"<span><a href=\"%s\" target=\"_blank\" rel=\"noopener\">%s</a>%s%s</span></li>\n",
-		cls, esc(e.ID), esc(e.Title), esc(e.Link), esc(r.Source.Name), esc(r.Source.Category), lowFlag, score,
-		badge, esc(e.Link), esc(e.Title), date, sum)
+		"<span>%s%s%s</span></li>\n",
+		cls, esc(e.ID), esc(e.Title), esc(link), esc(r.Source.Name), esc(r.Source.Category), lowFlag, score,
+		badge, title, date, sum)
 }
 
 // htmlTemplate は原型(news_collect.py)の選別 UI を、固有の文言を外して移したもの。
