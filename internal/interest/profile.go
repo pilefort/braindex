@@ -33,7 +33,7 @@ type Term struct {
 type Profile struct {
 	Today   string         `json:"today"`
 	Days    int            `json:"days"`
-	Sources map[string]int `json:"sources"` // 出典 → 材料の数(index: 窓内のノート数、sessions: 窓内のセッション数、keep: 見出し数、extra: 語数)
+	Sources map[string]int `json:"sources"` // 出典 → 材料の数(index: 窓内のノート数、sessions: 窓内のセッション数、keep: 見出し数、extra: 補助ファイルの行数)
 	Terms   []Term         `json:"terms"`
 }
 
