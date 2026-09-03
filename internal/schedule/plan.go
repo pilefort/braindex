@@ -170,7 +170,9 @@ func cronLines(hub, exe string, jobs []Job, existing string) ([]string, error) {
 }
 
 // UninstallPlan は crontab から names のジョブの行を落としたコマンドを返す。
-// names が空なら hub のブロックごと消す。ブロックの中の見覚えのない行は残す。
+//
+// names を渡したときは、その行だけを落とし、ブロックの中の見覚えのない行(利用者が書き足した行)は残す。
+// names が空のときは hub のブロックごと消すので、見覚えのない行も一緒に消える。
 func UninstallPlan(goos, hub string, names []string, existing string) ([]Command, error) {
 	if IsWindows(goos) {
 		return nil, fmt.Errorf("Windows の解除は UninstallTasks を使う")
