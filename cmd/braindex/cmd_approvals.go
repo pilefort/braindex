@@ -50,11 +50,13 @@ func approvalsUsage(stderr io.Writer) {
 
 // runApprovals は braindex approvals <サブ> を振り分ける。
 func runApprovals(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || args[0] == "-h" || args[0] == "-help" || args[0] == "--help" {
+	if len(args) == 0 {
 		approvalsUsage(stderr)
-		if len(args) == 0 {
-			return 1
-		}
+		return 1
+	}
+	switch args[0] {
+	case "-h", "-help", "--help", "help": // braindex retro と同じ受け方
+		approvalsUsage(stderr)
 		return 0
 	}
 	for _, s := range approvalsSubs {

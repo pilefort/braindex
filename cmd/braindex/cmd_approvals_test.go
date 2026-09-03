@@ -56,6 +56,10 @@ func TestApprovals_Usage(t *testing.T) {
 		t.Errorf("-h: code=%d\n%s", code, se.String())
 	}
 	se.Reset()
+	if code := dispatch([]string{"approvals", "help"}, &so, &se); code != 0 || !strings.Contains(se.String(), "使い方") {
+		t.Errorf("help: code=%d\n%s", code, se.String())
+	}
+	se.Reset()
 	if code := dispatch([]string{"approvals", "nope"}, &so, &se); code != 1 || !strings.Contains(se.String(), `"nope"`) {
 		t.Errorf("不明なサブ: code=%d\n%s", code, se.String())
 	}
