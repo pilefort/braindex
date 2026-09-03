@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/pilefort/braindex/internal/retro"
 )
 
 // profileHub は hub に 索引(窓内のノート 1 件)・keep 履歴・補助ファイル を置く。セッションは retro と同じ testdata を使う。
@@ -27,6 +30,31 @@ func newsProfile(t *testing.T, hub string, args ...string) (code int, so, se str
 	var sob, seb bytes.Buffer
 	code = dispatch(append([]string{"news", "profile", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-09-01"}, args...), &sob, &seb)
 	return code, sob.String(), seb.String()
+}
+
+// 窓の起点は retro と同じ「ローカルの 0 時」。UTC の 0 時にすると、同じ「N 日前から」が
+// retro と別の日を指し、両方を定期実行に載せたときに食い違う(決定 2026-09-03)。
+func TestProfileSince_窓の起点はローカル0時(t *testing.T) {
+	loc := time.FixedZone("JST", 9*60*60)
+	old := retroLoc
+	retroLoc = loc
+	t.Cleanup(func() { retroLoc = old })
+
+	got, err := profileSince("2026-09-01", 14)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := time.Date(2026, 8, 18, 0, 0, 0, 0, loc); !got.Equal(want) {
+		t.Errorf("since = %v want %v", got, want)
+	}
+	if got.UTC().Hour() == 0 && got.UTC().Day() == 18 {
+		t.Errorf("UTC の 0 時になっている: %v", got.UTC())
+	}
+	// retro の窓と同じ起点になる
+	w := retro.Recent(time.Date(2026, 9, 1, 12, 0, 0, 0, loc), 14, loc)
+	if !w.Since.Equal(got) {
+		t.Errorf("retro の窓 %v と違う: %v", w.Since, got)
+	}
 }
 
 func TestNewsProfile_Sources(t *testing.T) {

@@ -16,6 +16,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"github.com/pilefort/braindex/internal/interest"
 )
 
 // Settings は braindex.json の news 節。省略・0 は既定値。
@@ -26,7 +28,8 @@ type Settings struct {
 	CapPerLayer  map[string]int `json:"cap_per_layer"`  // 層ごとの 1 フィードあたり表示上限。無い層は DefaultCap
 	ProfileDays  int            `json:"profile_days"`   // 関心プロファイルが見る直近の日数(索引・セッション)。既定 14
 	SessionsDir  string         `json:"sessions_dir"`   // セッションログの置き場。空なら retro.sessions_dir → ~/.claude/projects
-	ShowMinScore int            `json:"show_min_score"` // この関心度(0〜3)以上を主要表示。未満は「関心外と判定」に折りたたむ。既定 2
+	ShowMinScore *int           `json:"show_min_score"` // この関心度(0〜interest.MaxScore)以上を主要表示。未満は「関心外と判定」に折りたたむ。
+	// ポインタなのは 0(全件を主要表示)と未設定(既定 2)を区別するため。他のキーのように 0 を未設定とみなすと、0 を設定できない
 }
 
 // 既定値。
@@ -67,10 +70,39 @@ func (s Settings) WithDefaults() Settings {
 	if s.ProfileDays <= 0 {
 		s.ProfileDays = DefaultProfileDays
 	}
-	if s.ShowMinScore <= 0 {
-		s.ShowMinScore = DefaultShowMinScore
+	if s.ShowMinScore == nil {
+		n := DefaultShowMinScore
+		s.ShowMinScore = &n
 	}
 	return s
+}
+
+// MinScore は主要表示の下限。WithDefaults を通していない Settings でも既定を返す。
+func (s Settings) MinScore() int {
+	if s.ShowMinScore == nil {
+		return DefaultShowMinScore
+	}
+	return *s.ShowMinScore
+}
+
+// Validate は設定ファイルに書かれた値を確かめる。範囲外は既定に丸めず、設定の誤りとしてエラーにする
+// (未知のキーを通さないのと同じ考え。丸めると、書いた値と動きが食い違ったまま気づけない)。
+func (s Settings) Validate() error {
+	if s.ShowMinScore != nil && (*s.ShowMinScore < 0 || *s.ShowMinScore > interest.MaxScore) {
+		return fmt.Errorf("設定 news.show_min_score: 0〜%d のどれか(0 は全件を主要表示): %d", interest.MaxScore, *s.ShowMinScore)
+	}
+	if s.SeenDays < 0 {
+		return fmt.Errorf("設定 news.seen_days: 0 以上(0 は既定 %d): %d", DefaultSeenDays, s.SeenDays)
+	}
+	if s.ProfileDays < 0 {
+		return fmt.Errorf("設定 news.profile_days: 0 以上(0 は既定 %d): %d", DefaultProfileDays, s.ProfileDays)
+	}
+	for layer, n := range s.CapPerLayer {
+		if n < 0 {
+			return fmt.Errorf("設定 news.cap_per_layer[%q]: 0 以上(0 は既定 %d): %d", layer, DefaultCap, n)
+		}
+	}
+	return nil
 }
 
 // Cap は layer の 1 フィードあたり表示上限。設定に無い層(all を含む)は DefaultCap。

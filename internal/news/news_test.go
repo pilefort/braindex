@@ -28,6 +28,52 @@ func TestSettings_Defaults(t *testing.T) {
 	}
 }
 
+// show_min_score は 0(全件を主要表示)を設定できる。他のキーのように 0 を未設定とみなすと、
+// 「全部見たい」を恒久設定にできない(決定 2026-09-03)。
+func TestSettings_ShowMinScore(t *testing.T) {
+	if got := (Settings{}).MinScore(); got != DefaultShowMinScore {
+		t.Errorf("未設定は既定 %d: got=%d", DefaultShowMinScore, got)
+	}
+	if got := (Settings{}).WithDefaults().MinScore(); got != DefaultShowMinScore {
+		t.Errorf("WithDefaults 後も既定: got=%d", got)
+	}
+	zero := 0
+	if got := (Settings{ShowMinScore: &zero}).WithDefaults().MinScore(); got != 0 {
+		t.Errorf("0 が既定に置き換わっている: got=%d", got)
+	}
+	three := 3
+	if got := (Settings{ShowMinScore: &three}).WithDefaults().MinScore(); got != 3 {
+		t.Errorf("3 が保たれていない: got=%d", got)
+	}
+}
+
+// 範囲外は既定に丸めず設定の誤りにする(丸めると、書いた値と動きが食い違ったまま気づけない)。
+func TestSettings_Validate(t *testing.T) {
+	if err := (Settings{}).Validate(); err != nil {
+		t.Errorf("既定は通る: %v", err)
+	}
+	for _, n := range []int{-1, 4} {
+		v := n
+		err := (Settings{ShowMinScore: &v}).Validate()
+		if err == nil {
+			t.Errorf("show_min_score=%d はエラーにする", n)
+			continue
+		}
+		if !strings.Contains(err.Error(), "show_min_score") {
+			t.Errorf("エラー文にキー名が無い: %v", err)
+		}
+	}
+	if err := (Settings{SeenDays: -1}).Validate(); err == nil {
+		t.Error("seen_days=-1 はエラーにする")
+	}
+	if err := (Settings{ProfileDays: -1}).Validate(); err == nil {
+		t.Error("profile_days=-1 はエラーにする")
+	}
+	if err := (Settings{CapPerLayer: map[string]int{"daily": -1}}).Validate(); err == nil {
+		t.Error("cap_per_layer の負値はエラーにする")
+	}
+}
+
 // WithDefaults が埋める層別上限は複製。呼び出し側が書き換えても既定の表は汚れない。
 func TestSettings_DefaultsAreCopied(t *testing.T) {
 	s := Settings{}.WithDefaults()
