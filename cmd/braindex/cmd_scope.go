@@ -75,12 +75,12 @@ func runScope(args []string, stdout, stderr io.Writer) int {
 	var content []byte
 	if dir == "" {
 		if catalog == "" {
-			_, outPath, _, err := resolve(o)
+			p, err := scopeCatalogPath(o)
 			if err != nil {
 				fmt.Fprintln(stderr, "braindex scope:", err)
 				return 1
 			}
-			catalog = outPath
+			catalog = p
 		}
 		b, err := os.ReadFile(catalog)
 		if err != nil {
@@ -109,4 +109,25 @@ func runScope(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return 0
+}
+
+// scopeCatalogPath は -catalog が無いときの索引の場所を返す。設定ファイルがあればそのディレクトリ、
+// 無ければカレント基準の index/catalog.md。
+//
+// resolve() を使わないのは、scope が root を使わないため。resolve() は root が無いと
+// 「-root を渡すか、設定ファイルに root を書く」と案内するが、scope は -root を受け付けないので
+// 利用者が行き止まりになる(索引がその場にあっても読めない)。
+func scopeCatalogPath(o options) (string, error) {
+	cfgPath, explicit := o.config, o.config != ""
+	if !explicit {
+		cfgPath = defaultConfig
+	}
+	st, err := os.Stat(cfgPath)
+	if err == nil && !st.IsDir() {
+		return filepath.Join(filepath.Dir(cfgPath), filepath.FromSlash(defaultOut)), nil
+	}
+	if explicit {
+		return "", fmt.Errorf("設定ファイルが見つからない: %s", cfgPath)
+	}
+	return filepath.FromSlash(defaultOut), nil
 }
