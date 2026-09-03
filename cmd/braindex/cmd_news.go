@@ -73,7 +73,8 @@ type newsFetchOptions struct {
 
 // runNewsFetch は braindex news fetch を実行する。
 //
-// 終了コード: 0 成功 / 1 失敗(全フィードの取得失敗を含む。何も書かない) / 2 警告つきで完了(一部のフィードが取得できなかった)。
+// 終了コード: 0 成功 / 1 失敗(全フィードの取得失敗を含む。何も書かない) /
+// 2 警告つきで完了(一部のフィードが取得できなかった・採点の出典(索引・セッションの置き場)が無かった)。
 func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	var o newsFetchOptions
 	fs := flag.NewFlagSet("braindex news fetch", flag.ContinueOnError)
@@ -82,8 +83,8 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.date, "date", "", "今日として使う日付 YYYY-MM-DD(既定: 実行日)。出力ファイル名と既読の日付に使う")
 	fs.StringVar(&o.layer, "layer", news.LayerAll, "取得するフィードの層(feeds.json の layer)。all は全件")
 	fs.BoolVar(&o.replay, "replay", false, "既読を無視して全記事を出し、既読も更新しない(見出しの再生成用)")
-	fs.BoolVar(&o.stdout, "stdout", false, "ファイルに書かず標準出力に出す(既読は更新する)")
-	fs.StringVar(&o.out, "out", "", "出力先(既定: 設定 news.dir の digest_<日付>_<層>.md。既にあれば -2, -3 … を付けて別名にする)")
+	fs.BoolVar(&o.stdout, "stdout", false, "Markdown をファイルに書かず標準出力に出す(進捗は stderr。既読は更新する。HTML は作らず開かない)")
+	fs.StringVar(&o.out, "out", "", "Markdown の出力先(既定: 設定 news.dir の digest_<日付>_<層>.md。既にあれば -2, -3 … を付けて別名にする)。HTML は拡張子を .html にした同名")
 	fs.StringVar(&o.inbox, "inbox", "", "選別 JSON を探すディレクトリ(既定: ~/Downloads。<news.dir>/inbox はいつも見る)")
 	fs.BoolVar(&o.noOpen, "no-open", false, "HTML を既定ブラウザで開かない(定期実行やテスト用)")
 	fs.BoolVar(&o.noScore, "no-score", false, "関心プロファイルで採点しない(全件を主要表示・出典を読まない)")
@@ -155,8 +156,14 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		return fail(err)
 	}
 
+	// -stdout のときは標準出力をダイジェスト専用にし、進捗は stderr へ出す(リダイレクトでそのまま読めるように)。
+	progress := stdout
+	if o.stdout {
+		progress = stderr
+	}
+
 	// 前回の選別 JSON を取り込む(keep と統計に反映。今回の関心プロファイルにも効く)
-	if err := ingestSelections(newsDir, o.inbox, stdout); err != nil {
+	if err := ingestSelections(newsDir, o.inbox, progress); err != nil {
 		return fail(err)
 	}
 	stats, err := news.LoadStats(filepath.Join(newsDir, news.StatsFile))
@@ -169,7 +176,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		if r.Err != nil {
 			fmt.Fprintf(stderr, "braindex news fetch: 警告: %s: %v\n", r.Source.Name, r.Err)
 		} else {
-			fmt.Fprintf(stdout, "%s: 新着 %d / 全 %d\n", r.Source.Name, len(r.New), len(r.Entries))
+			fmt.Fprintf(progress, "%s: 新着 %d / 全 %d\n", r.Source.Name, len(r.New), len(r.Entries))
 		}
 	}
 	if news.AllFailed(results) {
@@ -217,6 +224,14 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 			return fail(err)
 		}
 		htmlPath := strings.TrimSuffix(outPath, filepath.Ext(outPath)) + ".html"
+		if strings.EqualFold(htmlPath, outPath) {
+			// -out に .html を渡された場合。同じ名前に書くと md を消してしまうので、md と同じ連番の規則で別名にする
+			// (Windows は大文字小文字を区別しないので .HTML も同じ扱い)
+			htmlPath, err = unusedPath(htmlPath)
+			if err != nil {
+				return fail(err)
+			}
+		}
 		if err := os.WriteFile(htmlPath, news.RenderHTML(results, do), 0o644); err != nil {
 			return fail(err)
 		}

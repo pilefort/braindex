@@ -1,6 +1,7 @@
 package news
 
 import (
+	"encoding/json"
 	"fmt"
 	"html"
 	"sort"
@@ -123,8 +124,8 @@ func RenderHTML(results []Result, o DigestOptions) []byte {
 	title := fmt.Sprintf("ニュースダイジェスト %s（%s 層・新着 %d 件・主要 %d 件）", o.Today, o.Layer, totalNew, totalMain)
 	out := strings.NewReplacer(
 		"__TITLE__", esc(title),
-		"__DATE__", esc(o.Today),
-		"__LAYER__", esc(o.Layer),
+		"__DATE_JS__", jsString(o.Today),
+		"__LAYER_JS__", jsString(o.Layer),
 		"__ITEMS__", items,
 		"__FOOTER__", strings.Join(foot, "<br><br>"),
 	).Replace(htmlTemplate)
@@ -139,6 +140,18 @@ func capped(es []feed.Entry, cap int) []feed.Entry {
 }
 
 func esc(s string) string { return html.EscapeString(s) }
+
+// jsString は <script> の中に置ける JS の文字列リテラル(引用符を含む)にする。
+// HTML の実体参照は <script> の中では復号されないので、esc では値が壊れる(層に & や " が入ると
+// &amp; のまま JS の値になり、選別 JSON の layer が実際の層と食い違う)。
+// encoding/json は既定で < > & をユニコードエスケープに逃がすので、閉じタグで script の外に出ることもない。
+func jsString(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil { // string の Marshal は失敗しないが、握りつぶさずに安全側へ倒す
+		return `""`
+	}
+	return string(b)
+}
 
 // itemHTML は 1 項目の <li>。data-* に選別 JSON へ書く値を持たせる。low は折りたたみ側。
 func itemHTML(e feed.Entry, r Result, o DigestOptions, low bool) string {
@@ -222,7 +235,7 @@ footer{max-width:960px;margin:0 auto;padding:10px 16px 40px;color:var(--dim);fon
 __ITEMS__</main>
 <footer>__FOOTER__</footer>
 <script>
-const META={date:"__DATE__",layer:"__LAYER__"};
+const META={date:__DATE_JS__,layer:__LAYER_JS__};
 const LSKEY="braindex-news-"+META.date+"-"+META.layer;
 let state={};try{state=JSON.parse(localStorage.getItem(LSKEY)||"{}")}catch(e){}
 const items=[...document.querySelectorAll("li.item")];let cur=-1;

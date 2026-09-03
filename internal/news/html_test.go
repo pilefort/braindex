@@ -70,3 +70,32 @@ func TestRenderHTML(t *testing.T) {
 		t.Errorf("採点なし:\n%s", h2)
 	}
 }
+
+// <script> の中は HTML エスケープが効かない(実体参照が復号されない)ので、JS の文字列として埋める。
+// layer は feeds.json と -layer が決める自由なラベルなので、記号が入りうる。
+func TestRenderHTML_ScriptContext(t *testing.T) {
+	res := []Result{{Source: Source{Name: "A"}, New: []feed.Entry{{ID: "1", Title: "t", Link: "https://x/1"}}}}
+	h := string(RenderHTML(res, DigestOptions{Layer: `a"b&c`, Today: "2026-08-15", Cap: 20}))
+	if !strings.Contains(h, `const META={date:"2026-08-15",layer:"a\"b\u0026c"};`) {
+		t.Errorf("META が JS の文字列になっていない:\n%s", metaLine(h))
+	}
+	// <script> を閉じる文字列でも外に出ない
+	h = string(RenderHTML(res, DigestOptions{Layer: "</script><b>x", Today: "2026-08-15", Cap: 20}))
+	if strings.Contains(metaLine(h), "</script>") {
+		t.Errorf("script を閉じられた:\n%s", metaLine(h))
+	}
+	// 記号を含まない層は今までどおりの見た目
+	h = string(RenderHTML(res, DigestOptions{Layer: "daily", Today: "2026-08-15", Cap: 20}))
+	if !strings.Contains(h, `const META={date:"2026-08-15",layer:"daily"};`) {
+		t.Errorf("META:\n%s", metaLine(h))
+	}
+}
+
+func metaLine(h string) string {
+	for _, line := range strings.Split(h, "\n") {
+		if strings.HasPrefix(line, "const META=") {
+			return line
+		}
+	}
+	return "(META 行が無い)"
+}

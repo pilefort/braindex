@@ -28,6 +28,18 @@ func TestSettings_Defaults(t *testing.T) {
 	}
 }
 
+// WithDefaults が埋める層別上限は複製。呼び出し側が書き換えても既定の表は汚れない。
+func TestSettings_DefaultsAreCopied(t *testing.T) {
+	s := Settings{}.WithDefaults()
+	s.CapPerLayer["daily"] = 1
+	if DefaultCapPerLayer["daily"] != 15 {
+		t.Errorf("既定の表が書き換わった: %v", DefaultCapPerLayer)
+	}
+	if got := (Settings{}).WithDefaults().Cap("daily"); got != 15 {
+		t.Errorf("次の WithDefaults に漏れた: %d", got)
+	}
+}
+
 func TestParseFeeds(t *testing.T) {
 	good := `[{"name": "A", "url": "https://example.com/a.xml", "layer": "daily", "lang": "en", "category": "tech", "note": "x"},
 	         {"name": "B", "url": "http://example.com/b.xml", "layer": "weekly"},
@@ -94,7 +106,11 @@ func TestSeen(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "{\n\"id1\": \"2026-08-01\",\n\"id2\": \"2026-08-15\"\n}\n"
-	if b, _ := os.ReadFile(path); string(b) != want {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != want {
 		t.Errorf("Save:\n%s", b)
 	}
 	s2, err := LoadSeen(path)
@@ -113,7 +129,9 @@ func TestSeen(t *testing.T) {
 		t.Error("日付の誤りがエラーにならない")
 	}
 
-	os.WriteFile(path, []byte("{broken"), 0o644)
+	if err := os.WriteFile(path, []byte("{broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := LoadSeen(path); err == nil {
 		t.Error("壊れたファイルがエラーにならない")
 	}
@@ -249,6 +267,14 @@ func TestDigest_Ranked(t *testing.T) {
 	got := string(Digest(res, DigestOptions{Layer: "daily", Today: "2026-08-15", Cap: 2, Ranking: rk, MinScore: 2}))
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+	// 決定性: 採点からやり直しても同じバイト列。Ranking も Score.Matched も map を経由するので、
+	// 走査順が出力に漏れていれば実行のたびに揺れる(1 回だけでは捕まらないので繰り返す)
+	for i := 0; i < 5; i++ {
+		again := string(Digest(res, DigestOptions{Layer: "daily", Today: "2026-08-15", Cap: 2, Ranking: Rank(res, p), MinScore: 2}))
+		if again != got {
+			t.Fatalf("%d 回目の生成が一致しない:\n%s\nwant:\n%s", i+2, again, got)
+		}
 	}
 	// 空のプロファイルは採点無し
 	if Rank(res, interest.Profile{}) != nil {

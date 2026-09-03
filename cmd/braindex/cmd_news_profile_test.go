@@ -90,6 +90,26 @@ func TestNewsProfile_MissingSources(t *testing.T) {
 	mustContain(t, "stdout", so, "| rust | 1.000 | | | | 1 |", "材料: ノート 0・セッション 0・keep 0・補助 1")
 }
 
+// セッションの置き場は -sessions → news.sessions_dir → retro.sessions_dir の順に決まる。
+// 置き場が無いと警告にその名前が出るので、どれを使ったかが分かる。
+func TestNewsProfile_SessionsDirFallback(t *testing.T) {
+	_, hub := hubWithRepo(t)
+	cfg := filepath.Join(hub, "braindex.json")
+
+	writeFile(t, cfg, `{"root": "..", "news": {"sessions_dir": "from-news"}, "retro": {"sessions_dir": "from-retro"}}`)
+	if _, _, se := newsProfile(t, hub, "-sessions", "from-flag"); !strings.Contains(se, "置き場 from-flag が無い") {
+		t.Errorf("-sessions が最優先でない:\n%s", se)
+	}
+	if _, _, se := newsProfile(t, hub); !strings.Contains(se, "置き場 from-news が無い") {
+		t.Errorf("news.sessions_dir が retro より優先されない:\n%s", se)
+	}
+
+	writeFile(t, cfg, `{"root": "..", "retro": {"sessions_dir": "from-retro"}}`)
+	if _, _, se := newsProfile(t, hub); !strings.Contains(se, "置き場 from-retro が無い") {
+		t.Errorf("retro.sessions_dir に落ちない:\n%s", se)
+	}
+}
+
 func TestNewsProfile_Errors(t *testing.T) {
 	_, hub := hubWithRepo(t)
 	if code, _, se := newsProfile(t, hub, "-date", "bad"); code != 1 || !strings.Contains(se, "-date は YYYY-MM-DD") {

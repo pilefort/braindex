@@ -95,6 +95,24 @@ func TestNewsFetch_Open(t *testing.T) {
 
 func feedIDOf(link string) string { return feed.EntryID(link, "") }
 
+// -out に .html を渡しても Markdown を上書きしない(html は md と同じ連番の規則で別名にする)。
+func TestNewsFetch_OutHTML(t *testing.T) {
+	hub, _ := newsHub(t)
+	out := filepath.Join(hub, "news", "mine.html")
+	code, so, se := newsFetch(t, hub, "-layer", "weekly", "-out", out)
+	if code != 0 {
+		t.Fatalf("exit=%d\n%s%s", code, so, se)
+	}
+	htmlPath := filepath.Join(hub, "news", "mine-2.html")
+	mustContain(t, "stdout", so, "news ダイジェスト: "+out, "news 選別 UI: "+htmlPath)
+	if md := readFile(t, out); !strings.HasPrefix(md, "# ニュースダイジェスト") {
+		t.Errorf("-out の md が html で上書きされた:\n%s", md)
+	}
+	if h := readFile(t, htmlPath); !strings.HasPrefix(h, "<!doctype html>") {
+		t.Errorf("html:\n%s", h)
+	}
+}
+
 // 取得 → ダイジェスト → 既読。2 回目は新着なし。一部失敗は終了コード 2。
 func TestNewsFetch_Flow(t *testing.T) {
 	hub, _ := newsHub(t)
@@ -128,7 +146,10 @@ func TestNewsFetch_Flow(t *testing.T) {
 	}
 
 	// 2 回目: 新着なし。前のダイジェストは上書きせず -2 を付ける
-	code, so, _ = newsFetch(t, hub)
+	code, so, se = newsFetch(t, hub)
+	if code != 2 { // C は 2 回目も 404 なので警告つき完了のまま
+		t.Fatalf("2 回目 exit=%d\n%s%s", code, so, se)
+	}
 	mustContain(t, "stdout 2 回目", so, "A: 新着 0 / 全 2", "digest_2026-08-15_all-2.md")
 	if got := readFile(t, filepath.Join(hub, "news", "digest_2026-08-15_all-2.md")); !strings.Contains(got, "新着 0 件（フィード 2 本）") || strings.Contains(got, "## A") {
 		t.Errorf("2 回目:\n%s", got)
@@ -138,11 +159,28 @@ func TestNewsFetch_Flow(t *testing.T) {
 	}
 
 	// -replay: 既読を無視して全件、既読ファイルは変えない
-	code, so, _ = newsFetch(t, hub, "-replay", "-stdout")
-	mustContain(t, "replay", so, "A: 新着 2 / 全 2", "- [記事2](https://example.com/2)")
+	code, so, se = newsFetch(t, hub, "-replay", "-stdout")
+	if code != 2 {
+		t.Fatalf("replay exit=%d\n%s%s", code, so, se)
+	}
+	mustContain(t, "replay stdout", so, "- [記事2](https://example.com/2)")
+	mustContain(t, "replay stderr", se, "A: 新着 2 / 全 2")
 	if readFile(t, filepath.Join(hub, "news", ".seen.json")) != seen {
 		t.Error("replay で既読が変わった")
 	}
+}
+
+// -stdout は標準出力にダイジェストだけを出す(進捗は stderr)。リダイレクトでそのまま読める形にするため。
+func TestNewsFetch_StdoutOnlyDigest(t *testing.T) {
+	hub, _ := newsHub(t)
+	code, so, se := newsFetch(t, hub, "-stdout")
+	if code != 2 {
+		t.Fatalf("exit=%d\n%s%s", code, so, se)
+	}
+	if !strings.HasPrefix(so, "# ニュースダイジェスト ") {
+		t.Errorf("stdout がダイジェストで始まらない:\n%s", so)
+	}
+	mustContain(t, "stderr", se, "A: 新着 2 / 全 2", "B: 新着 1 / 全 1", "警告: C: HTTP 404")
 }
 
 // -layer で絞る。層に無ければエラー。上限は層ごと(daily は 15 が既定なので cap_per_layer で 1 にして確かめる)。
@@ -254,27 +292,33 @@ func TestNewsFetch_Scored(t *testing.T) {
 		t.Errorf("digest:\n%s\nwant:\n%s", so.String(), want)
 	}
 
-	// プロファイルが空なら採点なし
-	os.Remove(filepath.Join(hub, "news", "interests.md"))
+	// プロファイルが空なら採点なし。出典が無い警告は残るので終了コードは 2 のまま
+	if err := os.Remove(filepath.Join(hub, "news", "interests.md")); err != nil {
+		t.Fatal(err)
+	}
 	so.Reset()
 	se.Reset()
-	dispatch([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-layer", "daily", "-replay",
+	code = dispatch([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-layer", "daily", "-replay",
 		"-stdout", "-sessions", filepath.Join(hub, "no-such-dir")}, &so, &se)
+	if code != 2 {
+		t.Fatalf("空のプロファイル: exit=%d\n%s%s", code, so.String(), se.String())
+	}
 	mustContain(t, "empty profile", so.String(), "関心プロファイルが空なので採点なし", "・採点なし")
+	mustContain(t, "empty profile stderr", se.String(), "警告 3 件(取得失敗 1 本・終了コード 2)")
 }
 
 func TestUnusedPath(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "d.md")
-	if got, _ := unusedPath(p); got != p {
-		t.Errorf("無いとき: %s", got)
+	if got, err := unusedPath(p); err != nil || got != p {
+		t.Errorf("無いとき: %s err=%v", got, err)
 	}
-	os.WriteFile(p, nil, 0o644)
-	if got, _ := unusedPath(p); got != filepath.Join(dir, "d-2.md") {
-		t.Errorf("1 つある: %s", got)
+	writeFile(t, p, "")
+	if got, err := unusedPath(p); err != nil || got != filepath.Join(dir, "d-2.md") {
+		t.Errorf("1 つある: %s err=%v", got, err)
 	}
-	os.WriteFile(filepath.Join(dir, "d-2.md"), nil, 0o644)
-	if got, _ := unusedPath(p); got != filepath.Join(dir, "d-3.md") {
-		t.Errorf("2 つある: %s", got)
+	writeFile(t, filepath.Join(dir, "d-2.md"), "")
+	if got, err := unusedPath(p); err != nil || got != filepath.Join(dir, "d-3.md") {
+		t.Errorf("2 つある: %s err=%v", got, err)
 	}
 }

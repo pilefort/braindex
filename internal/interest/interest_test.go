@@ -135,3 +135,39 @@ func TestParseKeep(t *testing.T) {
 		t.Errorf("%v", got)
 	}
 }
+
+// 補助ファイル(extra)の 1 行は、語の規則に通してから語にする(記事の側と同じ規則でないと照合できない)。
+// 1 行から複数語が出ても材料の数は 1 行。規則で語にならない行は行そのものを小文字で語にする。
+func TestBuild_ExtraLines(t *testing.T) {
+	p, err := Build(Input{Today: "2026-09-03", Extra: []string{"Rust の パース", "# コメント", "", "  ai  "}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Sources[SourceExtra] != 2 {
+		t.Errorf("材料は行数(コメントと空行は読まない): %v", p.Sources)
+	}
+	var got []string
+	for _, tm := range p.Terms {
+		got = append(got, tm.Word)
+	}
+	// extra だけなので重みは全部 1。同点は語の昇順
+	want := []string{"ai", "rust", "パース"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("語: %v (want %v)", got, want)
+	}
+}
+
+// BOM 付きのファイル(Windows の編集で付く)でも 1 行目を落とさない。入力は BOM 除去してから解析する(決定 2026-08-07)。
+func TestBOM(t *testing.T) {
+	got := ParseKeep("2026-08", "\uFEFF- [見出し](https://x/a)\n")
+	if want := []Keep{{"2026-08", "見出し"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("keep の 1 行目: %v", got)
+	}
+	p, err := Build(Input{Today: "2026-09-03", Extra: []string{"\uFEFFRust"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Terms) != 1 || p.Terms[0].Word != "rust" {
+		t.Errorf("補助の 1 行目: %+v", p.Terms)
+	}
+}
