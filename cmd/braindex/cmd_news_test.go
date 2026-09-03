@@ -203,13 +203,19 @@ func TestNewsFetch_Scored(t *testing.T) {
 		t.Errorf("digest:\n%s\nwant:\n%s", so.String(), want)
 	}
 
-	// プロファイルが空なら採点なし
-	os.Remove(filepath.Join(hub, "news", "interests.md"))
+	// プロファイルが空なら採点なし。出典が無い警告は残るので終了コードは 2 のまま
+	if err := os.Remove(filepath.Join(hub, "news", "interests.md")); err != nil {
+		t.Fatal(err)
+	}
 	so.Reset()
 	se.Reset()
-	dispatch([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-layer", "daily", "-replay",
+	code = dispatch([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-layer", "daily", "-replay",
 		"-stdout", "-sessions", filepath.Join(hub, "no-such-dir")}, &so, &se)
+	if code != 2 {
+		t.Fatalf("空のプロファイル: exit=%d\n%s%s", code, so.String(), se.String())
+	}
 	mustContain(t, "empty profile", so.String(), "関心プロファイルが空なので採点なし", "・採点なし")
+	mustContain(t, "empty profile stderr", se.String(), "警告 3 件(取得失敗 1 本・終了コード 2)")
 }
 
 func TestUnusedPath(t *testing.T) {
