@@ -67,6 +67,7 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "braindex init: 作成 %d・保持 %d(%s)\n", len(res.Created), len(res.Skipped), dir)
 	if len(res.Created) > 0 && kind == template.KindHub {
 		fmt.Fprintln(stdout, "次: braindex.json の root を確認し(\"..\" は各リポの親ディレクトリ)、`braindex` を実行して index/catalog.md を作る")
+		fmt.Fprintln(stdout, "  週次レビューと訂正率の確認を定期実行にするなら `braindex schedule install`(先に `braindex schedule print` で中身を見られる)")
 	}
 	return 0
 }

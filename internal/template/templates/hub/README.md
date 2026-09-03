@@ -20,10 +20,19 @@
 `braindex` で索引を再生成して、下書きと一緒にコミットする。最新のファイル名が前回レビューの日付を兼ねる。
 閾値は `braindex.json` の `review` 節。
 
-下書きの作成だけなら定期実行に任せられる（判断は人）。cron なら `0 9 * * 1 cd <この hub> && braindex review`、
-Windows のタスクスケジューラなら `schtasks /Create /SC WEEKLY /D MON /ST 09:00 /TN braindex-review /TR "cmd /c cd /d <この hub> && braindex review"`。
-`braindex` が定期実行の環境の PATH に無ければ、`go install` の出力先（`GOBIN`。無ければ `GOPATH/bin`、既定はホームの `go/bin`）のフルパスで書く。
-既にある下書きは上書きしない。
+下書きの作成だけなら定期実行に任せられる（判断は人）。このディレクトリで `braindex schedule install` と打つと、
+`braindex.json` の `schedule` 節に書いたジョブが OS のスケジューラ（Windows は schtasks、macOS・Linux は crontab）に登録される。
+既定は週次レビュー（月 09:00）と訂正率の確認（月 09:05）の 2 本。既にある下書きは上書きしない。
+
+```sh
+braindex schedule print      # 登録に使うコマンドを出すだけ（何も変えない）
+braindex schedule install    # 登録する（再実行しても二重にならない）
+braindex schedule list       # 設定のジョブと、OS 側に登録されているか
+braindex schedule uninstall  # この hub の登録を消す
+```
+
+hub と `braindex` 自身の絶対パスを埋め込むので、定期実行の環境の PATH には依存しない。
+**この hub か `braindex` を別の場所へ移したら `braindex schedule install` をやり直す。**
 
 ## 振り返り（訂正率）
 
@@ -33,14 +42,14 @@ Windows のタスクスケジューラなら `schtasks /Create /SC WEEKLY /D MON
 所見と規約への反映案を `docs/notes/retro-YYYY-MM-DD.md` に残す。数値は `braindex retro stats -window-days 14 -by project,week,position` の表を貼る（窓を付けないと全期間の集計になる）。
 
 組み込みは 2 通り。Claude Code の hook（`SessionStart`）に `braindex retro check -quiet || true` を置けば、超えたときだけ 1 行がセッションに入る。
-定期実行なら週 1 回 `braindex retro check` を回し、終了コード 3 のときだけ通知コマンドへつなぐ。窓・閾値・辞書は `braindex.json` の `retro` 節。
+定期実行なら `braindex schedule install`（既定の `retro` ジョブが週 1 回 `braindex retro check` を回す）。窓・閾値・辞書は `braindex.json` の `retro` 節。
 
 ## 地図
 
 | 場所 | 何が入るか |
 |---|---|
 | `index/catalog.md` | 索引。`braindex` が生成する。手で編集しない |
-| `braindex.json` | 走査の設定: `root`・`notes_dirs`・`extra`。週次レビューの設定（記録の置き場と閾値）: `review`。振り返りの設定（窓・閾値・辞書）: `retro` |
+| `braindex.json` | 走査の設定: `root`・`notes_dirs`・`extra`。週次レビューの設定（記録の置き場と閾値）: `review`。振り返りの設定（窓・閾値・辞書）: `retro`。定期実行のジョブ（名前・引数・時刻）: `schedule` |
 | `docs/` | 蓄積するもの: `overview.md`・`glossary.md`・`decisions.md`・`notes/`・`conventions.md` |
 | `work/` | 揮発するもの: `APPROVALS.md`（判断待ち）・`TODO.md`・`review/`（週次レビューの記録） |
 | `.claude/skills/` | Claude Code のスキル: `braindex-review`（週次レビューの判断）・`retro`（振り返り）・`record-lint`（ノート保存前の曖昧さ検査）・`contradiction-scan`（横断の矛盾検査） |

@@ -163,3 +163,25 @@ func TestInit_ThenRetroCheck(t *testing.T) {
 		t.Errorf("stdout が想定と違う: %q", out)
 	}
 }
+
+// 展開した hub の braindex.json(schedule 節)で、そのまま braindex schedule print が動く
+// (設定の検証を通り、テンプレの 2 本が登録コマンドになる)。OS へは登録しない。
+func TestInit_ThenSchedulePrint(t *testing.T) {
+	hub := filepath.Join(t.TempDir(), "hub")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"init", hub}, &so, &se); code != 0 {
+		t.Fatalf("init exit=%d\n%s", code, se.String())
+	}
+	if !strings.Contains(so.String(), "braindex schedule install") {
+		t.Errorf("init の案内に定期実行の 1 行が無い:\n%s", so.String())
+	}
+	code, out, errs := execSchedule(t, "windows", &fakeRunner{}, "print", "-config", filepath.Join(hub, "braindex.json"))
+	if code != 0 {
+		t.Fatalf("exit=%d\n%s", code, errs)
+	}
+	for _, want := range []string{"braindex-hub-review", "braindex-hub-retro", "09:00", "09:05", "retro check"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("print の出力に %q が無い:\n%s", want, out)
+		}
+	}
+}
