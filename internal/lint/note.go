@@ -43,14 +43,6 @@ var kindLabel = map[string]string{
 	KindUndefinedTerm:   "未定義用語(候補)",
 }
 
-// KindLabel は種別の表示名(「曖昧な数量詞」など)。未知の種別はそのまま返す。
-func KindLabel(kind string) string {
-	if l, ok := kindLabel[kind]; ok {
-		return l
-	}
-	return kind
-}
-
 // NoteOptions はノート検査の入力。
 type NoteOptions struct {
 	Glossary    []byte // 用語集の内容。HasGlossary が false なら未定義用語は見ない
