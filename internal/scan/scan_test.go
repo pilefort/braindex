@@ -490,6 +490,8 @@ func TestScan_ExtraExcludeDir(t *testing.T) {
 	}{
 		{"ディレクトリ名で枝ごと除外", []string{"drafts"}, []string{"r/x/a.md", "r/x/keep/z.md"}},
 		{"ディレクトリ名のグロブ", []string{"dr*"}, []string{"r/x/a.md", "r/x/keep/z.md"}},
+		// 決定の動機そのもの。以前は drafts/ 直下しか落ちなかった
+		{"直下を指すパターンでも枝ごと除外", []string{"drafts/*"}, []string{"r/x/a.md", "r/x/keep/z.md"}},
 		{"相対パスで下位の枝だけ除外", []string{"drafts/deep"}, []string{"r/x/a.md", "r/x/drafts/p.md", "r/x/keep/z.md"}},
 		// 起点自身にはパターンを掛けない(掛けると全件消え、設定の意図と食い違う)
 		{"起点のディレクトリ名は対象外", []string{"x"}, []string{"r/x/a.md", "r/x/drafts/deep/q.md", "r/x/drafts/p.md", "r/x/keep/z.md"}},

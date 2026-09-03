@@ -36,8 +36,7 @@ type ExtraRule struct {
 	Path      string   `json:"path"`      // リポ内の起点。"." はリポ直下
 	Recursive bool     `json:"recursive"` // false なら起点直下のみ
 	Kind      string   `json:"kind"`      // catalog に載せる種別ラベル
-	Exclude   []string `json:"exclude"`   // 除外パターン(path.Match のグロブ。"/" を含むなら起点からの相対パスに掛ける)。
-	// ディレクトリにも掛かり、当たった枝は丸ごと除外される
+	Exclude   []string `json:"exclude"`   // 除外パターン(path.Match のグロブ。"/" を含むなら起点からの相対パスに掛ける)。ディレクトリにも掛かり、当たった枝は丸ごと除外される
 }
 
 // File は発見した 1 ファイル。
