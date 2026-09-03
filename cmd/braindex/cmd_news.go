@@ -69,7 +69,8 @@ type newsFetchOptions struct {
 
 // runNewsFetch は braindex news fetch を実行する。
 //
-// 終了コード: 0 成功 / 1 失敗(全フィードの取得失敗を含む。何も書かない) / 2 警告つきで完了(一部のフィードが取得できなかった)。
+// 終了コード: 0 成功 / 1 失敗(全フィードの取得失敗を含む。何も書かない) /
+// 2 警告つきで完了(一部のフィードが取得できなかった・採点の出典(索引・セッションの置き場)が無かった)。
 func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	var o newsFetchOptions
 	fs := flag.NewFlagSet("braindex news fetch", flag.ContinueOnError)
@@ -78,7 +79,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.date, "date", "", "今日として使う日付 YYYY-MM-DD(既定: 実行日)。出力ファイル名と既読の日付に使う")
 	fs.StringVar(&o.layer, "layer", news.LayerAll, "取得するフィードの層(feeds.json の layer)。all は全件")
 	fs.BoolVar(&o.replay, "replay", false, "既読を無視して全記事を出し、既読も更新しない(見出しの再生成用)")
-	fs.BoolVar(&o.stdout, "stdout", false, "Markdown をファイルに書かず標準出力に出す(既読は更新する。HTML は作らず開かない)")
+	fs.BoolVar(&o.stdout, "stdout", false, "Markdown をファイルに書かず標準出力に出す(進捗は stderr。既読は更新する。HTML は作らず開かない)")
 	fs.StringVar(&o.out, "out", "", "Markdown の出力先(既定: 設定 news.dir の digest_<日付>_<層>.md。既にあれば -2, -3 … を付けて別名にする)。HTML は拡張子を .html にした同名")
 	fs.BoolVar(&o.noOpen, "no-open", false, "HTML を既定ブラウザで開かない(定期実行やテスト用)")
 	fs.BoolVar(&o.noScore, "no-score", false, "関心プロファイルで採点しない(全件を主要表示・出典を読まない)")
@@ -150,12 +151,17 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		return fail(err)
 	}
 
+	// -stdout のときは標準出力をダイジェスト専用にし、進捗は stderr へ出す(リダイレクトでそのまま読めるように)。
+	progress := stdout
+	if o.stdout {
+		progress = stderr
+	}
 	results := news.Collect(context.Background(), newsFetcher, srcs, seen, today, o.replay)
 	for _, r := range results {
 		if r.Err != nil {
 			fmt.Fprintf(stderr, "braindex news fetch: 警告: %s: %v\n", r.Source.Name, r.Err)
 		} else {
-			fmt.Fprintf(stdout, "%s: 新着 %d / 全 %d\n", r.Source.Name, len(r.New), len(r.Entries))
+			fmt.Fprintf(progress, "%s: 新着 %d / 全 %d\n", r.Source.Name, len(r.New), len(r.Entries))
 		}
 	}
 	if news.AllFailed(results) {
