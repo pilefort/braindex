@@ -86,11 +86,25 @@ func TestNewsFetch_Flow(t *testing.T) {
 	}
 
 	// -replay: 既読を無視して全件、既読ファイルは変えない
-	code, so, _ = newsFetch(t, hub, "-replay", "-stdout")
-	mustContain(t, "replay", so, "A: 新着 2 / 全 2", "- [記事2](https://example.com/2)")
+	code, so, se = newsFetch(t, hub, "-replay", "-stdout")
+	mustContain(t, "replay stdout", so, "- [記事2](https://example.com/2)")
+	mustContain(t, "replay stderr", se, "A: 新着 2 / 全 2")
 	if readFile(t, filepath.Join(hub, "news", ".seen.json")) != seen {
 		t.Error("replay で既読が変わった")
 	}
+}
+
+// -stdout は標準出力にダイジェストだけを出す(進捗は stderr)。リダイレクトでそのまま読める形にするため。
+func TestNewsFetch_StdoutOnlyDigest(t *testing.T) {
+	hub, _ := newsHub(t)
+	code, so, se := newsFetch(t, hub, "-stdout")
+	if code != 2 {
+		t.Fatalf("exit=%d\n%s%s", code, so, se)
+	}
+	if !strings.HasPrefix(so, "# ニュースダイジェスト ") {
+		t.Errorf("stdout がダイジェストで始まらない:\n%s", so)
+	}
+	mustContain(t, "stderr", se, "A: 新着 2 / 全 2", "B: 新着 1 / 全 1", "警告: C: HTTP 404")
 }
 
 // -layer で絞る。層に無ければエラー。上限は層ごと(daily は 15 が既定なので cap_per_layer で 1 にして確かめる)。
