@@ -53,6 +53,23 @@ func newsFetch(t *testing.T, hub string, args ...string) (code int, so, se strin
 	return code, sob.String(), seb.String()
 }
 
+// 選別の取り込み(統計ファイル)に失敗しても、その日のダイジェストは書いて警告つき完了(2)にする。
+// 壊れたファイルが 1 つ残っているだけでニュースが出なくなるのを避ける。
+func TestNewsFetch_取り込みに失敗しても書く(t *testing.T) {
+	hub, _ := newsHub(t)
+	writeFile(t, filepath.Join(hub, "news", ".stats.json"), "{壊れた")
+	// -layer weekly は取得に失敗するフィードを含まないので、警告はこの 1 件だけになる
+	code, _, se := newsFetch(t, hub, "-layer", "weekly")
+	if code != 2 {
+		t.Fatalf("exit=%d want 2\n%s", code, se)
+	}
+	mustContain(t, "stderr", se, "警告", "統計ファイル", "統計なしで続ける")
+	out := filepath.Join(hub, "news", "digest_2026-08-15_weekly.md")
+	if _, err := os.Stat(out); err != nil {
+		t.Errorf("ダイジェストが書かれていない: %v", err)
+	}
+}
+
 // md と同名の html を書き、既定ブラウザで開く。-no-open で開かない。開けなければ警告(終了コード 2)。
 func TestNewsFetch_Open(t *testing.T) {
 	hub, _ := newsHub(t)

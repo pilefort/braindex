@@ -57,6 +57,34 @@ func TestApprovalsApply_RoundTrip(t *testing.T) {
 	}
 }
 
+// 回答の項目が APPROVALS.md に無い(未反映)ときは、警告を stderr に出して終了コード 2 で終わる。
+// stdout の要約に混ぜて 0 で終わると、自動化から取りこぼしに気づけない。
+func TestApprovalsApply_未反映は警告と2(t *testing.T) {
+	dir := t.TempDir()
+	hub := filepath.Join(dir, "hub")
+	ap := filepath.Join(hub, "work", "APPROVALS.md")
+	tmp := filepath.Join(dir, "tmp")
+	writeFile(t, ap, sampleApprovals)
+	p, err := approvals.Resolve(ap, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, p.Reply, `{"nonce":"n","received_at":"2026-03-04T10:00:00+09:00","items":[{"n":9,"title":"存在しない項目","choice":"A"}]}`)
+
+	var so, se bytes.Buffer
+	code := dispatch([]string{"approvals", "apply", "-file", ap, "-dir", tmp, "-date", "2026-03-04"}, &so, &se)
+	if code != 2 {
+		t.Fatalf("exit=%d want 2\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	mustContain(t, "stderr", se.String(), "警告: 回答の項目 [9] 存在しない項目", "終了コード 2")
+	if strings.Contains(so.String(), "警告:") {
+		t.Errorf("警告が stdout に出ている:\n%s", so.String())
+	}
+	if got := readFile(t, ap); got != sampleApprovals {
+		t.Error("未反映なのに APPROVALS.md が変わった")
+	}
+}
+
 // decisions.md に書けなかったら、APPROVALS.md からも消さず回答も残す。
 // 先に APPROVALS.md から消すと、決定がどちらのファイルにも残らない状態で終わる。
 func TestApprovalsApply_DecisionsWriteFails(t *testing.T) {

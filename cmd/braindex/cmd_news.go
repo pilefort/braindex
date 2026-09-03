@@ -74,7 +74,8 @@ type newsFetchOptions struct {
 // runNewsFetch は braindex news fetch を実行する。
 //
 // 終了コード: 0 成功 / 1 失敗(全フィードの取得失敗を含む。何も書かない) /
-// 2 警告つきで完了(一部のフィードが取得できなかった・採点の出典(索引・セッションの置き場)が無かった)。
+// 2 警告つきで完了(一部のフィードが取得できなかった・採点の出典(索引・セッションの置き場)が無かった・
+// 選別や統計を取り込めなかった)。
 func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	var o newsFetchOptions
 	fs := flag.NewFlagSet("braindex news fetch", flag.ContinueOnError)
@@ -97,7 +98,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "  折りたたむ。HTML の「選別を書き出す」が出す JSON は braindex news apply が取り込む。")
 		fmt.Fprintln(stderr, "  外へ出る通信はフィードの GET だけ(セッション本文は送らない)。HTML は外部の JS / CSS を参照しない。")
 		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗(全フィードの取得失敗を含む。何も書かない) / 2 警告つきで完了(一部のフィードが取得できなかった・")
-		fmt.Fprintln(stderr, "  採点の出典(索引・セッションの置き場)が無かった)")
+		fmt.Fprintln(stderr, "  採点の出典(索引・セッションの置き場)が無かった・選別や統計を取り込めなかった)")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
 		fs.PrintDefaults()
@@ -162,13 +163,19 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		progress = stderr
 	}
 
-	// 前回の選別 JSON を取り込む(keep と統計に反映。今回の関心プロファイルにも効く)
+	// 前回の選別 JSON を取り込む(keep と統計に反映。今回の関心プロファイルにも効く)。
+	// 取り込めなくても今日の新着は出す。ここで止めると、壊れた JSON が 1 つ残っているだけで
+	// ダイジェストが出なくなる(リポの規約: 完了できるものは警告つき完了の 2)。
+	ingestWarning := 0 // 取り込みの警告(選別 JSON・統計)。ダイジェストは書くので終了コード 2 に数える
 	if err := ingestSelections(newsDir, o.inbox, progress); err != nil {
-		return fail(err)
+		fmt.Fprintf(stderr, "braindex news fetch: 警告: 選別を取り込めない(keep と統計は前回のまま): %v\n", err)
+		ingestWarning++
 	}
 	stats, err := news.LoadStats(filepath.Join(newsDir, news.StatsFile))
 	if err != nil {
-		return fail(err)
+		// 統計はフィード別の採否の表示に使うだけなので、読めなくても新着は出す
+		fmt.Fprintf(stderr, "braindex news fetch: 警告: %v(統計なしで続ける)\n", err)
+		ingestWarning++
 	}
 
 	results := news.Collect(context.Background(), newsFetcher, srcs, seen, today, o.replay)
@@ -256,7 +263,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	if n := len(news.Failed(results)) + profileWarnings + openWarning; n > 0 {
+	if n := len(news.Failed(results)) + profileWarnings + openWarning + ingestWarning; n > 0 {
 		fmt.Fprintf(stderr, "braindex news fetch: 警告 %d 件(取得失敗 %d 本・終了コード 2)\n", n, len(news.Failed(results)))
 		return 2
 	}

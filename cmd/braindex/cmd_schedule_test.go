@@ -158,13 +158,13 @@ func TestSchedule_Install_Job(t *testing.T) {
 	}
 }
 
-// スケジューラ側の失敗は 2(設定の誤り 1 と分ける)。
+// スケジューラ側の失敗は 1(登録できていないので失敗。2 は「警告つき完了」に取っておく)。
 func TestSchedule_Install_スケジューラの失敗(t *testing.T) {
 	hub := schedHub(t, "")
 	r := &fakeRunner{failOn: "/Create"}
 	code, _, se := execSchedule(t, "windows", r, "install", "-config", filepath.Join(hub, "braindex.json"))
-	if code != 2 {
-		t.Fatalf("exit=%d want 2\n%s", code, se)
+	if code != 1 {
+		t.Fatalf("exit=%d want 1\n%s", code, se)
 	}
 	for _, want := range []string{"失敗した", "schtasks /Create", "スケジューラの出力"} {
 		if !strings.Contains(se, want) {
