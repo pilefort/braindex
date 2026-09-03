@@ -192,5 +192,5 @@ func TestApprovalsServe_RoundTrip(t *testing.T) {
 	if code := dispatch([]string{"approvals", "serve", "-file", ap, "-no-open", "-dir", tmp, "-timeout", "0.2"}, &so, &se); code != 2 {
 		t.Errorf("2 回目: code=%d", code)
 	}
-	mustContain(t, "stderr", se.String(), "note: 未反映の回答がある")
+	mustContain(t, "stderr", se.String(), "note: 未反映の回答がある(このまま回答すると上書きする)")
 }

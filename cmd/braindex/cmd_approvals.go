@@ -152,7 +152,8 @@ func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if _, err := os.Stat(p.Reply); err == nil {
-		fmt.Fprintf(stderr, "note: 未反映の回答がある → 先に braindex approvals apply: %s\n", p.Reply)
+		// このまま回答を受けると同じパスに書くので、前の回答は失われる
+		fmt.Fprintf(stderr, "note: 未反映の回答がある(このまま回答すると上書きする) → 先に braindex approvals apply: %s\n", p.Reply)
 	}
 	nonce := approvals.NewNonce()
 	now := time.Now()
