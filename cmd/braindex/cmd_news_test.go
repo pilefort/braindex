@@ -14,8 +14,13 @@ import (
 )
 
 // newsHub は hub と、httptest で配る 2 本のフィード(a: 記事 2 件・b: 記事 1 件)と、壊れた 1 本(c: 404)の feeds.json を作る。
+// ホームを一時ディレクトリに差し替える: news fetch / apply は -inbox 未指定なら ~/Downloads の選別 JSON を
+// 取り込んで .ingested へ「移す」ので、差し替えないとテストが実ユーザーの Downloads からファイルを持ち去る。
 func newsHub(t *testing.T) (hub string, srv *httptest.Server) {
 	t.Helper()
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home) // windows の os.UserHomeDir
+	t.Setenv("HOME", home)        // mac / linux の os.UserHomeDir
 	_, hub = hubWithRepo(t)
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

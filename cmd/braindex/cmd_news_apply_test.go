@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,4 +74,31 @@ func TestNewsApply_EndToEnd(t *testing.T) {
 	if code := dispatch([]string{"news", "apply", "-h"}, &so, &se); code != 0 || !strings.Contains(se.String(), "使い方: braindex news apply") {
 		t.Errorf("-h: exit=%d", code)
 	}
+}
+
+// -inbox を指定しないと既定の ~/Downloads から取り込む。テストが実ユーザーのホームを触っていないことも同時に見る
+// (newsHub がホームを一時ディレクトリに差し替える。差し替えが外れたらここで止まる)。
+func TestNewsFetch_DefaultInbox(t *testing.T) {
+	hub, _ := newsHub(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(home, os.TempDir()) {
+		t.Fatalf("ホームが一時ディレクトリの外を指している(実ユーザーの Downloads を触る): %s", home)
+	}
+	sel := filepath.Join(home, "Downloads", "braindex-news-selection_2026-08-15_weekly_20260815100000.json")
+	writeFile(t, sel, `{"type": "braindex-news-selection", "date": "2026-08-15", "layer": "weekly",
+	 "keeps": [{"id": "z", "title": "よその見出し", "link": "https://elsewhere/1", "feed": "Z"}],
+	 "feed_stats": {"Z": {"shown": 1, "kept": 1}}}`)
+
+	code, so, se := newsFetch(t, hub, "-layer", "weekly")
+	if code != 0 {
+		t.Fatalf("exit=%d\n%s%s", code, so, se)
+	}
+	mustContain(t, "stdout", so, "news: 取り込み: braindex-news-selection_2026-08-15_weekly_20260815100000.json（残す 1 件）")
+	if _, err := os.Stat(sel); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("取り込んだのに Downloads に残っている: %v", err)
+	}
+	mustContain(t, "keep", readFile(t, filepath.Join(hub, "news", "keep", "2026-08.md")), "- [よその見出し](https://elsewhere/1) — Z")
 }
