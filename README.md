@@ -470,7 +470,7 @@ macOS・Linux は `crontab`（`# BEGIN braindex <hub>` 〜 `# END braindex <hub>
    周辺機能（振り返る・知る）は LLM を採点や要約の補助に使ってよいが、取得と計測は決定論で行い、判断は人に残す。
 3. **寿命で分ける。** 蓄積するもの（`docs/`）と揮発するもの（`work/`）を混ぜない。索引は前者だけを見る。
 
-理由と却下案は作者の設計メモ（`docs/`・git 管理外）にある。
+理由と却下案は作者の設計メモ `docs/decisions.md` にある。
 
 ### やらないこと
 
@@ -514,7 +514,7 @@ v0.1.0（2026-09-03）: 索引 CLI（Phase 1）を原型から移植して可搬
 | `braindex.example.json` | 設定ファイルの雛形 |
 | `.github/workflows/ci.yml` | CI。ubuntu と windows で gofmt／vet／test に加え、同じ入力から 2 回生成してバイト一致することを確かめる |
 | `CONTRIBUTING.md` | 開発の決まり（テスト・決定性・持ち込まないもの） |
-| `docs/` `work/` | 作者の設計メモと作業状態。git 管理外（`.gitignore`。2026-09-02 決定） |
+| `docs/` `work/` | 作者の設計メモ（`overview`・`decisions`・`glossary`・`conventions`）と作業状態。git 管理下（2026-09-03 決定。複数マシン・並行セッション間で同期するため） |
 
 ```sh
 go test ./...   # 依存なし。CI は gofmt -l . と go vet ./... も回す
