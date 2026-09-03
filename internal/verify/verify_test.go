@@ -2,6 +2,7 @@ package verify
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -150,15 +151,52 @@ func TestResultLine(t *testing.T) {
 	}
 }
 
+// rtFunc は往復だけを差し替える Transport(ネットワークに出ない)。
+type rtFunc func(*http.Request) (*http.Response, error)
+
+func (f rtFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// GITHUB_TOKEN は api.github.com 宛てにだけ付ける。他所へ送ると、外へ出すのは
+// 「公開 URL・リポ名・arXiv ID だけ」という約束が破れる。
+func TestHTTPFetcher_TokenOnlyToGitHub(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "secret-token")
+	var got *http.Request
+	f := &HTTPFetcher{Client: &http.Client{Transport: rtFunc(func(r *http.Request) (*http.Response, error) {
+		got = r
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("{}")), Request: r}, nil
+	})}}
+	if _, err := f.Get("https://api.github.com/repos/a/b"); err != nil {
+		t.Fatal(err)
+	}
+	if got.Header.Get("Authorization") != "Bearer secret-token" || got.Header.Get("Accept") != "application/vnd.github+json" {
+		t.Errorf("GitHub API へのヘッダが違う: %v", got.Header)
+	}
+	if _, err := f.Get("https://arxiv.org/abs/1"); err != nil {
+		t.Fatal(err)
+	}
+	if a := got.Header.Get("Authorization"); a != "" {
+		t.Errorf("api.github.com 以外へ Authorization を送っている: %q", a)
+	}
+	if _, err := f.Get("https://api.github.com.evil.example/repos/a/b"); err != nil {
+		t.Fatal(err)
+	}
+	if a := got.Header.Get("Authorization"); a != "" {
+		t.Errorf("似た名前のホストへ Authorization を送っている: %q", a)
+	}
+}
+
 // HTTPFetcher は GET だけを送り、UA を付け、リダイレクト後の最終 URL を返す(ローカルのテストサーバ宛て)。
 func TestHTTPFetcher(t *testing.T) {
 	var method, ua string
+	var bodyLen int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/r":
 			http.Redirect(w, r, "/final", http.StatusFound)
 		default:
 			method, ua = r.Method, r.Header.Get("User-Agent")
+			b, _ := io.ReadAll(r.Body)
+			bodyLen = len(b)
 			w.WriteHeader(200)
 			_, _ = w.Write([]byte("body"))
 		}
@@ -173,5 +211,8 @@ func TestHTTPFetcher(t *testing.T) {
 	}
 	if method != http.MethodGet || ua != userAgent {
 		t.Errorf("method=%s ua=%s", method, ua)
+	}
+	if bodyLen != 0 {
+		t.Errorf("GET に本文を載せている: %d バイト", bodyLen)
 	}
 }
