@@ -141,7 +141,7 @@ func Build(in Input) (Profile, error) {
 
 	// extra: 1 行 1 語。空行と # 始まりは読まない。語の規則は通さず、行をそのまま(小文字に畳んで)語にする
 	for _, line := range in.Extra {
-		line = strings.TrimSpace(line)
+		line = strings.TrimSpace(strings.TrimPrefix(line, bom))
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -234,8 +234,12 @@ func trimFloat(f float64) string {
 
 var keepLine = regexp.MustCompile(`^- \[(.+?)\]\(\S*\)`)
 
+// bom は UTF-8 の BOM。Windows の編集で付くことがあり、付いたままだと 1 行目の解析が外れる(決定 2026-08-07)。
+const bom = "\uFEFF"
+
 // ParseKeep は keep ファイル(news/keep/YYYY-MM.md)の本文から見出しを取る。行の形は `- [見出し](リンク)`(原型と同じ)。
 func ParseKeep(month string, text string) []Keep {
+	text = strings.TrimPrefix(text, bom)
 	var out []Keep
 	for _, line := range strings.Split(text, "\n") {
 		if m := keepLine.FindStringSubmatch(strings.TrimRight(line, "\r")); m != nil {
