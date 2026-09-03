@@ -327,16 +327,36 @@ func TestSchedule_Print(t *testing.T) {
 }
 
 // crontab を一度も書いていない利用者でも登録できる(crontab -l の失敗は空として扱う)。
-func TestSchedule_Install_crontabが無い(t *testing.T) {
+func TestSchedule_Install_crontabを読めない(t *testing.T) {
 	hub := schedHub(t, "")
 	r := &fakeRunner{} // crontab が空 → crontab -l は失敗を返す
 	code, _, se := execSchedule(t, "linux", r, "install", "-config", filepath.Join(hub, "braindex.json"))
-	if code != 0 {
-		t.Fatalf("exit=%d\n%s", code, se)
+	if code != 1 {
+		t.Fatalf("exit=%d want 1\n%s", code, se)
 	}
-	in := r.calls[1].Stdin
-	if !strings.HasPrefix(in, "# BEGIN braindex "+hub) {
-		t.Errorf("空の crontab にブロックだけを書く:\n%s", in)
+	mustContain(t, "stderr", se, "crontab を読めない", "no crontab for user", "crontab -e", "既にある行を消してしまう")
+	if len(r.calls) != 1 || r.calls[0].Args[0] != "-l" {
+		t.Errorf("読めなかったら書き戻さない: got=%+v", r.calls)
+	}
+}
+
+// 読めないまま進むと利用者の crontab を全消しするので、uninstall・list・print も止まる。
+func TestSchedule_crontabを読めないときは全部止まる(t *testing.T) {
+	hub := schedHub(t, "")
+	for _, sub := range []string{"uninstall", "list", "print"} {
+		r := &fakeRunner{}
+		code, _, se := execSchedule(t, "linux", r, sub, "-config", filepath.Join(hub, "braindex.json"))
+		if code != 1 {
+			t.Errorf("%s: exit=%d want 1\n%s", sub, code, se)
+		}
+		if !strings.Contains(se, "crontab を読めない") {
+			t.Errorf("%s: stderr=%s", sub, se)
+		}
+		for _, c := range r.calls {
+			if c.Name == "crontab" && len(c.Args) > 0 && c.Args[0] == "-" {
+				t.Errorf("%s: 読めなかったのに書き戻している", sub)
+			}
+		}
 	}
 }
 
