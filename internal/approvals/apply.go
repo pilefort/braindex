@@ -128,7 +128,10 @@ func Apply(approvalsMD, decisionsMD []byte, rep Reply, today string) ApplyResult
 			}
 			reason += "。却下: " + strings.Join(rs, "／")
 		}
-		evidence := fmt.Sprintf("会話 %s（ユーザー判断・承認フォームの回答 %s）", today, rep.ReceivedAt)
+		evidence := fmt.Sprintf("会話 %s（ユーザー判断・承認フォームの回答）", today)
+		if rep.ReceivedAt != "" { // 手で書いた回答 JSON には受信時刻が無い
+			evidence = fmt.Sprintf("会話 %s（ユーザー判断・承認フォームの回答 %s）", today, rep.ReceivedAt)
+		}
 		if why := it.Fields[FieldWhyNow]; why != "" {
 			evidence += "。なぜ今決めたか: " + sentence(strings.Join(nonEmptyLines(why), " "))
 		}

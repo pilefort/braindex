@@ -29,6 +29,18 @@ func TestApply_DuplicateTitles(t *testing.T) {
 	}
 }
 
+// 受信時刻の無い回答(手で書いた JSON を -reply で渡した場合)でも、根拠行に空の時刻を出さない。
+func TestApply_NoReceivedAt(t *testing.T) {
+	rep := Reply{Items: []ReplyItem{{N: 1, Title: "ログの出力先", Choice: "A"}}}
+	res := Apply(load(t, "two-items.md"), nil, rep, "2026-03-04")
+	if res.Decided != 1 {
+		t.Fatalf("decided=%d summary=%v", res.Decided, res.Summary)
+	}
+	if !strings.Contains(string(res.Decisions), "根拠: 会話 2026-03-04（ユーザー判断・承認フォームの回答）。") {
+		t.Errorf("根拠行 =\n%s", res.Decisions)
+	}
+}
+
 // コメント無しの保留(フォームで「保留」だけ押した場合)でも、書き戻す行に余分な空白や空の括弧を残さない。
 func TestApply_HoldWithoutComment(t *testing.T) {
 	rep := Reply{Items: []ReplyItem{{N: 2, Title: "ログの出力先", Choice: "hold"}}}
