@@ -117,13 +117,20 @@ func TestVerify_JSON(t *testing.T) {
 	}
 }
 
-// 種別なし・未知の種別・対象なしは 1。
+// 種別なし・未知の種別・対象なしは 1。-h は使い方を出して 0(フラグの誤りと区別する)。
 func TestVerify_Usage(t *testing.T) {
 	stubVerify(t, fixture())
 	var so, se bytes.Buffer
-	for _, args := range [][]string{{"verify"}, {"verify", "github"}, {"verify", "wiki", "x"}} {
+	for _, args := range [][]string{{"verify"}, {"verify", "github"}, {"verify", "wiki", "x"}, {"verify", "-bogus"}} {
 		if code := dispatch(args, &so, &se); code != 1 {
 			t.Errorf("%v: exit=%d want 1", args, code)
 		}
+	}
+	se.Reset()
+	if code := dispatch([]string{"verify", "-h"}, &so, &se); code != 0 {
+		t.Errorf("-h は exit 0 のはず: %d", code)
+	}
+	if !strings.Contains(se.String(), "使い方: braindex verify") {
+		t.Errorf("使い方が出ていない: %q", se.String())
 	}
 }
