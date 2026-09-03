@@ -106,3 +106,59 @@ func TestParse_AliasesAndCRLF(t *testing.T) {
 		t.Errorf("推奨 = %q 理由 = %q warnings = %v", it.Recommended, it.Reason, it.Warnings)
 	}
 }
+
+// 選択肢の「案 -- 得失」と同じく、私の案の「A -- 理由」も区切りとして読む
+// (区切りが理由の先頭に残らない)。
+func TestParse_RecommendDoubleHyphen(t *testing.T) {
+	md := "# 承認待ち\n\n## 1. 題\n\n**選択肢:**\n- A. 案 1 -- 得\n- B. 案 2 -- 損\n**私の案:** A -- 理由\n"
+	it := Parse([]byte(md)).Items[0]
+	if it.Recommended != "A" || it.Reason != "理由" {
+		t.Errorf("推奨 = %q 理由 = %q", it.Recommended, it.Reason)
+	}
+}
+
+// 桁あふれする番号は捨てて出現順に振り直す(自前の桁計算だと巨大な値がそのまま N に入る)。
+func TestParse_HeadingNumberOverflow(t *testing.T) {
+	d := Parse([]byte("# 承認待ち\n\n## 99999999999999999999. 題\n"))
+	if len(d.Items) != 1 {
+		t.Fatalf("項目数 = %d", len(d.Items))
+	}
+	if d.Items[0].N != 1 {
+		t.Errorf("n = %d, want 1", d.Items[0].N)
+	}
+}
+
+// 「**私の案:** C」のように理由を書かずに存在しない案を指したときも記載漏れにする
+// (選択肢を書き換えて案の記号がずれたときが本番)。
+func TestParse_RecommendNotInOptions_NoReason(t *testing.T) {
+	md := "# 承認待ち\n\n## 1. 題\n\n**決めたいこと:** X\n**なぜ今決めるか:** Y\n**選択肢:**\n" +
+		"- A. 案 1 — 得\n- B. 案 2 — 損\n**私の案:** C\n**決めないとどうなるか:** Z\n"
+	it := Parse([]byte(md)).Items[0]
+	if it.Recommended != "" {
+		t.Errorf("選択肢に無い案は推奨にしない: %q", it.Recommended)
+	}
+	want := []string{"私の案 C が選択肢に無い"}
+	if strings.Join(it.Warnings, "|") != strings.Join(want, "|") {
+		t.Errorf("warnings = %v, want %v", it.Warnings, want)
+	}
+}
+
+// 先頭 BOM(Windows のエディタが付ける)は除去してから解析する。
+// 見出しから始まるファイルでは、BOM が残ると 1 件目の見出しが読めず項目が 0 件になる。
+func TestParse_BOM(t *testing.T) {
+	// ソースに BOM リテラルを置かず、バイトで組み立てる(internal/extract のテストと同じ手)。
+	withBOM := func(s string) []byte { return append([]byte{0xEF, 0xBB, 0xBF}, []byte(s)...) }
+
+	d := Parse(withBOM("## 1. 題\n\n**決めたいこと:** X\n"))
+	if len(d.Items) != 1 {
+		t.Fatalf("項目数 = %d, want 1", len(d.Items))
+	}
+	if d.Items[0].Title != "題" {
+		t.Errorf("題 = %q", d.Items[0].Title)
+	}
+
+	d2 := Parse(withBOM("# 承認待ち\n\n## 1. 題\n"))
+	if d2.Preamble != "# 承認待ち" {
+		t.Errorf("前文に BOM が残る: %q", d2.Preamble)
+	}
+}

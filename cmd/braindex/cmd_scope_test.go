@@ -1,0 +1,110 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func scopeCatalog(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", "internal", "scope", "testdata", "catalog.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(t.TempDir(), "catalog.md")
+	writeFile(t, p, string(b))
+	return p
+}
+
+// -catalog と -topic で走査対象を chunk に分けて出す。
+func TestScope_Topic(t *testing.T) {
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"scope", "-catalog", scopeCatalog(t), "-topic", "長さ"}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d\n%s%s", code, so.String(), se.String())
+	}
+	s := so.String()
+	if !strings.HasPrefix(s, "# braindex scope: topic:長さ\n対象 2 件 / 1 chunk\n") || !strings.Contains(s, "repo-b/docs/notes/common/measure.md") || strings.Contains(s, "heading.md") {
+		t.Errorf("出力が違う:\n%s", s)
+	}
+}
+
+// 2 件未満は一覧を出したうえで stderr に理由を書き、終了コード 2。
+func TestScope_TooFew(t *testing.T) {
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"scope", "-catalog", scopeCatalog(t), "-topic", "見出し"}, &so, &se); code != 2 {
+		t.Fatalf("exit=%d want 2\n%s%s", code, so.String(), se.String())
+	}
+	if !strings.Contains(so.String(), "対象 1 件") || !strings.Contains(se.String(), "突き合わせられない") {
+		t.Errorf("stdout=%s stderr=%s", so.String(), se.String())
+	}
+}
+
+// -dir は索引を使わない。-json は機械可読。
+func TestScope_DirJSON(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a.md"), "# 甲\n\n記録日: 2026-08-01\n")
+	writeFile(t, filepath.Join(dir, "b.md"), "# 乙\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"scope", "-dir", dir, "-json", "-size", "1"}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d\n%s%s", code, so.String(), se.String())
+	}
+	var got struct {
+		Mode   string `json:"mode"`
+		N      int    `json:"n_entries"`
+		Chunks [][]struct {
+			Title string `json:"title"`
+			Path  string `json:"path"`
+			Date  string `json:"date"`
+		} `json:"chunks"`
+	}
+	if err := json.Unmarshal(so.Bytes(), &got); err != nil {
+		t.Fatalf("JSON でない: %v\n%s", err, so.String())
+	}
+	if !strings.HasPrefix(got.Mode, "dir:") || got.N != 2 || len(got.Chunks) != 2 || got.Chunks[0][0].Title != "甲" || got.Chunks[0][0].Path != "a.md" || got.Chunks[0][0].Date != "2026-08-01" {
+		t.Errorf("内容が違う: %s", so.String())
+	}
+}
+
+// 索引の既定は設定ファイルと同じディレクトリの index/catalog.md。無ければ作り方を添えて 1。
+func TestScope_DefaultCatalog(t *testing.T) {
+	hub := t.TempDir()
+	writeFile(t, filepath.Join(hub, "braindex.json"), `{"root": ".."}`)
+	b, _ := os.ReadFile(filepath.Join("..", "..", "internal", "scope", "testdata", "catalog.md"))
+	writeFile(t, filepath.Join(hub, "index", "catalog.md"), string(b))
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"scope", "-config", filepath.Join(hub, "braindex.json"), "-full"}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d\n%s%s", code, so.String(), se.String())
+	}
+	if !strings.Contains(so.String(), "対象 3 件") {
+		t.Errorf("出力が違う: %s", so.String())
+	}
+	os.Remove(filepath.Join(hub, "index", "catalog.md"))
+	se.Reset()
+	if code := dispatch([]string{"scope", "-config", filepath.Join(hub, "braindex.json"), "-full"}, &so, &se); code != 1 || !strings.Contains(se.String(), "索引を読めない") {
+		t.Errorf("索引なし: exit=%d stderr=%s", code, se.String())
+	}
+}
+
+// フラグの誤り: モード未指定・2 つ指定・-size 0・位置引数は 1。-h は使い方を出して 0。
+func TestScope_BadArgs(t *testing.T) {
+	c := scopeCatalog(t)
+	for _, args := range [][]string{
+		{"scope", "-catalog", c},
+		{"scope", "-catalog", c, "-topic", "x", "-full"},
+		{"scope", "-catalog", c, "-full", "-size", "0"},
+		{"scope", "-catalog", c, "-full", "extra"},
+	} {
+		var so, se bytes.Buffer
+		if code := dispatch(args, &so, &se); code != 1 || se.Len() == 0 {
+			t.Errorf("%v: exit=%d stderr=%s", args, code, se.String())
+		}
+	}
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"scope", "-h"}, &so, &se); code != 0 || !strings.Contains(se.String(), "使い方") {
+		t.Errorf("-h: exit=%d stderr=%s", code, se.String())
+	}
+}

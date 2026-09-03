@@ -8,6 +8,7 @@ package approvals
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -63,15 +64,15 @@ var (
 	headRe  = regexp.MustCompile(`^##\s+(?:(\d+)\s*[.．、)）]\s*)?(.+?)\s*$`)
 	fieldRe = regexp.MustCompile(`^\*\*([^*]+?)\s*[:：]?\s*\*\*\s*[:：]?\s*(.*)$`)
 	optRe   = regexp.MustCompile(`^\s*[-*+]\s+(?:([A-Za-z0-9])\s*[.．:：)）]\s*)?(.+?)\s*$`)
-	recRe   = regexp.MustCompile(`^([A-Za-z0-9])(?:\s*[.．:：)）]|\s+[—―–-]|\s*$)\s*(.*)$`)
+	// 私の案「A — 理由」「A. 理由」「A -- 理由」「A」。区切りは理由に残さない
+	recRe = regexp.MustCompile(`^([A-Za-z0-9])(?:\s*[.．:：)）]|\s+(?:[—―–]|--?)|\s*$)\s*(.*)$`)
 	// 「案 — 得失」の区切り。全角ダッシュ類か、空白で挟んだ --
 	optSplitRe = regexp.MustCompile(`\s*[—―–]\s*|\s+--\s+`)
 )
 
 // Parse は APPROVALS.md を解析する。壊れた入力でもエラーにせず、欠落は Item.Warnings に出す。
 func Parse(md []byte) Doc {
-	text := strings.ReplaceAll(strings.ReplaceAll(string(md), "\r\n", "\n"), "\r", "\n")
-	lines := strings.Split(text, "\n")
+	lines := splitLines(md)
 	var d Doc
 	var pre []string
 	var cur *rawItem
@@ -85,8 +86,9 @@ func Parse(md []byte) Doc {
 		if m := headRe.FindStringSubmatch(line); m != nil {
 			flush()
 			n := len(d.Items) + 1
-			if m[1] != "" {
-				n = atoi(m[1])
+			// 番号が無い(m[1] == "")か桁あふれなら Atoi がエラーを返すので、出現順のまま
+			if v, err := strconv.Atoi(m[1]); err == nil {
+				n = v
 			}
 			cur = &rawItem{n: n, title: strings.TrimSpace(m[2]), raw: []string{line}}
 			continue
@@ -101,6 +103,18 @@ func Parse(md []byte) Doc {
 	flush()
 	d.Preamble = strings.TrimRight(strings.Join(pre, "\n"), "\n")
 	return d
+}
+
+// splitLines は BOM を除去し CRLF/CR を LF に正規化して行に分割する(internal/extract と同じ規則)。
+func splitLines(content []byte) []string {
+	// UTF-8 BOM (EF BB BF) を除去。ソースに BOM リテラルを置かず、バイトで判定する。
+	if len(content) >= 3 && content[0] == 0xEF && content[1] == 0xBB && content[2] == 0xBF {
+		content = content[3:]
+	}
+	s := string(content)
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	return strings.Split(s, "\n")
 }
 
 type rawItem struct {
@@ -163,7 +177,7 @@ func (r *rawItem) finish() Item {
 		if it.hasOption(k) {
 			it.Recommended = k
 			it.Reason = strings.TrimSpace(m[2])
-		} else if it.Fields[FieldRecommend] != "" && strings.TrimSpace(m[2]) != "" {
+		} else if it.Fields[FieldRecommend] != "" {
 			it.Warnings = append(it.Warnings, FieldRecommend+" "+k+" が選択肢に無い")
 		}
 	}
@@ -201,12 +215,4 @@ func splitOption(s string) (label, desc string) {
 		return strings.TrimSpace(s[:loc[0]]), strings.TrimSpace(s[loc[1]:])
 	}
 	return strings.TrimSpace(s), ""
-}
-
-func atoi(s string) int {
-	n := 0
-	for _, c := range s {
-		n = n*10 + int(c-'0')
-	}
-	return n
 }

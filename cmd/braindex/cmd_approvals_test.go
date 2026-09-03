@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -55,6 +56,10 @@ func TestApprovals_Usage(t *testing.T) {
 		t.Errorf("-h: code=%d\n%s", code, se.String())
 	}
 	se.Reset()
+	if code := dispatch([]string{"approvals", "help"}, &so, &se); code != 0 || !strings.Contains(se.String(), "使い方") {
+		t.Errorf("help: code=%d\n%s", code, se.String())
+	}
+	se.Reset()
 	if code := dispatch([]string{"approvals", "nope"}, &so, &se); code != 1 || !strings.Contains(se.String(), `"nope"`) {
 		t.Errorf("不明なサブ: code=%d\n%s", code, se.String())
 	}
@@ -81,6 +86,26 @@ func TestApprovalsServe_EmptyAndWarnings(t *testing.T) {
 		t.Errorf("時間切れ: code=%d\n%s", code, se.String())
 	}
 	mustContain(t, "stderr", se.String(), "warning: [1] 欠けた項目: なぜ今決めるか が未記載", "選択肢 が 1 つ以下", "回答なし")
+}
+
+// -timeout に負・NaN・Duration に収まらない値を渡したら、待ち受けを始めずに誤りとして落ちる
+// (素通しすると Timeout <= 0 が「無期限」と解釈され、黙って待ち続ける)。
+func TestApprovalsServe_BadTimeout(t *testing.T) {
+	dir := t.TempDir()
+	ap := filepath.Join(dir, "work", "APPROVALS.md")
+	writeFile(t, ap, sampleApprovals)
+	for _, v := range []string{"-1", "NaN", "1e30"} {
+		var so, se bytes.Buffer
+		if code := dispatch([]string{"approvals", "serve", "-file", ap, "-no-open", "-timeout", v}, &so, &se); code != 1 {
+			t.Errorf("-timeout %s: code=%d\n%s%s", v, code, so.String(), se.String())
+		}
+		if !strings.Contains(se.String(), "-timeout") {
+			t.Errorf("-timeout %s: stderr に理由が無い: %s", v, se.String())
+		}
+		if so.Len() != 0 {
+			t.Errorf("-timeout %s: 待ち受けを始めた: %s", v, so.String())
+		}
+	}
 }
 
 func TestApprovalsServe_RoundTrip(t *testing.T) {
@@ -111,15 +136,20 @@ func TestApprovalsServe_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var page bytes.Buffer
-	page.ReadFrom(res.Body)
+	page, err := io.ReadAll(res.Body)
 	res.Body.Close()
-	m := regexp.MustCompile(`"nonce":"([0-9a-f]{32})"`).FindStringSubmatch(page.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`"nonce":"([0-9a-f]{32})"`).FindStringSubmatch(string(page))
 	if m == nil {
-		t.Fatalf("フォームに nonce が無い:\n%s", page.String())
+		t.Fatalf("フォームに nonce が無い:\n%s", page)
 	}
 	body := `{"nonce":"` + m[1] + `","items":[{"n":1,"title":"設定ファイルの形式","choice":"B","comment":"コメントが要る"}]}`
-	req, _ := http.NewRequest("POST", url+"reply", strings.NewReader(body))
+	req, err := http.NewRequest("POST", url+"reply", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
 	req.Header.Set("Origin", strings.TrimSuffix(url, "/"))
 	res, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -141,7 +171,10 @@ func TestApprovalsServe_RoundTrip(t *testing.T) {
 	out := so.String()
 	mustContain(t, "stdout", out, "form: http://127.0.0.1:", "(1 件・id=hub-", "reply: ", "[1] 設定ファイルの形式 → B（コメントが要る）", "next: braindex approvals apply")
 
-	p, _ := approvals.Resolve(ap, tmp)
+	p, err := approvals.Resolve(ap, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
 	b, err := os.ReadFile(p.Reply)
 	if err != nil {
 		t.Fatal(err)
@@ -159,5 +192,5 @@ func TestApprovalsServe_RoundTrip(t *testing.T) {
 	if code := dispatch([]string{"approvals", "serve", "-file", ap, "-no-open", "-dir", tmp, "-timeout", "0.2"}, &so, &se); code != 2 {
 		t.Errorf("2 回目: code=%d", code)
 	}
-	mustContain(t, "stderr", se.String(), "note: 未反映の回答がある")
+	mustContain(t, "stderr", se.String(), "note: 未反映の回答がある(このまま回答すると上書きする)")
 }

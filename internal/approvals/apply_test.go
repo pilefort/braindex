@@ -5,6 +5,60 @@ import (
 	"testing"
 )
 
+// 見出しが同じ項目が並んでいても、答えた項目だけを消す(消し込みを題で引くと、答えていない同題の項目まで消える)。
+func TestApply_DuplicateTitles(t *testing.T) {
+	src := []byte("# 承認待ち\n\n" +
+		"## 1. 命名\n\n**決めたいこと:** 索引の列名\n**なぜ今決めるか:** 次の PR\n**選択肢:**\n" +
+		"- A. path — 短い\n- B. file — 明確\n**私の案:** A — 短い\n**決めないとどうなるか:** 止まる\n\n" +
+		"## 2. 命名\n\n**決めたいこと:** 設定の鍵名\n**なぜ今決めるか:** 次の PR\n**選択肢:**\n" +
+		"- A. notes_dirs — 複数形\n- B. notes_dir — 単数形\n**私の案:** A — 複数形\n**決めないとどうなるか:** 止まる\n")
+	rep := Reply{ReceivedAt: "2026-03-04T10:00:00+09:00", Items: []ReplyItem{{N: 2, Title: "命名", Choice: "B"}}}
+	res := Apply(src, []byte("# 設計判断\n"), rep, "2026-03-04")
+	if res.Decided != 1 {
+		t.Fatalf("decided=%d summary=%v", res.Decided, res.Summary)
+	}
+	if !strings.Contains(string(res.Decisions), "## 命名 → B. notes_dir\n") {
+		t.Errorf("decisions =\n%s", res.Decisions)
+	}
+	d := Parse(res.Approvals)
+	if len(d.Items) != 1 {
+		t.Fatalf("残る項目 = %d 件（答えていない項目まで消えた）:\n%s", len(d.Items), res.Approvals)
+	}
+	if got := d.Items[0].Fields[FieldWhat]; got != "索引の列名" {
+		t.Errorf("残ったのが別の項目: %q\n%s", got, res.Approvals)
+	}
+}
+
+// 受信時刻の無い回答(手で書いた JSON を -reply で渡した場合)でも、根拠行に空の時刻を出さない。
+func TestApply_NoReceivedAt(t *testing.T) {
+	rep := Reply{Items: []ReplyItem{{N: 1, Title: "ログの出力先", Choice: "A"}}}
+	res := Apply(load(t, "two-items.md"), nil, rep, "2026-03-04")
+	if res.Decided != 1 {
+		t.Fatalf("decided=%d summary=%v", res.Decided, res.Summary)
+	}
+	if !strings.Contains(string(res.Decisions), "根拠: 会話 2026-03-04（ユーザー判断・承認フォームの回答）。") {
+		t.Errorf("根拠行 =\n%s", res.Decisions)
+	}
+}
+
+// コメント無しの保留(フォームで「保留」だけ押した場合)でも、書き戻す行に余分な空白や空の括弧を残さない。
+func TestApply_HoldWithoutComment(t *testing.T) {
+	rep := Reply{Items: []ReplyItem{{N: 2, Title: "ログの出力先", Choice: "hold"}}}
+	res := Apply(load(t, "two-items.md"), nil, rep, "2026-03-04")
+	if res.Held != 1 {
+		t.Fatalf("held=%d summary=%v", res.Held, res.Summary)
+	}
+	if !strings.Contains(string(res.Approvals), "**保留（2026-03-04）:**\n") {
+		t.Errorf("保留行の末尾に空白が残る: %q", string(res.Approvals))
+	}
+	if got := res.Summary[0]; got != "[2] ログの出力先 → 保留" {
+		t.Errorf("summary = %q", got)
+	}
+	if d := Parse(res.Approvals); len(d.Items) != 2 || len(d.Items[1].Holds) != 2 {
+		t.Errorf("再解析: %+v", d.Items)
+	}
+}
+
 func TestApply_ChoiceAndHold(t *testing.T) {
 	rep := Reply{ReceivedAt: "2026-03-04T10:00:00+09:00", Items: []ReplyItem{
 		{N: 1, Title: "設定ファイルの形式を JSON にするか TOML にするか", Choice: "A", Comment: ""},

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Example Atom</title>
+  <link rel="self" href="https://example.com/feed.atom"/>
+  <entry>
+    <title type="html">記事 &lt;em&gt;C&lt;/em&gt;</title>
+    <link rel="enclosure" href="https://example.com/c.mp3"/>
+    <link rel="alternate" href="https://example.com/c"/>
+    <id>tag:example.com,2026:c</id>
+    <summary>概要C</summary>
+    <published>2026-08-14T10:00:00+09:00</published>
+    <updated>2026-08-15T10:00:00+09:00</updated>
+  </entry>
+  <entry>
+    <title>記事D</title>
+    <id>https://example.com/d</id>
+    <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><p>本文 <b>D</b></p></div></content>
+    <updated>2026-08-13T23:30:00-05:00</updated>
+  </entry>
+</feed>

@@ -3,6 +3,7 @@ package approvals
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -35,9 +36,28 @@ type serveResult struct {
 	err   error
 }
 
+// get は GET して本文を読み、Body を閉じる。取得に失敗したらテストを落とす
+// (エラーを捨てて res.StatusCode を見ると、失敗時に nil 参照で落ちて理由が分からなくなる)。
+func get(t *testing.T, url string) (*http.Response, []byte) {
+	t.Helper()
+	res, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer res.Body.Close()
+	b, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("GET %s の本文: %v", url, err)
+	}
+	return res, b
+}
+
 func post(t *testing.T, url, origin, body string) (int, string) {
 	t.Helper()
-	req, _ := http.NewRequest("POST", url+"reply", strings.NewReader(body))
+	req, err := http.NewRequest("POST", url+"reply", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	if origin != "" {
 		req.Header.Set("Origin", origin)
@@ -58,17 +78,12 @@ func TestServe_RoundTrip(t *testing.T) {
 		t.Fatalf("url = %q", url)
 	}
 
-	res, err := http.Get(url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, _ := io.ReadAll(res.Body)
-	res.Body.Close()
+	res, got := get(t, url)
 	if !bytes.Equal(got, html) || !strings.HasPrefix(res.Header.Get("Content-Type"), "text/html") {
 		t.Errorf("GET / = %d %q %q", res.StatusCode, res.Header.Get("Content-Type"), got)
 	}
-	if res, err := http.Get(url + "other"); err != nil || res.StatusCode != 404 {
-		t.Errorf("GET /other = %v %v", res, err)
+	if res, _ := get(t, url+"other"); res.StatusCode != 404 {
+		t.Errorf("GET /other = %d", res.StatusCode)
 	}
 
 	// nonce 違い・Origin 違い・GET は拒否し、サーバは待ち続ける
@@ -81,7 +96,7 @@ func TestServe_RoundTrip(t *testing.T) {
 	if code, _ := post(t, url, url[:len(url)-1], `{"nonce":"n1","items":[]}`); code != 400 {
 		t.Errorf("項目なし = %d", code)
 	}
-	if res, _ := http.Get(url + "reply"); res.StatusCode != 405 {
+	if res, _ := get(t, url+"reply"); res.StatusCode != 405 {
 		t.Errorf("GET /reply = %d", res.StatusCode)
 	}
 	select {
@@ -109,7 +124,8 @@ func TestServe_RoundTrip(t *testing.T) {
 		t.Fatal("回答後に Serve が終わらない")
 	}
 	// 終了後は接続できない
-	if _, err := http.Get(url); err == nil {
+	if res, err := http.Get(url); err == nil {
+		res.Body.Close()
 		t.Error("終了後も応答する")
 	}
 }
@@ -162,5 +178,9 @@ func TestNewNonce(t *testing.T) {
 	a, b := NewNonce(), NewNonce()
 	if len(a) != 32 || a == b {
 		t.Errorf("nonce = %q %q", a, b)
+	}
+	// フォームの JS とテストが [0-9a-f]{32} で拾うので、16 進以外を返してはいけない
+	if _, err := hex.DecodeString(a); err != nil {
+		t.Errorf("16 進でない: %q", a)
 	}
 }
