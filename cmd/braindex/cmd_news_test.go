@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pilefort/braindex/internal/feed"
 )
 
 // newsHub は hub と、httptest で配る 2 本のフィード(a: 記事 2 件・b: 記事 1 件)と、壊れた 1 本(c: 404)の feeds.json を作る。
@@ -40,8 +43,69 @@ func newsFetch(t *testing.T, hub string, args ...string) (code int, so, se strin
 	t.Helper()
 	var sob, seb bytes.Buffer
 	// -no-score: 採点の出典(索引・実環境のセッションログ)を読まない。採点は TestNewsFetch_Scored で別に見る
-	code = dispatch(append([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-no-score"}, args...), &sob, &seb)
+	// -no-open: ブラウザを開かない。開く処理は TestNewsFetch_Open で差し替えて見る
+	code = dispatch(append([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-no-score", "-no-open"}, args...), &sob, &seb)
 	return code, sob.String(), seb.String()
+}
+
+// md と同名の html を書き、既定ブラウザで開く。-no-open で開かない。開けなければ警告(終了コード 2)。
+func TestNewsFetch_Open(t *testing.T) {
+	hub, _ := newsHub(t)
+	var opened []string
+	orig := openInBrowser
+	openInBrowser = func(p string) error { opened = append(opened, p); return nil }
+	t.Cleanup(func() { openInBrowser = orig })
+
+	var so, se bytes.Buffer
+	code := dispatch([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-layer", "weekly", "-no-score"}, &so, &se)
+	if code != 0 {
+		t.Fatalf("exit=%d\n%s", code, se.String())
+	}
+	htmlPath := filepath.Join(hub, "news", "digest_2026-08-15_weekly.html")
+	if len(opened) != 1 || opened[0] != htmlPath {
+		t.Errorf("開いたパス: %v", opened)
+	}
+	mustContain(t, "stdout", so.String(), "news 選別 UI: "+htmlPath)
+	h := readFile(t, htmlPath)
+	mustContain(t, "html", h, "<!doctype html>", "<h3>B（新着 1 件）</h3>", `data-id="`+feedIDOf("https://example.com/3")+`"`, `const META={date:"2026-08-15",layer:"weekly"};`)
+
+	// -no-open: 書くが開かない
+	opened = nil
+	code, _, _ = newsFetch(t, hub, "-layer", "weekly", "-replay")
+	if code != 0 || len(opened) != 0 {
+		t.Errorf("-no-open: exit=%d opened=%v", code, opened)
+	}
+	if _, err := os.Stat(filepath.Join(hub, "news", "digest_2026-08-15_weekly-2.html")); err != nil {
+		t.Errorf("2 回目の html: %v", err)
+	}
+
+	// 開けない: 警告して 2
+	openInBrowser = func(string) error { return errors.New("ブラウザで開けない: なし") }
+	se.Reset()
+	code = dispatch([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-layer", "weekly", "-no-score", "-replay"}, &so, &se)
+	if code != 2 || !strings.Contains(se.String(), "警告: ブラウザで開けない") {
+		t.Errorf("開けない: exit=%d %s", code, se.String())
+	}
+}
+
+func feedIDOf(link string) string { return feed.EntryID(link, "") }
+
+// -out に .html を渡しても Markdown を上書きしない(html は md と同じ連番の規則で別名にする)。
+func TestNewsFetch_OutHTML(t *testing.T) {
+	hub, _ := newsHub(t)
+	out := filepath.Join(hub, "news", "mine.html")
+	code, so, se := newsFetch(t, hub, "-layer", "weekly", "-out", out)
+	if code != 0 {
+		t.Fatalf("exit=%d\n%s%s", code, so, se)
+	}
+	htmlPath := filepath.Join(hub, "news", "mine-2.html")
+	mustContain(t, "stdout", so, "news ダイジェスト: "+out, "news 選別 UI: "+htmlPath)
+	if md := readFile(t, out); !strings.HasPrefix(md, "# ニュースダイジェスト") {
+		t.Errorf("-out の md が html で上書きされた:\n%s", md)
+	}
+	if h := readFile(t, htmlPath); !strings.HasPrefix(h, "<!doctype html>") {
+		t.Errorf("html:\n%s", h)
+	}
 }
 
 // 取得 → ダイジェスト → 既読。2 回目は新着なし。一部失敗は終了コード 2。
