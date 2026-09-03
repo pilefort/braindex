@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/pilefort/braindex/internal/extract"
 )
 
 // ノート(docs/notes・docs/decisions.md・work のメモ)の曖昧さ検査。
@@ -117,9 +119,10 @@ func CheckNote(path string, content []byte, o NoteOptions) []Warning {
 		}
 	}
 
-	// 日付なし(warn・文書全体)
-	if !reDate.MatchString(text) {
-		add(0, KindNoDate, SeverityWarn, "本文に日付(YYYY-MM-DD 等)が一つも無い")
+	// 日付なし(warn・文書全体)。規約は「ファイル名の YYYYMMDD か本文の日付」なので、ファイル名も数える。
+	// 規則を二重定義しないよう、索引と同じ extract に本文を渡さず(＝ファイル名だけで)日付を引かせる。
+	if !reDate.MatchString(text) && extract.Extract(baseName(path), nil, "").Date == "" {
+		add(0, KindNoDate, SeverityWarn, "本文にもファイル名にも日付(YYYY-MM-DD 等)が無い")
 	}
 
 	// 出典なき数字(candidate)
@@ -196,6 +199,15 @@ func fencedLines(lines []string) []bool {
 		out[i] = inside
 	}
 	return out
+}
+
+// baseName は表示用パス(/ 区切り。Windows の \ も来うる)の最後の要素を返す。
+func baseName(p string) string {
+	p = strings.ReplaceAll(p, "\\", "/")
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		return p[i+1:]
+	}
+	return p
 }
 
 // isDateOnly は「- 2026-08-12」のように日付だけの行か。

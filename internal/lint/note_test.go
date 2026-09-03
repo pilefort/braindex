@@ -110,6 +110,23 @@ func TestCheckNote_VagueTokens(t *testing.T) {
 	}
 }
 
+// 日付はファイル名(20260901-x.md・2026-09-01-x.md)からも数える(索引の日付規則と揃える)。
+func TestCheckNote_DateFromFilename(t *testing.T) {
+	body := []byte("# 調査メモ\n\n結論: 甲。\n")
+	for _, p := range []string{"docs/notes/20260901-survey.md", "docs/notes/2026-09-01-survey.md"} {
+		if ws := CheckNote(p, body, NoteOptions{}); has(ws, KindNoDate) {
+			t.Errorf("%s: ファイル名に日付があるのに日付なしが出た: %v", p, kinds(ws))
+		}
+	}
+	if ws := CheckNote("docs/notes/survey.md", body, NoteOptions{}); !has(ws, KindNoDate) {
+		t.Errorf("どこにも日付が無いのに日付なしが出ない: %v", kinds(ws))
+	}
+	// 月日が範囲外(13 月)のものは日付とみなさない
+	if ws := CheckNote("docs/notes/20261301-survey.md", body, NoteOptions{}); !has(ws, KindNoDate) {
+		t.Errorf("13 月を日付として数えた: %v", kinds(ws))
+	}
+}
+
 // 確度: 数量詞・日付なしは warn、それ以外は candidate。
 func TestCheckNote_Severity(t *testing.T) {
 	ws := CheckNote("docs/decisions.md", []byte("## 決定\nかなり良い。CPU 4.2% はたぶん正しい。\n"), NoteOptions{Glossary: []byte(""), HasGlossary: true})
