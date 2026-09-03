@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -131,15 +132,20 @@ func TestApprovalsServe_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var page bytes.Buffer
-	page.ReadFrom(res.Body)
+	page, err := io.ReadAll(res.Body)
 	res.Body.Close()
-	m := regexp.MustCompile(`"nonce":"([0-9a-f]{32})"`).FindStringSubmatch(page.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`"nonce":"([0-9a-f]{32})"`).FindStringSubmatch(string(page))
 	if m == nil {
-		t.Fatalf("フォームに nonce が無い:\n%s", page.String())
+		t.Fatalf("フォームに nonce が無い:\n%s", page)
 	}
 	body := `{"nonce":"` + m[1] + `","items":[{"n":1,"title":"設定ファイルの形式","choice":"B","comment":"コメントが要る"}]}`
-	req, _ := http.NewRequest("POST", url+"reply", strings.NewReader(body))
+	req, err := http.NewRequest("POST", url+"reply", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
 	req.Header.Set("Origin", strings.TrimSuffix(url, "/"))
 	res, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -161,7 +167,10 @@ func TestApprovalsServe_RoundTrip(t *testing.T) {
 	out := so.String()
 	mustContain(t, "stdout", out, "form: http://127.0.0.1:", "(1 件・id=hub-", "reply: ", "[1] 設定ファイルの形式 → B（コメントが要る）", "next: braindex approvals apply")
 
-	p, _ := approvals.Resolve(ap, tmp)
+	p, err := approvals.Resolve(ap, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
 	b, err := os.ReadFile(p.Reply)
 	if err != nil {
 		t.Fatal(err)
