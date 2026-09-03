@@ -43,4 +43,4 @@ Windows のタスクスケジューラなら `schtasks /Create /SC WEEKLY /D MON
 | `braindex.json` | 走査の設定: `root`・`notes_dirs`・`extra`。週次レビューの設定（記録の置き場と閾値）: `review`。振り返りの設定（窓・閾値・辞書）: `retro` |
 | `docs/` | 蓄積するもの: `overview.md`・`glossary.md`・`decisions.md`・`notes/`・`conventions.md` |
 | `work/` | 揮発するもの: `APPROVALS.md`（判断待ち）・`TODO.md`・`review/`（週次レビューの記録） |
-| `.claude/skills/` | Claude Code のスキル: `braindex-review`（週次レビューの判断）・`retro`（振り返り） |
+| `.claude/skills/` | Claude Code のスキル: `braindex-review`（週次レビューの判断）・`retro`（振り返り）・`record-lint`（ノート保存前の曖昧さ検査）・`contradiction-scan`（横断の矛盾検査） |

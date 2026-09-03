@@ -102,13 +102,17 @@ var dateLayouts = []string{
 
 // ParseDate はフィードの日付文字列を UTC の暦日 YYYY-MM-DD にする。読めなければ空。
 // 暦日を UTC に揃えるのは、同じ記事が実行環境のタイムゾーンで別の日にならないようにするため。
+//
+// 基準のゾーンを UTC に固定する(time.Parse ではなく ParseInLocation)。time.Parse はゾーンの略称
+// (JST・EST など)を実行環境のローカルゾーンで解決するので、同じ "…08:00:00 JST" が JST のマシンでは
+// 前日、UTC のマシンでは当日になっていた。オフセット付き(+09:00 等)の日付はこの指定の影響を受けない。
 func ParseDate(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return ""
 	}
 	for _, layout := range dateLayouts {
-		if t, err := time.Parse(layout, s); err == nil {
+		if t, err := time.ParseInLocation(layout, s, time.UTC); err == nil {
 			return t.UTC().Format("2006-01-02")
 		}
 	}

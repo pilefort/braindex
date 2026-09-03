@@ -77,7 +77,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.date, "date", "", "今日として使う日付 YYYY-MM-DD(既定: 実行日)。出力ファイル名と既読の日付に使う")
 	fs.StringVar(&o.layer, "layer", news.LayerAll, "取得するフィードの層(feeds.json の layer)。all は全件")
 	fs.BoolVar(&o.replay, "replay", false, "既読を無視して全記事を出し、既読も更新しない(見出しの再生成用)")
-	fs.BoolVar(&o.stdout, "stdout", false, "ファイルに書かず標準出力に出す(既読は更新する)")
+	fs.BoolVar(&o.stdout, "stdout", false, "ファイルに書かずダイジェストだけを標準出力に出す(進捗は stderr。既読は更新する)")
 	fs.StringVar(&o.out, "out", "", "出力先(既定: 設定 news.dir の digest_<日付>_<層>.md。既にあれば -2, -3 … を付けて別名にする)")
 	fs.BoolVar(&o.noScore, "no-score", false, "関心プロファイルで採点しない(全件を主要表示・出典を読まない)")
 	fs.StringVar(&o.sessions, "sessions", "", "関心プロファイルが読むセッションログの置き場(既定: news profile と同じ)")
@@ -146,12 +146,17 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		return fail(err)
 	}
 
+	// -stdout のときは標準出力をダイジェスト専用にし、進捗は stderr へ出す(リダイレクトでそのまま読めるように)。
+	progress := stdout
+	if o.stdout {
+		progress = stderr
+	}
 	results := news.Collect(context.Background(), newsFetcher, srcs, seen, today, o.replay)
 	for _, r := range results {
 		if r.Err != nil {
 			fmt.Fprintf(stderr, "braindex news fetch: 警告: %s: %v\n", r.Source.Name, r.Err)
 		} else {
-			fmt.Fprintf(stdout, "%s: 新着 %d / 全 %d\n", r.Source.Name, len(r.New), len(r.Entries))
+			fmt.Fprintf(progress, "%s: 新着 %d / 全 %d\n", r.Source.Name, len(r.New), len(r.Entries))
 		}
 	}
 	if news.AllFailed(results) {

@@ -156,3 +156,18 @@ func TestBuild_ExtraLines(t *testing.T) {
 		t.Errorf("語: %v (want %v)", got, want)
 	}
 }
+
+// BOM 付きのファイル(Windows の編集で付く)でも 1 行目を落とさない。入力は BOM 除去してから解析する(決定 2026-08-07)。
+func TestBOM(t *testing.T) {
+	got := ParseKeep("2026-08", "\uFEFF- [見出し](https://x/a)\n")
+	if want := []Keep{{"2026-08", "見出し"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("keep の 1 行目: %v", got)
+	}
+	p, err := Build(Input{Today: "2026-09-03", Extra: []string{"\uFEFFRust"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Terms) != 1 || p.Terms[0].Word != "rust" {
+		t.Errorf("補助の 1 行目: %+v", p.Terms)
+	}
+}
