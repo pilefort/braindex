@@ -468,3 +468,46 @@ func TestScan_RejectsEscapingPaths(t *testing.T) {
 		t.Errorf("extra.path \"\" が拒否された: %v", err)
 	}
 }
+
+// extra の exclude はディレクトリにも掛かり、当たった枝は丸ごと落ちる(gitignore と同じ感覚)。
+// "/" を含まないパターンはディレクトリ名に、含むパターンは起点からの相対パスに掛ける。
+func TestScan_ExtraExcludeDir(t *testing.T) {
+	root := t.TempDir()
+	base := filepath.Join(root, "r", "x")
+	for _, rel := range []string{"a.md", "drafts/p.md", "drafts/deep/q.md", "keep/z.md"} {
+		p := filepath.Join(base, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("# "+rel+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases := []struct {
+		desc    string
+		exclude []string
+		want    []string
+	}{
+		{"ディレクトリ名で枝ごと除外", []string{"drafts"}, []string{"r/x/a.md", "r/x/keep/z.md"}},
+		{"ディレクトリ名のグロブ", []string{"dr*"}, []string{"r/x/a.md", "r/x/keep/z.md"}},
+		// 決定の動機そのもの。以前は drafts/ 直下しか落ちなかった
+		{"直下を指すパターンでも枝ごと除外", []string{"drafts/*"}, []string{"r/x/a.md", "r/x/keep/z.md"}},
+		{"相対パスで下位の枝だけ除外", []string{"drafts/deep"}, []string{"r/x/a.md", "r/x/drafts/p.md", "r/x/keep/z.md"}},
+		// 起点自身にはパターンを掛けない(掛けると全件消え、設定の意図と食い違う)
+		{"起点のディレクトリ名は対象外", []string{"x"}, []string{"r/x/a.md", "r/x/drafts/deep/q.md", "r/x/drafts/p.md", "r/x/keep/z.md"}},
+	}
+	for _, c := range cases {
+		files, _, err := Scan(Config{Root: root, Extra: []ExtraRule{{Repo: "r", Path: "x", Recursive: true, Kind: "x", Exclude: c.exclude}}})
+		if err != nil {
+			t.Fatalf("[%s] Scan: %v", c.desc, err)
+		}
+		var got []string
+		for _, f := range files {
+			got = append(got, f.Rel)
+		}
+		sort.Strings(got)
+		if strings.Join(got, ",") != strings.Join(c.want, ",") {
+			t.Errorf("[%s] want=%v got=%v", c.desc, c.want, got)
+		}
+	}
+}

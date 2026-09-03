@@ -36,7 +36,7 @@ type ExtraRule struct {
 	Path      string   `json:"path"`      // リポ内の起点。"." はリポ直下
 	Recursive bool     `json:"recursive"` // false なら起点直下のみ
 	Kind      string   `json:"kind"`      // catalog に載せる種別ラベル
-	Exclude   []string `json:"exclude"`   // 除外パターン(path.Match のグロブ。"/" を含むなら起点からの相対パスに掛ける)
+	Exclude   []string `json:"exclude"`   // 除外パターン(path.Match のグロブ。"/" を含むなら起点からの相対パスに掛ける)。ディレクトリにも掛かり、当たった枝は丸ごと除外される
 }
 
 // File は発見した 1 ファイル。
@@ -254,6 +254,18 @@ func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 				if d.Name() == "archive" {
 					return filepath.SkipDir
 				}
+				// exclude はディレクトリにも掛け、当たったら枝ごと落とす(gitignore と同じ感覚)。
+				// 起点自身には掛けない(掛けると全件消え、除外指定の意図と食い違う)
+				if path != base {
+					rel, err := filepath.Rel(base, path)
+					if err != nil {
+						warn("%s: %v", path, err)
+						return nil
+					}
+					if excluded(d.Name(), filepath.ToSlash(rel), ex.Exclude) {
+						return filepath.SkipDir
+					}
+				}
 				return nil
 			}
 			rel, err := filepath.Rel(base, path)
@@ -330,7 +342,7 @@ func isMarkdown(name string) bool {
 
 // excluded は exclude パターンに当たるかを判定する。パターンは path.Match のグロブ
 // (ワイルドカード無しなら完全一致と同じ)。"/" を含むパターンは起点からの相対パス、
-// 含まないパターンはファイル名に掛ける。不正なパターンは Scan の入口で弾いてあるので、ここでは無視する。
+// 含まないパターンはファイル名・ディレクトリ名に掛ける。不正なパターンは Scan の入口で弾いてあるので、ここでは無視する。
 func excluded(name, relFromBase string, patterns []string) bool {
 	for _, pat := range patterns {
 		target := name
