@@ -4,6 +4,7 @@
   "extra": [],
   "review": { "dir": "work/review", "since_days": 14, "stale_todo_weeks": 4, "archive_months": 6 },
   "retro": { "window_days": 14, "threshold": 0.08, "position_bins": "1-3,4-10,11-30,31-" },
+  "approvals": { "file": "work/APPROVALS.md", "decisions": "docs/decisions.md", "timeout_sec": 0 },
   "schedule": {
     "jobs": [
       { "name": "review", "args": ["review"], "when": "weekly:mon:09:00" },

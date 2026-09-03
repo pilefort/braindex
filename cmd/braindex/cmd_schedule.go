@@ -27,6 +27,9 @@ func (execRunner) Run(c schedule.Command) (string, error) {
 	if c.Stdin != "" {
 		cmd.Stdin = strings.NewReader(c.Stdin)
 	}
+	if len(c.Env) > 0 {
+		cmd.Env = append(os.Environ(), c.Env...)
+	}
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -173,23 +176,26 @@ func jobNames(jobs []schedule.Job) []string {
 	return names
 }
 
-// readCrontab は現在の crontab を読む。読めなければエラーにする(決定 2026-09-03)。
+// readCrontab は現在の crontab を読む。crontab を一度も書いていない利用者では crontab -l が
+// 終了コード 1 になるので、その出力(schedule.IsNoCrontab)だけ「空の crontab」として扱う。
 //
-// 失敗を「空」と畳むと、読みが失敗しつつ書きが通る状況(権限・一時的な失敗)で、書き戻しが
-// 利用者の crontab を全消しする。crontab を一度も書いていない利用者もここで止まるので、
-// エラー文で作り方を案内する。
+// それ以外の失敗(権限・一時的な失敗)まで空と畳むと、読みが失敗しつつ書きが通る状況で、
+// 書き戻し(crontab -)が利用者の crontab を全消しする。決定 2026-09-03(A')。
 func readCrontab() (string, error) {
 	out, err := scheduleRunner.Run(schedule.ReadCrontab())
-	if err != nil {
-		detail := strings.TrimSpace(out)
-		if detail == "" {
-			detail = err.Error()
-		}
-		return "", fmt.Errorf("crontab を読めない: %s"+
-			"(crontab をまだ作っていなければ `crontab -e` で空の crontab を作ってから実行する。"+
-			"読めないまま書き戻すと、既にある行を消してしまう)", detail)
+	if err == nil {
+		return out, nil
 	}
-	return out, nil
+	if schedule.IsNoCrontab(out) {
+		return "", nil // crontab をまだ作っていない。空として続ける
+	}
+	detail := strings.TrimSpace(out)
+	if detail == "" {
+		detail = err.Error()
+	}
+	return "", fmt.Errorf("crontab を読めない: %s"+
+		"(読めないまま書き戻すと、既にある行を消してしまう。"+
+		"crontab をまだ作っていない環境でこれが出るなら、`crontab -e` で空の crontab を作ってから実行する)", detail)
 }
 
 // runCommands はコマンド列を順に実行する。1 つでも失敗したらそこで止め、終了コード 1 を返す。

@@ -137,6 +137,12 @@ func LoadFeeds(path string) ([]Source, error) {
 
 // ParseFeeds は LoadFeeds のバイト列版。name はエラーメッセージ用。
 func ParseFeeds(b []byte, name string) ([]Source, error) {
+	// UTF-8 BOM (EF BB BF) を除去。feeds.json は braindex init が配らず利用者が手で書くので、
+	// BOM を付けるエディタ(Windows PowerShell 5.1 の Set-Content -Encoding utf8 など)で
+	// 書かれると encoding/json が先頭バイトで落ちる。config.Load と同じ規則。
+	if len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF {
+		b = b[3:]
+	}
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	var srcs []Source

@@ -23,7 +23,7 @@ hub が持つのは索引と週次レビューだけで、知識の正本は各�
 ```text
 parent/                            ← braindex.json の root（既定 ".."＝hub の親）
 ├── hub/                           ← 索引を置くリポ。braindex はここで実行する
-│   ├── braindex.json              設定（root / notes_dirs / extra / review / retro / news / schedule）
+│   ├── braindex.json              設定（root / notes_dirs / extra / review / retro / news / approvals / schedule）
 │   ├── index/catalog.md           ■ 索引：1 ノート 1 行（日付・種別・タイトル・要旨・パス）
 │   ├── work/review/2026-09-03.md  週次レビューの下書き（braindex review）
 │   ├── news/                      ニュースの置き場（ダイジェストと、選別で残した見出し keep/）
@@ -95,7 +95,8 @@ braindex review                                # 週に 1 回: レビューの�
 ```
 
 `braindex init` は設定 `braindex.json`（`"root": ".."`）・フォルダ規約のテンプレ・スキルを展開する。
-テンプレを使わずに始めるなら、`braindex.example.json` を `braindex.json` としてコピーするだけでもよい。
+設定の雛形はこれが正本で、braindex のリポジトリに別置きの雛形は置いていない。
+手で `braindex.json` を書くなら、キーの一覧は「braindex — 索引の生成」の設定の表を見る。
 
 **索引はコミットする。** hub が git 管理下にないと `braindex review` は索引の増減を常に 0 件と報告し、終了コード 2 で終わる。
 
@@ -383,8 +384,23 @@ braindex approvals apply          # 受けた回答を反映する（聞くの�
 
 選んだ項目は `docs/decisions.md` に 3 段（結論 → 理由 → 根拠）で追記して `APPROVALS.md` から消し、保留は項目を残して
 「**保留（日付）:**」を付ける。反映した回答 JSON は `.applied.json` に改名するので、2 回反映されない。
-フラグ: `-file`（既定 `work/APPROVALS.md`）`-dir`（回答 JSON の置き場。既定は OS の一時ディレクトリの `braindex-approvals`）
-`-timeout 秒`（0 で無期限）`-no-open` `-apply` `-decisions` `-date` `-reply`。
+フラグ: `-file`（判断待ちのファイル）`-dir`（回答 JSON の置き場。既定は OS の一時ディレクトリの `braindex-approvals`）
+`-config`（設定ファイル。既定はカレントの `braindex.json`。無くてもよい）`-timeout 秒`（0 で無期限）`-no-open` `-apply` `-decisions` `-date` `-reply`。
+
+設定（`braindex.json` の `approvals` 節。節ごと省略してよく、設定ファイルが無くても動く）:
+
+```json
+{ "approvals": { "file": "work/APPROVALS.md", "decisions": "docs/decisions.md", "timeout_sec": 0 } }
+```
+
+- `file` — 判断待ちのファイル。既定 `work/APPROVALS.md`
+- `decisions` — 決定の追記先。既定 `docs/decisions.md`
+- `timeout_sec` — `serve` が回答を待つ秒数。既定 `0`（無期限）。負の値は設定の誤りとして止める
+
+相対パスは **`braindex.json` のある場所**からの相対で解く（コマンドを打ったカレントからではない）。
+優先順位は **フラグ > 設定 > 既定** で、`-file` などを明示したときはフラグが勝つ。
+設定ファイルは全体を読むので、`news` など**別の節にタイプミスがあると `approvals` も終了コード 1 で止まる**（他のコマンドと同じ挙動）。
+設定ファイルが既定の置き場に無いのは正常で、そのときはフラグと既定だけで動く。`-config` で指定したのに無いときだけ失敗する。
 終了コード: `serve` 0 回答あり／3 時間切れ、`apply` 0 反映した・回答なし／2 反映できなかった項目がある、`status` 0 ／2 記載漏れか未反映の回答あり。いずれも 1 は失敗。
 
 ### braindex answer — 回答の HTML 化
@@ -461,7 +477,9 @@ macOS・Linux は `crontab`（`# BEGIN braindex <hub>` 〜 `# END braindex <hub>
 サブコマンド: `list`（設定のジョブと OS 側の登録状態）・`print`（登録に使うコマンドを出すだけ）・`install`（登録する）・`uninstall`（消す）。
 
 crontab 側では、`crontab -l` が読めなければ**何もせず終了コード 1** で止まる（読めないまま書き戻すと既にある行を消してしまうため）。
-crontab をまだ作っていない環境では、`crontab -e` で空の crontab を作ってから `braindex schedule install` を実行する。
+ただし「まだ crontab が無い」ことを示す失敗（出力が `no crontab for <利用者>` の 1 行だけ。BSD cron の `crontab: ` 接頭辞も可）だけは空の crontab として扱うので、
+`crontab` を一度も作っていない環境でもそのまま `braindex schedule install` できる。
+文言の違う cron 実装ではこの判別が効かず終了コード 1 で止まるので、その場合は `crontab -e` で空の crontab を作ってから実行する。
 フラグ: `-config` `-job 名前`（1 本だけを対象にする）`-dry-run`（`install`・`uninstall`。実行せずコマンドを出す）。
 終了コード: 0 ／1 フラグ・設定の誤り、またはスケジューラ側が失敗した（登録できていないので失敗）。
 
@@ -474,7 +492,7 @@ crontab をまだ作っていない環境では、`crontab -e` で空の crontab
    周辺機能（振り返る・知る）は LLM を採点や要約の補助に使ってよいが、取得と計測は決定論で行い、判断は人に残す。
 3. **寿命で分ける。** 蓄積するもの（`docs/`）と揮発するもの（`work/`）を混ぜない。索引は前者だけを見る。
 
-理由と却下案は作者の設計メモ（`docs/`・git 管理外）にある。
+理由と却下案は作者の設計メモ `docs/decisions.md` にある。
 
 ### やらないこと
 
@@ -515,10 +533,9 @@ v0.1.0（2026-09-03）: 索引 CLI（Phase 1）を原型から移植して可搬
 |---|---|
 | `cmd/braindex` | サブコマンドの登録とフラグ解析（`main.go`・`commands.go`・`cmd_*.go`） |
 | `internal/` | 索引の実装（`scan` → `extract` → `render` → `catalog`）と `config`・`template`（init）・`lint`・`review`・`sessions`／`retro`・`feed`／`interest`／`news`（ニュース）・`approvals`・`mdhtml`／`verify`（回答の HTML 化と照合）・`scope`・`schedule` |
-| `braindex.example.json` | 設定ファイルの雛形 |
 | `.github/workflows/ci.yml` | CI。ubuntu と windows で gofmt／vet／test に加え、同じ入力から 2 回生成してバイト一致することを確かめる |
 | `CONTRIBUTING.md` | 開発の決まり（テスト・決定性・持ち込まないもの） |
-| `docs/` `work/` | 作者の設計メモと作業状態。git 管理外（`.gitignore`。2026-09-02 決定） |
+| `docs/` `work/` | 作者の設計メモ（`overview`・`decisions`・`glossary`・`conventions`）と作業状態。git 管理下（2026-09-03 決定。複数マシン・並行セッション間で同期するため） |
 
 ```sh
 go test ./...   # 依存なし。CI は gofmt -l . と go vet ./... も回す

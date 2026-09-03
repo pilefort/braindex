@@ -29,7 +29,7 @@ func runApprovalsApply(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&decisionsPath, "decisions", "", "決定を追記するファイル(既定: <hub>/docs/decisions.md)")
 	fs.StringVar(&date, "date", "", "記録日 YYYY-MM-DD(既定: 今日)")
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "使い方: braindex approvals apply [-file work/APPROVALS.md] [-reply <json>] [-decisions docs/decisions.md] [-date YYYY-MM-DD] [-dir <置き場>]")
+		fmt.Fprintln(stderr, "使い方: braindex approvals apply [-config braindex.json] [-file work/APPROVALS.md] [-reply <json>] [-decisions docs/decisions.md] [-date YYYY-MM-DD] [-dir <置き場>]")
 		fmt.Fprintln(stderr, "  serve が受けた回答を反映する。選んだ項目は docs/decisions.md に 3 段(結論 → 理由 → 根拠)で追記して APPROVALS.md から消し、")
 		fmt.Fprintln(stderr, "  保留は項目を残して「**保留（日付）:**」を付ける。反映した回答は .applied.json に改名する(2 回反映しない)。")
 		fmt.Fprintln(stderr, "  回答が無ければ何もしない(終了コード 0)。終了コード: 0 反映した・回答なし / 1 失敗 / 2 未反映の項目がある")
@@ -57,7 +57,7 @@ func runApprovalsApply(args []string, stdout, stderr io.Writer) int {
 		return fail(fmt.Errorf("-date は YYYY-MM-DD: %q", date))
 	}
 
-	p, err := approvals.Resolve(f.file, f.dir)
+	p, err := resolveApprovalsPaths(f)
 	if err != nil {
 		return fail(err)
 	}
