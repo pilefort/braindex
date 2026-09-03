@@ -3,7 +3,7 @@ package schedule
 import (
 	"fmt"
 	"strings"
-	"unicode/utf8"
+	"unicode/utf16"
 )
 
 // Command は OS のスケジューラへ渡す 1 回の起動。このパッケージは組み立てるだけで、実行はしない。
@@ -27,11 +27,13 @@ func (c Command) Display() string {
 	return strings.Join(parts, " ")
 }
 
-// maxTR は schtasks /TR に渡せる文字数の上限。超えると schtasks が黙って切るので、こちらでエラーにする。
-// 数えるのは**文字数**(ルーン数)で、バイト数ではない。バイト数で数えると
-// C:\Users\山田\... のような日本語を含むパスの利用者が、実際は収まる行を弾かれる
+// maxTR は schtasks /TR に渡せる長さの上限。超えると schtasks が黙って切るので、こちらでエラーにする。
+// 数えるのは Windows のコマンドラインと同じ **UTF-16 コード単位**で、バイト数ではない。
+// バイト数で数えると C:\Users\山田\... のような日本語を含むパスの利用者が、実際は収まる行を弾かれる
 // (2026-09-03 実測: 同じ行が 264 バイト / 228 文字)。
-// 厳密には Windows のコマンドラインは UTF-16 コード単位で数えるが、BMP 内の文字ではルーン数と一致する。
+// ルーン数でも BMP 内なら一致するが、絵文字などの非 BMP 文字は 1 ルーン＝2 コード単位なので、
+// ルーン数だと過小に数えて「上限内と判定したのに schtasks に切られる」側へ倒れる。危険な向きを避ける。
+// (261 という値そのものが「文字数」か「バイト数」かは一次ソース未確認・既存の前提を引き継いでいる)
 const maxTR = 261
 
 // IsWindows は goos が Windows かを返す(呼び出し側は runtime.GOOS を渡す)。
@@ -85,7 +87,7 @@ func windowsRun(hub, exe string, j Job) (string, error) {
 		b.WriteString(q)
 	}
 	run := b.String()
-	if n := utf8.RuneCountInString(run); n > maxTR {
+	if n := len(utf16.Encode([]rune(run))); n > maxTR {
 		return "", fmt.Errorf("ジョブ %s: 実行行が %d 文字で schtasks の上限 %d を超える(hub か braindex の置き場を短いパスに移す): %s",
 			j.Name, n, maxTR, run)
 	}
@@ -221,12 +223,21 @@ func ReadCrontab() Command {
 }
 
 // IsNoCrontab は crontab -l の失敗が「その利用者の crontab がまだ無い」ことかを、出力の文言で判別する。
-// macOS(BSD cron)は "crontab: no crontab for <user>"、Linux(cronie / vixie-cron)は "no crontab for <user>" で、
-// どちらも "no crontab" を含む。ReadCrontab が LC_ALL=C を付けるので、環境の言語設定では変わらない。
+// macOS(BSD cron)は "crontab: no crontab for <user>"、Linux(cronie / vixie-cron)は "no crontab for <user>"。
+// ReadCrontab が LC_ALL=C を付けるので、環境の言語設定では変わらない。
 //
 // この判別を捨てて「失敗は全部 crontab が空」と畳むと、読めなかっただけの回に書き戻し(crontab -)が走り、
 // 利用者の crontab を全消しする。逆に「失敗は全部エラー」にすると、crontab がまだ無い利用者が install できない。
 // 文言の違う cron 実装(未確認: busybox)ではエラー側に倒れるだけで、全消しにはならない。
+//
+// 「no crontab を含む」で見ると緩すぎる。呼び出し側は stdout と stderr を混ぜて渡すので、
+// 利用者の crontab 本文に "# no crontab entries below" のような行があると「無い」と誤判定し、
+// まさに防ぎたい全消しを起こす。実測した文言はどちらも 1 行なので、行頭一致＋単一行に絞る
+// (2026-09-03 実測・macOS 15: 終了コード 1・"crontab: no crontab for <user>" の 1 行 39 バイトのみ)。
 func IsNoCrontab(output string) bool {
-	return strings.Contains(strings.ToLower(output), "no crontab")
+	s := strings.ToLower(strings.TrimSpace(output))
+	if strings.Contains(s, "\n") {
+		return false // 本文が混ざっている＝「crontab が無い」ではない
+	}
+	return strings.HasPrefix(s, "no crontab for ") || strings.HasPrefix(s, "crontab: no crontab for ")
 }

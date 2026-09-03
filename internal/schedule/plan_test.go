@@ -3,7 +3,7 @@ package schedule
 import (
 	"strings"
 	"testing"
-	"unicode/utf8"
+	"unicode/utf16"
 )
 
 const (
@@ -270,7 +270,7 @@ func TestInstallPlan_Windows_実行行の長さは文字数で数える(t *testi
 	if err != nil {
 		t.Fatalf("短い hub なら通る: %v", err)
 	}
-	n := utf8.RuneCountInString(s)
+	n := len(utf16.Encode([]rune(s)))
 	if n >= maxTR {
 		t.Fatalf("前提が崩れている(短い hub で既に上限): %d", n)
 	}
@@ -284,14 +284,21 @@ func TestInstallPlan_Windows_実行行の長さは文字数で数える(t *testi
 		t.Errorf("%d 文字は弾く", maxTR+1)
 	}
 
-	// 単位の取り違えの検出: 同じ文字数を日本語(1 文字 3 バイト)にすると、
-	// バイト数で数えている実装ではここで落ちる(文字数は maxTR ちょうどで、収まっている)。
+	// 単位の取り違えの検出: 同じ文字数を日本語(1 文字 3 バイト・BMP 内)にすると、
+	// バイト数で数えている実装ではここで落ちる(長さは maxTR ちょうどで、収まっている)。
 	jp := base + strings.Repeat("あ", pad)
 	got, err := trOf(t, jp)
 	if err != nil {
-		t.Fatalf("文字数は %d で収まっているのに弾いた(バイト数で数えている): %v", maxTR, err)
+		t.Fatalf("UTF-16 で %d に収まっているのに弾いた(バイト数で数えている): %v", maxTR, err)
 	}
-	if c, b := utf8.RuneCountInString(got), len(got); c != maxTR || b <= maxTR {
-		t.Errorf("この入力は「文字数は上限ちょうど・バイト数は超過」であるべき: 文字=%d バイト=%d", c, b)
+	if c, b := len(utf16.Encode([]rune(got))), len(got); c != maxTR || b <= maxTR {
+		t.Errorf("この入力は「UTF-16 は上限ちょうど・バイト数は超過」であるべき: UTF-16=%d バイト=%d", c, b)
+	}
+
+	// 非 BMP(絵文字)は 1 ルーン＝2 UTF-16 コード単位。ルーン数で数えると過小に見えるので、
+	// 「上限内と判定したのに schtasks に黙って切られる」側へ倒れる。危険な向きなので弾く。
+	emoji := base + strings.Repeat("\U0001F600", pad) // ルーン数は pad、UTF-16 では 2*pad
+	if _, err := trOf(t, emoji); err == nil {
+		t.Errorf("非 BMP はルーン数でなく UTF-16 コード単位で数える(ルーン数だと上限内に見えるが実際は超える)")
 	}
 }

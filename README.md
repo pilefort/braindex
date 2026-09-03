@@ -461,7 +461,7 @@ macOS・Linux は `crontab`（`# BEGIN braindex <hub>` 〜 `# END braindex <hub>
 サブコマンド: `list`（設定のジョブと OS 側の登録状態）・`print`（登録に使うコマンドを出すだけ）・`install`（登録する）・`uninstall`（消す）。
 
 crontab 側では、`crontab -l` が読めなければ**何もせず終了コード 1** で止まる（読めないまま書き戻すと既にある行を消してしまうため）。
-ただし「まだ crontab が無い」ことを示す失敗（出力に `no crontab` を含む）だけは空の crontab として扱うので、
+ただし「まだ crontab が無い」ことを示す失敗（出力が `no crontab for <利用者>` の 1 行だけ。BSD cron の `crontab: ` 接頭辞も可）だけは空の crontab として扱うので、
 `crontab` を一度も作っていない環境でもそのまま `braindex schedule install` できる。
 文言の違う cron 実装ではこの判別が効かず終了コード 1 で止まるので、その場合は `crontab -e` で空の crontab を作ってから実行する。
 フラグ: `-config` `-job 名前`（1 本だけを対象にする）`-dry-run`（`install`・`uninstall`。実行せずコマンドを出す）。

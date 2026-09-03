@@ -192,9 +192,15 @@ func TestIsNoCrontab(t *testing.T) {
 	}{
 		{"crontab: no crontab for someone", true},                           // macOS(BSD cron)・2026-09-03 実測
 		{"no crontab for someone", true},                                    // Linux(cronie / vixie-cron)
+		{"crontab: no crontab for someone\n", true},                         // 末尾の改行は無視する
 		{"crontab: you are not authorized to use cron", false},              // 権限
 		{"crontab: can't open your crontab file: Permission denied", false}, // 読めない
 		{"", false}, // 文言なし(実行ファイルが無いなど)
+		// 呼び出し側は stdout と stderr を混ぜて渡すので、利用者の crontab 本文が来ることがある。
+		// 「no crontab を含む」で見ると、この本文を「空」と誤判定して全消しする。
+		{"0 3 * * * /usr/bin/backup\n# no crontab entries below this line\n0 4 * * * /usr/bin/rotate\n", false},
+		{"echo 'NO CRONTAB'", false}, // 行頭でない
+		{"no crontab", false},        // "for <user>" が無い(文言の一部だけの一致は採らない)
 	}
 	for _, c := range cases {
 		if got := IsNoCrontab(c.in); got != c.want {
