@@ -3,6 +3,7 @@ package approvals
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -177,5 +178,9 @@ func TestNewNonce(t *testing.T) {
 	a, b := NewNonce(), NewNonce()
 	if len(a) != 32 || a == b {
 		t.Errorf("nonce = %q %q", a, b)
+	}
+	// フォームの JS とテストが [0-9a-f]{32} で拾うので、16 進以外を返してはいけない
+	if _, err := hex.DecodeString(a); err != nil {
+		t.Errorf("16 進でない: %q", a)
 	}
 }

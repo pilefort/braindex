@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -139,11 +138,10 @@ func Serve(ctx context.Context, o ServeOptions) (Reply, error) {
 }
 
 // NewNonce は起動ごとの照合値(16 バイトの乱数を 16 進 32 文字)を返す。
+// crypto/rand.Read は Go 1.24 以降エラーを返さない(取れなければプログラムごと落ちる)ので、
+// 時刻など予測できる値へのフォールバックは持たない。
 func NewNonce() string {
 	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		// crypto/rand が失敗する環境では時刻で代用する(照合の目的は他タブ・古いフォームの混入防止で、秘密鍵ではない)
-		return strings.ReplaceAll(fmt.Sprintf("%032x", time.Now().UnixNano()), " ", "0")
-	}
+	rand.Read(b)
 	return hex.EncodeToString(b)
 }
