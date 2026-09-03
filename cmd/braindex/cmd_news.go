@@ -27,11 +27,12 @@ func init() {
 // newsFetcher は fetch が使う取得器。テストで差し替える(ネットワークに出ないため)。
 var newsFetcher news.Fetcher = feed.Fetcher{}
 
-// runNews は braindex news <サブコマンド> を振り分ける。いまは fetch だけ(apply / profile は後続で足す)。
+// runNews は braindex news <サブコマンド> を振り分ける(fetch / profile。apply は後続で足す)。
 func runNews(args []string, stdout, stderr io.Writer) int {
 	usage := func() {
 		fmt.Fprintln(stderr, "使い方: braindex news <サブコマンド> [フラグ]")
 		fmt.Fprintln(stderr, "  fetch    フィードを取得し、既読に無い記事のダイジェスト(Markdown)を書く")
+		fmt.Fprintln(stderr, "  profile  関心プロファイル(語 → 重み・出典)を表示する")
 		fmt.Fprintln(stderr, "フラグは braindex news <サブコマンド> -h")
 	}
 	if len(args) == 0 {
@@ -41,6 +42,8 @@ func runNews(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "fetch":
 		return runNewsFetch(args[1:], stdout, stderr)
+	case "profile":
+		return runNewsProfile(args[1:], stdout, stderr)
 	case "-h", "-help", "--help":
 		usage()
 		return 0

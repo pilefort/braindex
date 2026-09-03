@@ -24,15 +24,20 @@ type Settings struct {
 	Feeds       string         `json:"feeds"`         // フィード一覧の JSON(hub 相対)。既定 news/feeds.json
 	SeenDays    int            `json:"seen_days"`     // 既読を覚えておく日数。既定 90
 	CapPerLayer map[string]int `json:"cap_per_layer"` // 層ごとの 1 フィードあたり表示上限。無い層は DefaultCap
+	ProfileDays int            `json:"profile_days"`  // 関心プロファイルが見る直近の日数(索引・セッション)。既定 14
+	SessionsDir string         `json:"sessions_dir"`  // セッションログの置き場。空なら retro.sessions_dir → ~/.claude/projects
 }
 
 // 既定値。
 const (
-	DefaultDir      = "news"
-	DefaultFeeds    = "news/feeds.json"
-	DefaultSeenDays = 90
-	DefaultCap      = 20
-	SeenFile        = ".seen.json" // Dir の下。git 管理外(hub の .gitignore テンプレで除外)
+	DefaultDir         = "news"
+	DefaultFeeds       = "news/feeds.json"
+	DefaultSeenDays    = 90
+	DefaultProfileDays = 14
+	KeepDir            = "keep"         // Dir の下。選別で残した見出し(YYYY-MM.md)。git 管理
+	InterestsFile      = "interests.md" // Dir の下。補助の関心ファイル(任意・1 行 1 語)
+	DefaultCap         = 20
+	SeenFile           = ".seen.json" // Dir の下。git 管理外(hub の .gitignore テンプレで除外)
 )
 
 // DefaultCapPerLayer は cap_per_layer を省略したときの層別上限。
@@ -56,6 +61,9 @@ func (s Settings) WithDefaults() Settings {
 			m[k] = v
 		}
 		s.CapPerLayer = m
+	}
+	if s.ProfileDays <= 0 {
+		s.ProfileDays = DefaultProfileDays
 	}
 	return s
 }
