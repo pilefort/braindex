@@ -51,14 +51,14 @@ func TestCheckNote_Table(t *testing.T) {
 		want    []string // 出てほしい種別
 		unwant  []string // 出てはいけない種別
 	}{
-		{"曖昧な数量詞を語ごとに拾う", "2026-08-12 最近、更新が多い。かなり伸びた。", []string{KindVagueQuantifier}, nil},
+		{"曖昧な数量詞を語ごとに拾う", "2026-08-12 最近、更新が多い。かなり増えた。", []string{KindVagueQuantifier}, nil},
 		{"数値と日付だけなら指摘なし", "2026-08-12 に 3 件増えた。", nil, []string{KindVagueQuantifier, KindNoDate}},
 		{"コードフェンスの中は見ない", "```\n最近\n```\n2026-08-12\n", nil, []string{KindVagueQuantifier}},
 		{"日付が無ければ文書全体に warn", "日付のない文", []string{KindNoDate}, nil},
 		{"スラッシュの日付", "2026/8/1 実施", nil, []string{KindNoDate}},
 		{"和式の日付", "2026 年 8 月 実施", nil, []string{KindNoDate}},
-		{"出典なき数字は候補", "2026-08-12 CPU は 4.2% だった。", []string{KindUncitedFigure}, nil},
-		{"出典マーカーがあれば数字を許す", "2026-08-12 CPU は 4.2%(出典: 分析ノート §1)", nil, []string{KindUncitedFigure}},
+		{"出典なき数字は候補", "2026-08-12 CPU 使用率は 4.2% だった。", []string{KindUncitedFigure}, nil},
+		{"出典マーカーがあれば数字を許す", "2026-08-12 CPU 使用率は 4.2%(出典: 分析ノート §1)", nil, []string{KindUncitedFigure}},
 		{"矢印リンクも出典", "2026-08-12 3 件増えた(→ work/foo.csv)", nil, []string{KindUncitedFigure}},
 		{"表の行は見ない", "2026-08-12\n| 指標 | 値 |\n|---|---|\n| CPU | 4.2% |", nil, []string{KindUncitedFigure}},
 		{"小数だけの主張も候補", "2026-08-12 平均は 3.14 だった", []string{KindUncitedFigure}, nil},
@@ -96,7 +96,7 @@ func TestCheckNote_Table(t *testing.T) {
 
 // 曖昧な数量詞は語ごとに 1 件・確度 warn・表示は「[曖昧な数量詞] 〔語〕 行」。
 func TestCheckNote_VagueTokens(t *testing.T) {
-	ws := note(t, "2026-08-12 最近、更新が多い。かなり伸びた。")
+	ws := note(t, "2026-08-12 最近、更新が多い。かなり増えた。")
 	got := tokens(ws, KindVagueQuantifier)
 	for _, w := range []string{"最近", "多い", "かなり"} {
 		if !got[w] {
