@@ -47,6 +47,23 @@ func TestRenderHTML(t *testing.T) {
 		t.Error("2 回の生成が一致しない")
 	}
 
+	// 累積の脚注: 名前順・救済の内訳・間引き候補
+	o.Totals = map[string]FeedStats{"B": {Shown: 25, Dropped: 20}, "A": {Shown: 10, Kept: 2, Hidden: 5, Rescued: 1}}
+	h3 := string(RenderHTML(res, o))
+	mustHave := "<b>選別の反映状況（累積）:</b><br>A: 残す 2 / 見た 10・関心外 5 件中 救済 1<br>B: 残す 0 / 見た 25 <b class=\"prune\">← 間引き候補（一度も残していない）</b>"
+	if !strings.Contains(h3, mustHave) {
+		t.Errorf("脚注に %q が無い", mustHave)
+	}
+	if strings.Contains(h, "選別の反映状況") {
+		t.Error("Totals 無しで脚注が出た")
+	}
+	// 決定性: 脚注は map(Totals)から組むので、走査順が出力に漏れていないかを繰り返して見る
+	for i := 0; i < 5; i++ {
+		if again := string(RenderHTML(res, o)); again != h3 {
+			t.Fatalf("%d 回目の生成が一致しない: got=%q want=%q", i+2, again, h3)
+		}
+	}
+
 	// 採点なし・新着なし
 	h2 := string(RenderHTML([]Result{{Source: Source{Name: "A"}}}, DigestOptions{Layer: "all", Today: "2026-08-15", Cap: 20}))
 	if !strings.Contains(h2, "<p>新着はありません。</p>") || !strings.Contains(h2, "採点なし（全件を主要表示）") || strings.Contains(h2, "class=\"r ") {

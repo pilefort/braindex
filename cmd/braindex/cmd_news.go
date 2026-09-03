@@ -34,6 +34,7 @@ func runNews(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "使い方: braindex news <サブコマンド> [フラグ]")
 		fmt.Fprintln(stderr, "  fetch    フィードを取得し、既読に無い記事のダイジェスト(Markdown)を書く")
 		fmt.Fprintln(stderr, "  profile  関心プロファイル(語 → 重み・出典)を表示する")
+		fmt.Fprintln(stderr, "  apply    HTML で書き出した選別 JSON を取り込む(keep に追記・統計を更新)")
 		fmt.Fprintln(stderr, "フラグは braindex news <サブコマンド> -h")
 	}
 	if len(args) == 0 {
@@ -45,6 +46,8 @@ func runNews(args []string, stdout, stderr io.Writer) int {
 		return runNewsFetch(args[1:], stdout, stderr)
 	case "profile":
 		return runNewsProfile(args[1:], stdout, stderr)
+	case "apply":
+		return runNewsApply(args[1:], stdout, stderr)
 	case "-h", "-help", "--help":
 		usage()
 		return 0
@@ -62,6 +65,7 @@ type newsFetchOptions struct {
 	replay   bool   // -replay。既読を無視して全件を出し、既読も更新しない
 	stdout   bool   // -stdout。ファイルに書かず標準出力へ(既読は更新する)
 	out      string // -out。出力先(既定: <news.dir>/digest_<日付>_<層>.md。既にあれば -2, -3 … を付ける)
+	inbox    string // -inbox。選別 JSON を探すディレクトリ(既定 ~/Downloads)
 	noOpen   bool   // -no-open。HTML を既定ブラウザで開かない
 	noScore  bool   // -no-score。関心プロファイルで採点しない(全件を主要表示)
 	sessions string // -sessions。関心プロファイルのセッションログの置き場(news profile と同じ既定)
@@ -81,6 +85,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&o.replay, "replay", false, "既読を無視して全記事を出し、既読も更新しない(見出しの再生成用)")
 	fs.BoolVar(&o.stdout, "stdout", false, "Markdown をファイルに書かず標準出力に出す(進捗は stderr。既読は更新する。HTML は作らず開かない)")
 	fs.StringVar(&o.out, "out", "", "Markdown の出力先(既定: 設定 news.dir の digest_<日付>_<層>.md。既にあれば -2, -3 … を付けて別名にする)。HTML は拡張子を .html にした同名")
+	fs.StringVar(&o.inbox, "inbox", "", "選別 JSON を探すディレクトリ(既定: ~/Downloads。<news.dir>/inbox はいつも見る)")
 	fs.BoolVar(&o.noOpen, "no-open", false, "HTML を既定ブラウザで開かない(定期実行やテスト用)")
 	fs.BoolVar(&o.noScore, "no-score", false, "関心プロファイルで採点しない(全件を主要表示・出典を読まない)")
 	fs.StringVar(&o.sessions, "sessions", "", "関心プロファイルが読むセッションログの置き場(既定: news profile と同じ)")
@@ -156,6 +161,16 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	if o.stdout {
 		progress = stderr
 	}
+
+	// 前回の選別 JSON を取り込む(keep と統計に反映。今回の関心プロファイルにも効く)
+	if err := ingestSelections(newsDir, o.inbox, progress); err != nil {
+		return fail(err)
+	}
+	stats, err := news.LoadStats(filepath.Join(newsDir, news.StatsFile))
+	if err != nil {
+		return fail(err)
+	}
+
 	results := news.Collect(context.Background(), newsFetcher, srcs, seen, today, o.replay)
 	for _, r := range results {
 		if r.Err != nil {
@@ -185,7 +200,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stdout, "関心プロファイルが空なので採点なし(全件を主要表示)")
 		}
 	}
-	do := news.DigestOptions{Layer: o.layer, Today: today, Cap: s.Cap(o.layer), Ranking: ranking, MinScore: s.ShowMinScore}
+	do := news.DigestOptions{Layer: o.layer, Today: today, Cap: s.Cap(o.layer), Ranking: ranking, MinScore: s.ShowMinScore, Totals: stats.Totals()}
 	digest := news.Digest(results, do)
 	openWarning := 0
 	if o.stdout {
