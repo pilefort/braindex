@@ -173,13 +173,23 @@ func jobNames(jobs []schedule.Job) []string {
 	return names
 }
 
-// readCrontab は現在の crontab を読む。crontab を一度も書いていない利用者では失敗するので、失敗は空として扱う。
-func readCrontab() string {
+// readCrontab は現在の crontab を読む。読めなければエラーにする(決定 2026-09-03)。
+//
+// 失敗を「空」と畳むと、読みが失敗しつつ書きが通る状況(権限・一時的な失敗)で、書き戻しが
+// 利用者の crontab を全消しする。crontab を一度も書いていない利用者もここで止まるので、
+// エラー文で作り方を案内する。
+func readCrontab() (string, error) {
 	out, err := scheduleRunner.Run(schedule.ReadCrontab())
 	if err != nil {
-		return ""
+		detail := strings.TrimSpace(out)
+		if detail == "" {
+			detail = err.Error()
+		}
+		return "", fmt.Errorf("crontab を読めない: %s"+
+			"(crontab をまだ作っていなければ `crontab -e` で空の crontab を作ってから実行する。"+
+			"読めないまま書き戻すと、既にある行を消してしまう)", detail)
 	}
-	return out
+	return out, nil
 }
 
 // runCommands はコマンド列を順に実行する。1 つでも失敗したらそこで止め、終了コード 1 を返す。
@@ -227,7 +237,11 @@ func runScheduleInstall(args []string, stdout, stderr io.Writer) int {
 	}
 	existing := ""
 	if !schedule.IsWindows(scheduleGOOS) {
-		existing = readCrontab()
+		var rerr error
+		if existing, rerr = readCrontab(); rerr != nil {
+			fmt.Fprintln(stderr, "braindex schedule install:", rerr)
+			return 1
+		}
 	}
 	cmds, err := schedule.InstallPlan(scheduleGOOS, env.hub, env.exe, env.target, existing)
 	if err != nil {
@@ -275,8 +289,13 @@ func runScheduleUninstall(args []string, stdout, stderr io.Writer) int {
 		if o.job == "" {
 			names = nil // 名前を渡さなければブロックごと消す(利用者が書き足した行も含めて掃除する)
 		}
+		existing, rerr := readCrontab()
+		if rerr != nil {
+			fmt.Fprintln(stderr, "braindex schedule uninstall:", rerr)
+			return 1
+		}
 		var err error
-		if cmds, err = schedule.UninstallPlan(scheduleGOOS, env.hub, names, readCrontab()); err != nil {
+		if cmds, err = schedule.UninstallPlan(scheduleGOOS, env.hub, names, existing); err != nil {
 			fmt.Fprintln(stderr, "braindex schedule uninstall:", err)
 			return 1
 		}
@@ -322,7 +341,11 @@ func runSchedulePrint(args []string, stdout, stderr io.Writer) int {
 	}
 	existing := ""
 	if !schedule.IsWindows(scheduleGOOS) {
-		existing = readCrontab()
+		var rerr error
+		if existing, rerr = readCrontab(); rerr != nil {
+			fmt.Fprintln(stderr, "braindex schedule print:", rerr)
+			return 1
+		}
 	}
 	cmds, err := schedule.InstallPlan(scheduleGOOS, env.hub, env.exe, env.target, existing)
 	if err != nil {
@@ -354,7 +377,12 @@ func runScheduleList(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 	} else {
-		for _, l := range schedule.BlockLines(readCrontab(), env.hub) {
+		existing, rerr := readCrontab()
+		if rerr != nil {
+			fmt.Fprintln(stderr, "braindex schedule list:", rerr)
+			return 1
+		}
+		for _, l := range schedule.BlockLines(existing, env.hub) {
 			if n := schedule.JobOfLine(l); n != "" {
 				installed[n] = true
 			}
