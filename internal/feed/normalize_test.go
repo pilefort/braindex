@@ -3,6 +3,7 @@ package feed
 import (
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 )
 
@@ -81,6 +82,24 @@ func TestParseDate(t *testing.T) {
 	for in, want := range cases {
 		if got := ParseDate(in); got != want {
 			t.Errorf("ParseDate(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// ゾーンの略称(JST・EST など)を含む日付は、実行環境のタイムゾーンに関わらず同じ暦日になる。
+// 略称を実行環境のゾーンで解決すると、同じ記事の日付がマシンによって 1 日ずれる。
+func TestParseDate_IndependentOfLocalZone(t *testing.T) {
+	orig := time.Local
+	t.Cleanup(func() { time.Local = orig })
+	const in = "Fri, 14 Aug 2026 08:00:00 JST"
+	for _, loc := range []*time.Location{
+		time.UTC,
+		time.FixedZone("JST", 9*60*60),
+		time.FixedZone("EST", -5*60*60),
+	} {
+		time.Local = loc
+		if got := ParseDate(in); got != "2026-08-14" {
+			t.Errorf("local=%s: ParseDate(%q) = %q, want %q", loc, in, got, "2026-08-14")
 		}
 	}
 }

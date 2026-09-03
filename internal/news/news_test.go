@@ -27,6 +27,18 @@ func TestSettings_Defaults(t *testing.T) {
 	}
 }
 
+// WithDefaults が埋める層別上限は複製。呼び出し側が書き換えても既定の表は汚れない。
+func TestSettings_DefaultsAreCopied(t *testing.T) {
+	s := Settings{}.WithDefaults()
+	s.CapPerLayer["daily"] = 1
+	if DefaultCapPerLayer["daily"] != 15 {
+		t.Errorf("既定の表が書き換わった: %v", DefaultCapPerLayer)
+	}
+	if got := (Settings{}).WithDefaults().Cap("daily"); got != 15 {
+		t.Errorf("次の WithDefaults に漏れた: %d", got)
+	}
+}
+
 func TestParseFeeds(t *testing.T) {
 	good := `[{"name": "A", "url": "https://example.com/a.xml", "layer": "daily", "lang": "en", "category": "tech", "note": "x"},
 	         {"name": "B", "url": "http://example.com/b.xml", "layer": "weekly"},
@@ -93,7 +105,11 @@ func TestSeen(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "{\n\"id1\": \"2026-08-01\",\n\"id2\": \"2026-08-15\"\n}\n"
-	if b, _ := os.ReadFile(path); string(b) != want {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != want {
 		t.Errorf("Save:\n%s", b)
 	}
 	s2, err := LoadSeen(path)
@@ -112,7 +128,9 @@ func TestSeen(t *testing.T) {
 		t.Error("日付の誤りがエラーにならない")
 	}
 
-	os.WriteFile(path, []byte("{broken"), 0o644)
+	if err := os.WriteFile(path, []byte("{broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := LoadSeen(path); err == nil {
 		t.Error("壊れたファイルがエラーにならない")
 	}

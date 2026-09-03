@@ -158,7 +158,9 @@ type atomEntry struct {
 
 // atomText は Atom の Text Construct(title / summary / content)。type="xhtml" だと本文が子要素として入れ子になり、
 // 文字列フィールドでは拾えないので、要素の中の文字データを入れ子ごと連結する。
-// type="html" の場合は文字データが HTML そのものなので、後段の cleanText がタグを除く。
+// 要素の境目には空白を入れる(入れないと <p>前半</p><p>後半</p> が "前半後半" になる)。
+// type="html" の場合は文字データが HTML そのものなので、後段の cleanText がタグを空白に置き換えて除く。
+// どちらの型でも連続した空白は cleanText が 1 つに畳む。
 type atomText struct {
 	Text string
 }
@@ -174,8 +176,10 @@ func (t *atomText) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 		switch v := tok.(type) {
 		case xml.StartElement:
 			depth++
+			sb.WriteByte(' ')
 		case xml.EndElement:
 			depth--
+			sb.WriteByte(' ')
 		case xml.CharData:
 			sb.Write(v)
 		}
