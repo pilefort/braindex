@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/pilefort/braindex/internal/extract"
 )
 
 // ノート(docs/notes・docs/decisions.md・work のメモ)の曖昧さ検査。
@@ -41,14 +43,6 @@ var kindLabel = map[string]string{
 	KindMissingWhy:      "なぜ欠落(候補)",
 	KindMissingEvidence: "根拠欠落(候補)",
 	KindUndefinedTerm:   "未定義用語(候補)",
-}
-
-// KindLabel は種別の表示名(「曖昧な数量詞」など)。未知の種別はそのまま返す。
-func KindLabel(kind string) string {
-	if l, ok := kindLabel[kind]; ok {
-		return l
-	}
-	return kind
 }
 
 // NoteOptions はノート検査の入力。
@@ -91,8 +85,6 @@ var (
 	reReason = regexp.MustCompile(`理由|なぜ|ため|から|背景|根拠|ので|によって|狙い|目的`)
 	// 根拠行(行頭の「根拠:」。太字・全角コロン可)
 	reEvidenceLine = regexp.MustCompile(`(?m)^\s*(?:\*\*)?根拠(?:\*\*)?\s*[:：]`)
-	// 記録日・採用日を持つブロックを決定とみなす
-	reRecordDate = regexp.MustCompile(`(?:記録日|採用日)\s*[:：]\s*\d{4}[-/]\d{1,2}[-/]\d{1,2}`)
 	// 明示的な未検証フラグ
 	reUncertaintyTag = regexp.MustCompile(`推測|未確認|要確認|要出典`)
 	// 未定義用語の抽出源: 鉤括弧の語 / [[wiki-link]] / 英大文字始まりの語
@@ -127,9 +119,10 @@ func CheckNote(path string, content []byte, o NoteOptions) []Warning {
 		}
 	}
 
-	// 日付なし(warn・文書全体)
-	if !reDate.MatchString(text) {
-		add(0, KindNoDate, SeverityWarn, "本文に日付(YYYY-MM-DD 等)が一つも無い")
+	// 日付なし(warn・文書全体)。規約は「ファイル名の YYYYMMDD か本文の日付」なので、ファイル名も数える。
+	// 規則を二重定義しないよう、索引と同じ extract に本文を渡さず(＝ファイル名だけで)日付を引かせる。
+	if !reDate.MatchString(text) && extract.Extract(baseName(path), nil, "").Date == "" {
+		add(0, KindNoDate, SeverityWarn, "本文にもファイル名にも日付(YYYY-MM-DD 等)が無い")
 	}
 
 	// 出典なき数字(candidate)
@@ -208,6 +201,15 @@ func fencedLines(lines []string) []bool {
 	return out
 }
 
+// baseName は表示用パス(/ 区切り。Windows の \ も来うる)の最後の要素を返す。
+func baseName(p string) string {
+	p = strings.ReplaceAll(p, "\\", "/")
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		return p[i+1:]
+	}
+	return p
+}
+
 // isDateOnly は「- 2026-08-12」のように日付だけの行か。
 func isDateOnly(s string) bool {
 	t := strings.TrimSpace(strings.TrimLeft(s, "#-*> "))
@@ -226,7 +228,8 @@ type block struct {
 	body string
 }
 
-// decisionBlocks は ## 見出しでブロックに分け、決定らしいもの(decisions.md 内の全ブロック / 記録日・採用日を持つブロック)を返す。
+// decisionBlocks は ## 見出しでブロックに分け、決定らしいもの(decisions.md 内の全ブロック / 「記録日」「採用日」の語を持つブロック)を返す。
+// 語の有無だけで見るのは、日付を書き損ねた決定こそ検査したいため(日付の形を条件にすると素通りする)。
 func decisionBlocks(lines []string, path string) []block {
 	isDecisions := strings.HasSuffix(strings.ReplaceAll(path, "\\", "/"), "decisions.md")
 	var blocks []block
@@ -252,7 +255,7 @@ func decisionBlocks(lines []string, path string) []block {
 	flush()
 	var out []block
 	for _, b := range blocks {
-		if isDecisions || reRecordDate.MatchString(b.body) {
+		if isDecisions || strings.Contains(b.body, "記録日") || strings.Contains(b.body, "採用日") {
 			out = append(out, b)
 		}
 	}

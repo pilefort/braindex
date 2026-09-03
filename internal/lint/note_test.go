@@ -75,6 +75,7 @@ func TestCheckNote_Table(t *testing.T) {
 		{"本文の矢印リンクだけでは根拠行の代わりにならない", "## 決定\n記録日: 2026-09-01\n理由: 実測(→ docs/notes/x.md)で速かったため。\n", []string{KindMissingEvidence}, nil},
 		{"古い記録日でも根拠行は必須(遡及規則は持ち込まない)", "## 決定\n記録日: 2026-08-05\n実測(→ docs/notes/x.md)で速かったため。\n", []string{KindMissingEvidence}, nil},
 		{"記録日の無いブロックは決定でない", "2026-08-12\n## 見出し\n本文。\n", nil, []string{KindMissingWhy, KindMissingEvidence}},
+		{"記録日が日付で書かれていない決定も見る", "2026-08-12\n## 決定\n記録日: 不明(記録なし)\nこうする。\n", []string{KindMissingWhy, KindMissingEvidence}, nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -106,6 +107,23 @@ func TestCheckNote_VagueTokens(t *testing.T) {
 		if w.Kind == KindVagueQuantifier && (w.Severity != SeverityWarn || !strings.HasPrefix(w.Msg, "[曖昧な数量詞] 〔")) {
 			t.Errorf("形が違う: %+v", w)
 		}
+	}
+}
+
+// 日付はファイル名(20260901-x.md・2026-09-01-x.md)からも数える(索引の日付規則と揃える)。
+func TestCheckNote_DateFromFilename(t *testing.T) {
+	body := []byte("# 調査メモ\n\n結論: 甲。\n")
+	for _, p := range []string{"docs/notes/20260901-survey.md", "docs/notes/2026-09-01-survey.md"} {
+		if ws := CheckNote(p, body, NoteOptions{}); has(ws, KindNoDate) {
+			t.Errorf("%s: ファイル名に日付があるのに日付なしが出た: %v", p, kinds(ws))
+		}
+	}
+	if ws := CheckNote("docs/notes/survey.md", body, NoteOptions{}); !has(ws, KindNoDate) {
+		t.Errorf("どこにも日付が無いのに日付なしが出ない: %v", kinds(ws))
+	}
+	// 月日が範囲外(13 月)のものは日付とみなさない
+	if ws := CheckNote("docs/notes/20261301-survey.md", body, NoteOptions{}); !has(ws, KindNoDate) {
+		t.Errorf("13 月を日付として数えた: %v", kinds(ws))
 	}
 }
 
