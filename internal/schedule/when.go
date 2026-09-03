@@ -60,15 +60,26 @@ func parseHM(hs, ms string) (int, int, error) {
 	if len(hs) != 2 || len(ms) != 2 {
 		return 0, 0, fmt.Errorf("時刻は 2 桁ずつの HH:MM: %q", hs+":"+ms)
 	}
+	// Atoi は "+9" のような符号付きも受けるので、数字 2 桁だけに絞る
 	h, err := strconv.Atoi(hs)
-	if err != nil || h < 0 || h > 23 {
+	if err != nil || !allDigits(hs) || h > 23 {
 		return 0, 0, fmt.Errorf("時は 00〜23: %q", hs)
 	}
 	m, err := strconv.Atoi(ms)
-	if err != nil || m < 0 || m > 59 {
+	if err != nil || !allDigits(ms) || m > 59 {
 		return 0, 0, fmt.Errorf("分は 00〜59: %q", ms)
 	}
 	return h, m, nil
+}
+
+// allDigits は文字列が ASCII の数字だけでできているかを返す。
+func allDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func lookupWeekday(key string) (time.Weekday, bool) {

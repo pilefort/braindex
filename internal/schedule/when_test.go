@@ -50,6 +50,8 @@ func TestParseWhen_Errors(t *testing.T) {
 		{"daily:ab:00", "時は 00〜23"},
 		{"daily:09:cd", "分は 00〜59"},
 		{"daily: 9:00", "時は 00〜23"},
+		{"daily:+9:00", "時は 00〜23"}, // Atoi は符号を受けるので、数字だけに絞る
+		{"daily:09:+0", "分は 00〜59"},
 	}
 	for _, c := range bad {
 		_, err := ParseWhen(c.in)
