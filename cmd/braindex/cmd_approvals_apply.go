@@ -89,9 +89,8 @@ func runApprovalsApply(args []string, stdout, stderr io.Writer) int {
 	}
 
 	res := approvals.Apply(ab, db, rep, today)
-	if err := os.WriteFile(p.Approvals, res.Approvals, 0o644); err != nil {
-		return fail(err)
-	}
+	// 記録する側(decisions.md)を先に書く。消す側(APPROVALS.md)を先に書くと、途中で失敗したとき
+	// 決定がどちらのファイルにも残らない。逆順なら、失敗しても判断待ちがそのまま残る。
 	if res.Decided > 0 {
 		if err := os.MkdirAll(filepath.Dir(decisionsPath), 0o755); err != nil {
 			return fail(err)
@@ -99,6 +98,9 @@ func runApprovalsApply(args []string, stdout, stderr io.Writer) int {
 		if err := os.WriteFile(decisionsPath, res.Decisions, 0o644); err != nil {
 			return fail(err)
 		}
+	}
+	if err := os.WriteFile(p.Approvals, res.Approvals, 0o644); err != nil {
+		return fail(err)
 	}
 	if rename {
 		if err := os.Rename(p.Reply, p.Applied); err != nil {

@@ -54,6 +54,41 @@ func TestApprovalsApply_RoundTrip(t *testing.T) {
 	}
 }
 
+// decisions.md に書けなかったら、APPROVALS.md からも消さず回答も残す。
+// 先に APPROVALS.md から消すと、決定がどちらのファイルにも残らない状態で終わる。
+func TestApprovalsApply_DecisionsWriteFails(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root では読み取り専用のファイルにも書けてしまう") // Windows では Getuid が -1
+	}
+	dir := t.TempDir()
+	hub := filepath.Join(dir, "hub")
+	ap := filepath.Join(hub, "work", "APPROVALS.md")
+	dec := filepath.Join(hub, "docs", "decisions.md")
+	tmp := filepath.Join(dir, "tmp")
+	writeFile(t, ap, sampleApprovals)
+	writeFile(t, dec, "# 設計判断\n")
+	p, err := approvals.Resolve(ap, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, p.Reply, sampleReply)
+	if err := os.Chmod(dec, 0o444); err != nil { // 読めるが書けない
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dec, 0o644) }) // 読み取り専用のままだと TempDir の掃除が失敗する
+
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"approvals", "apply", "-file", ap, "-dir", tmp, "-date", "2026-03-04"}, &so, &se); code != 1 {
+		t.Fatalf("code=%d\n%s%s", code, so.String(), se.String())
+	}
+	if got := readFile(t, ap); got != sampleApprovals {
+		t.Errorf("決定を書けなかったのに APPROVALS.md を書き換えた:\n%s", got)
+	}
+	if _, err := os.Stat(p.Reply); err != nil {
+		t.Error("決定を書けなかったのに回答を .applied.json へ動かした")
+	}
+}
+
 func TestApprovalsApply_ExplicitReplyAndNoDecisions(t *testing.T) {
 	dir := t.TempDir()
 	ap := filepath.Join(dir, "hub", "work", "APPROVALS.md")
