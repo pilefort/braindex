@@ -459,6 +459,9 @@ macOS・Linux は `crontab`（`# BEGIN braindex <hub>` 〜 `# END braindex <hub>
 **どちらかを移したら登録し直す**。`braindex init` は自動では登録しない（init は「既存を上書きしないファイル展開」で、OS への副作用は性質が違う）。
 
 サブコマンド: `list`（設定のジョブと OS 側の登録状態）・`print`（登録に使うコマンドを出すだけ）・`install`（登録する）・`uninstall`（消す）。
+
+crontab 側では、`crontab -l` が読めなければ**何もせず終了コード 1** で止まる（読めないまま書き戻すと既にある行を消してしまうため）。
+crontab をまだ作っていない環境では、`crontab -e` で空の crontab を作ってから `braindex schedule install` を実行する。
 フラグ: `-config` `-job 名前`（1 本だけを対象にする）`-dry-run`（`install`・`uninstall`。実行せずコマンドを出す）。
 終了コード: 0 ／1 フラグ・設定の誤り、またはスケジューラ側が失敗した（登録できていないので失敗）。
 
