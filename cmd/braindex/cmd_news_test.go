@@ -76,7 +76,10 @@ func TestNewsFetch_Flow(t *testing.T) {
 	}
 
 	// 2 回目: 新着なし。前のダイジェストは上書きせず -2 を付ける
-	code, so, _ = newsFetch(t, hub)
+	code, so, se = newsFetch(t, hub)
+	if code != 2 { // C は 2 回目も 404 なので警告つき完了のまま
+		t.Fatalf("2 回目 exit=%d\n%s%s", code, so, se)
+	}
 	mustContain(t, "stdout 2 回目", so, "A: 新着 0 / 全 2", "digest_2026-08-15_all-2.md")
 	if got := readFile(t, filepath.Join(hub, "news", "digest_2026-08-15_all-2.md")); !strings.Contains(got, "新着 0 件（フィード 2 本）") || strings.Contains(got, "## A") {
 		t.Errorf("2 回目:\n%s", got)
@@ -87,6 +90,9 @@ func TestNewsFetch_Flow(t *testing.T) {
 
 	// -replay: 既読を無視して全件、既読ファイルは変えない
 	code, so, se = newsFetch(t, hub, "-replay", "-stdout")
+	if code != 2 {
+		t.Fatalf("replay exit=%d\n%s%s", code, so, se)
+	}
 	mustContain(t, "replay stdout", so, "- [記事2](https://example.com/2)")
 	mustContain(t, "replay stderr", se, "A: 新着 2 / 全 2")
 	if readFile(t, filepath.Join(hub, "news", ".seen.json")) != seen {
@@ -192,15 +198,15 @@ func TestNewsFetch_Errors(t *testing.T) {
 func TestUnusedPath(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "d.md")
-	if got, _ := unusedPath(p); got != p {
-		t.Errorf("無いとき: %s", got)
+	if got, err := unusedPath(p); err != nil || got != p {
+		t.Errorf("無いとき: %s err=%v", got, err)
 	}
-	os.WriteFile(p, nil, 0o644)
-	if got, _ := unusedPath(p); got != filepath.Join(dir, "d-2.md") {
-		t.Errorf("1 つある: %s", got)
+	writeFile(t, p, "")
+	if got, err := unusedPath(p); err != nil || got != filepath.Join(dir, "d-2.md") {
+		t.Errorf("1 つある: %s err=%v", got, err)
 	}
-	os.WriteFile(filepath.Join(dir, "d-2.md"), nil, 0o644)
-	if got, _ := unusedPath(p); got != filepath.Join(dir, "d-3.md") {
-		t.Errorf("2 つある: %s", got)
+	writeFile(t, filepath.Join(dir, "d-2.md"), "")
+	if got, err := unusedPath(p); err != nil || got != filepath.Join(dir, "d-3.md") {
+		t.Errorf("2 つある: %s err=%v", got, err)
 	}
 }

@@ -105,7 +105,11 @@ func TestSeen(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "{\n\"id1\": \"2026-08-01\",\n\"id2\": \"2026-08-15\"\n}\n"
-	if b, _ := os.ReadFile(path); string(b) != want {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != want {
 		t.Errorf("Save:\n%s", b)
 	}
 	s2, err := LoadSeen(path)
@@ -124,7 +128,9 @@ func TestSeen(t *testing.T) {
 		t.Error("日付の誤りがエラーにならない")
 	}
 
-	os.WriteFile(path, []byte("{broken"), 0o644)
+	if err := os.WriteFile(path, []byte("{broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := LoadSeen(path); err == nil {
 		t.Error("壊れたファイルがエラーにならない")
 	}
