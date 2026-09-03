@@ -57,6 +57,12 @@ func TestRenderHTML(t *testing.T) {
 	if strings.Contains(h, "選別の反映状況") {
 		t.Error("Totals 無しで脚注が出た")
 	}
+	// 決定性: 脚注は map(Totals)から組むので、走査順が出力に漏れていないかを繰り返して見る
+	for i := 0; i < 5; i++ {
+		if again := string(RenderHTML(res, o)); again != h3 {
+			t.Fatalf("%d 回目の生成が一致しない: got=%q want=%q", i+2, again, h3)
+		}
+	}
 
 	// 採点なし・新着なし
 	h2 := string(RenderHTML([]Result{{Source: Source{Name: "A"}}}, DigestOptions{Layer: "all", Today: "2026-08-15", Cap: 20}))
