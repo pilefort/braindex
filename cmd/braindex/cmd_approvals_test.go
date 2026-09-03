@@ -83,6 +83,26 @@ func TestApprovalsServe_EmptyAndWarnings(t *testing.T) {
 	mustContain(t, "stderr", se.String(), "warning: [1] 欠けた項目: なぜ今決めるか が未記載", "選択肢 が 1 つ以下", "回答なし")
 }
 
+// -timeout に負・NaN・Duration に収まらない値を渡したら、待ち受けを始めずに誤りとして落ちる
+// (素通しすると Timeout <= 0 が「無期限」と解釈され、黙って待ち続ける)。
+func TestApprovalsServe_BadTimeout(t *testing.T) {
+	dir := t.TempDir()
+	ap := filepath.Join(dir, "work", "APPROVALS.md")
+	writeFile(t, ap, sampleApprovals)
+	for _, v := range []string{"-1", "NaN", "1e30"} {
+		var so, se bytes.Buffer
+		if code := dispatch([]string{"approvals", "serve", "-file", ap, "-no-open", "-timeout", v}, &so, &se); code != 1 {
+			t.Errorf("-timeout %s: code=%d\n%s%s", v, code, so.String(), se.String())
+		}
+		if !strings.Contains(se.String(), "-timeout") {
+			t.Errorf("-timeout %s: stderr に理由が無い: %s", v, se.String())
+		}
+		if so.Len() != 0 {
+			t.Errorf("-timeout %s: 待ち受けを始めた: %s", v, so.String())
+		}
+	}
+}
+
 func TestApprovalsServe_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	ap := filepath.Join(dir, "hub", "work", "APPROVALS.md")

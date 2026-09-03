@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -135,6 +136,10 @@ func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 	if fs.NArg() > 0 {
 		return fail(fmt.Errorf("引数 %q は受け付けない(フラグだけを渡す)", fs.Args()))
 	}
+	timeout, err := serveTimeout(timeoutSec)
+	if err != nil {
+		return fail(err)
+	}
 	d, p, err := loadApprovals(f)
 	if err != nil {
 		return fail(err)
@@ -158,7 +163,7 @@ func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 	rep, err := approvals.Serve(context.Background(), approvals.ServeOptions{
 		HTML:    html,
 		Nonce:   nonce,
-		Timeout: time.Duration(timeoutSec * float64(time.Second)),
+		Timeout: timeout,
 		OnReady: func(url string) {
 			fmt.Fprintf(stdout, "form: %s (%d 件・id=%s)\n", url, len(d.Items), p.ID)
 			if approvalsOnReady != nil {
@@ -187,6 +192,18 @@ func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintln(stdout, "next: braindex approvals apply")
 	return 0
+}
+
+// serveTimeout は -timeout の秒数を Duration にする(0 は無期限)。負・NaN・Duration に収まらない値は誤りとして返す。
+// そのまま time.Duration に変換すると、負も桁あふれも Timeout <= 0 になり、「無期限で待つ」と区別が付かない。
+func serveTimeout(sec float64) (time.Duration, error) {
+	switch {
+	case math.IsNaN(sec) || sec < 0:
+		return 0, fmt.Errorf("-timeout は 0 以上の秒数(0 で無期限): %v", sec)
+	case sec > float64(math.MaxInt64)/float64(time.Second):
+		return 0, fmt.Errorf("-timeout が大きすぎる(%v 秒)。無期限にするなら 0", sec)
+	}
+	return time.Duration(sec * float64(time.Second)), nil
 }
 
 // writeReply は回答を JSON で書く(置き場が無ければ作る)。
