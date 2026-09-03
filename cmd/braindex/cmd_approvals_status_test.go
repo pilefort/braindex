@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,7 +20,10 @@ func TestApprovalsStatus(t *testing.T) {
 	ap := filepath.Join(hub, "work", "APPROVALS.md")
 	tmp := filepath.Join(dir, "tmp")
 	writeFile(t, ap, sampleApprovals)
-	p, _ := approvals.Resolve(ap, tmp)
+	p, err := approvals.Resolve(ap, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	var so, se bytes.Buffer
 	if code := dispatch([]string{"approvals", "status", "-file", ap, "-dir", tmp}, &so, &se); code != 0 {
@@ -37,7 +41,9 @@ func TestApprovalsStatus(t *testing.T) {
 	if code := dispatch([]string{"approvals", "status", "-file", ap, "-dir", tmp}, &so, &se); code != 2 || !strings.Contains(so.String(), "未反映の回答あり") {
 		t.Errorf("回答あり: code=%d\n%s", code, so.String())
 	}
-	os.Remove(p.Reply)
+	if err := os.Remove(p.Reply); err != nil { // 消し損ねると次の 2 が「未反映の回答」で立ってしまう
+		t.Fatal(err)
+	}
 	writeFile(t, ap, "# 承認待ち\n\n## 欠け\n\n**決めたいこと:** x\n**保留（2026-01-01）:** y\n")
 	so.Reset()
 	se.Reset()
@@ -81,17 +87,27 @@ func TestApprovalsServe_Apply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var page bytes.Buffer
-	page.ReadFrom(res.Body)
+	page, err := io.ReadAll(res.Body)
 	res.Body.Close()
-	m := regexp.MustCompile(`"nonce":"([0-9a-f]{32})"`).FindStringSubmatch(page.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`"nonce":"([0-9a-f]{32})"`).FindStringSubmatch(string(page))
 	if m == nil {
 		t.Fatal("nonce が無い")
 	}
-	req, _ := http.NewRequest("POST", url+"reply", strings.NewReader(`{"nonce":"`+m[1]+`","items":[{"n":1,"title":"設定ファイルの形式","choice":"A","comment":""}]}`))
+	req, err := http.NewRequest("POST", url+"reply", strings.NewReader(`{"nonce":"`+m[1]+`","items":[{"n":1,"title":"設定ファイルの形式","choice":"A","comment":""}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
 	req.Header.Set("Origin", strings.TrimSuffix(url, "/"))
-	if res, err := http.DefaultClient.Do(req); err != nil || res.StatusCode != 200 {
-		t.Fatalf("POST = %v %v", res, err)
+	post, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	post.Body.Close()
+	if post.StatusCode != 200 {
+		t.Fatalf("POST = %d", post.StatusCode)
 	}
 	select {
 	case code := <-done:
@@ -109,7 +125,10 @@ func TestApprovalsServe_Apply(t *testing.T) {
 	if got := readFile(t, ap); !strings.Contains(got, "（なし。") {
 		t.Errorf("APPROVALS.md が消し込まれていない:\n%s", got)
 	}
-	p, _ := approvals.Resolve(ap, tmp)
+	p, err := approvals.Resolve(ap, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := os.Stat(p.Applied); err != nil {
 		t.Error("applied.json が無い")
 	}
