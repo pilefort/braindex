@@ -37,8 +37,17 @@ func commandNames() []string {
 }
 
 // printCommands はサブコマンドの一覧を書く。
+// 桁は一番長い名前に合わせる。固定幅にしていると、その幅を超える名前を足したとき
+// その行だけ説明の開始位置がずれる(approvals が入って実際にずれた)。
 func printCommands(w io.Writer) {
-	for _, n := range commandNames() {
-		fmt.Fprintf(w, "  %-8s %s\n", n, commands[n].summary)
+	names := commandNames()
+	width := 0
+	for _, n := range names {
+		if len(n) > width {
+			width = len(n)
+		}
+	}
+	for _, n := range names {
+		fmt.Fprintf(w, "  %-*s %s\n", width, n, commands[n].summary)
 	}
 }
