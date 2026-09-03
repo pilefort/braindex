@@ -372,9 +372,26 @@ func runScheduleList(args []string, stdout, stderr io.Writer) int {
 			state = "登録済み"
 		}
 		fmt.Fprintf(stdout, "  %-*s  %-18s  %s  braindex %s\n",
-			width, j.Name, j.When, state, strings.Join(j.Args, " "))
+			width, j.Name, j.When, padDisplay(state, 8), strings.Join(j.Args, " "))
 	}
 	return 0
+}
+
+// padDisplay は端末の桁を揃えるために、全角を 2 桁と数えて幅 width まで空白を足す。
+// %-*s はバイト数で数えるので、日本語の語(未登録・登録済み)を並べると桁がずれる。
+func padDisplay(s string, width int) string {
+	w := 0
+	for _, r := range s {
+		if r < 0x80 {
+			w++
+		} else {
+			w += 2
+		}
+	}
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
 }
 
 // parseScheduleArgs はフラグを解析する。ok=false のとき code を返して終わる。

@@ -235,6 +235,39 @@ func TestSchedule_List_Unix(t *testing.T) {
 	}
 }
 
+// 状態の語は「未登録」(3 文字)と「登録済み」(4 文字)で幅が違う。後ろの列の開始位置を揃える。
+func TestSchedule_List_桁が揃う(t *testing.T) {
+	hub := schedHub(t, "")
+	r := &fakeRunner{crontab: "# BEGIN braindex " + hub + "\n0 9 * * 1 x # braindex:retro\n# END braindex " + hub + "\n"}
+	code, so, se := execSchedule(t, "linux", r, "list", "-config", filepath.Join(hub, "braindex.json"))
+	if code != 0 {
+		t.Fatalf("exit=%d\n%s", code, se)
+	}
+	// 全角を 2 桁と数えた「braindex」の開始位置
+	col := func(l string) int {
+		i := strings.Index(l, "braindex ")
+		if i < 0 {
+			t.Fatalf("コマンドの列が無い: %q", l)
+		}
+		w := 0
+		for _, ru := range l[:i] {
+			if ru < 0x80 {
+				w++
+			} else {
+				w += 2
+			}
+		}
+		return w
+	}
+	lines := strings.Split(strings.TrimSpace(so), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("hub の 1 行 + ジョブ 2 行: got=%d\n%s", len(lines), so)
+	}
+	if a, b := col(lines[1]), col(lines[2]); a != b {
+		t.Errorf("コマンドの開始位置が揃っていない(%d 桁目と %d 桁目):\n%s", a, b, so)
+	}
+}
+
 func TestSchedule_Uninstall_Windows(t *testing.T) {
 	hub := schedHub(t, "")
 	r := &fakeRunner{queryOK: map[string]bool{schedule.TaskName(hub, "review"): true}}
