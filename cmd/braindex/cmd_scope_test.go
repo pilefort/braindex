@@ -89,6 +89,33 @@ func TestScope_DefaultCatalog(t *testing.T) {
 	}
 }
 
+// scope は root を使わないので、設定に root が無くても・設定ファイルが無くても既定の索引を読みに行く。
+// root を要求すると、案内される -root を scope が受け付けないため利用者が行き止まりになる。
+func TestScope_DefaultCatalog_RootUnset(t *testing.T) {
+	hub := t.TempDir()
+	writeFile(t, filepath.Join(hub, "braindex.json"), `{"notes_dirs": ["docs/notes"]}`)
+	b, _ := os.ReadFile(filepath.Join("..", "..", "internal", "scope", "testdata", "catalog.md"))
+	writeFile(t, filepath.Join(hub, "index", "catalog.md"), string(b))
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"scope", "-config", filepath.Join(hub, "braindex.json"), "-full"}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d\n%s%s", code, so.String(), se.String())
+	}
+	if !strings.Contains(so.String(), "対象 3 件") {
+		t.Errorf("出力が違う: %s", so.String())
+	}
+
+	// 設定ファイルが無い場所では、索引の作り方を案内する(-root ではない)
+	t.Chdir(t.TempDir())
+	so.Reset()
+	se.Reset()
+	if code := dispatch([]string{"scope", "-full"}, &so, &se); code != 1 {
+		t.Fatalf("設定なし: exit=%d\n%s%s", code, so.String(), se.String())
+	}
+	if !strings.Contains(se.String(), "索引を読めない") || strings.Contains(se.String(), "-root") {
+		t.Errorf("設定なしの案内が違う(scope は -root を受け付けない): %s", se.String())
+	}
+}
+
 // フラグの誤り: モード未指定・2 つ指定・-size 0・位置引数は 1。-h は使い方を出して 0。
 func TestScope_BadArgs(t *testing.T) {
 	c := scopeCatalog(t)
