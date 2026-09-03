@@ -27,7 +27,8 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方: braindex init [-repo] [dir]")
 		fmt.Fprintln(stderr, "  dir(既定: カレントディレクトリ)に hub リポの雛形を展開する: README・CLAUDE.md・braindex.json・")
-		fmt.Fprintln(stderr, "  docs/・work/(work/review/ を含む)・週次レビューのスキル。既存ファイルは残すので、再実行しても安全。")
+		fmt.Fprintln(stderr, "  docs/・work/(work/review/ を含む)・スキル 4 本(braindex-review・retro・record-lint・contradiction-scan)。")
+		fmt.Fprintln(stderr, "  既存ファイルは残すので、再実行しても安全。")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
 		fs.PrintDefaults()
