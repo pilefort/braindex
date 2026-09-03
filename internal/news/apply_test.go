@@ -81,6 +81,32 @@ func TestKeepMarkdown(t *testing.T) {
 	}
 }
 
+// keep は git 管理の蓄積側なので、http(s) でないリンクの記事は記録しない(決定 2026-09-03)。
+// リンクの無い記事と同じ扱いにする(題名だけ書くと、次回の重複判定に引っかからず毎回増える)。
+func TestIngest_keepに載せるのはhttpのみ(t *testing.T) {
+	newsDir := filepath.Join(t.TempDir(), "news")
+	inbox := filepath.Join(newsDir, "inbox")
+	os.MkdirAll(inbox, 0o755)
+	keeps := `{"id": "a", "title": "危ない", "link": "javascript:alert(1)", "feed": "F1"},` +
+		`{"id": "b", "title": "普通", "link": "https://x/ok", "feed": "F1"}`
+	os.WriteFile(filepath.Join(inbox, "braindex-news-selection_2026-08-15_daily_1.json"),
+		[]byte(selectionJSON("2026-08-15", "daily", keeps, `"F1": {"shown": 2, "kept": 2}`)), 0o644)
+
+	if _, err := Ingest(newsDir, []string{inbox}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(newsDir, "keep", "2026-08.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), "javascript:") || strings.Contains(string(got), "危ない") {
+		t.Errorf("http(s) でないリンクの記事を記録している:\n%s", got)
+	}
+	if !strings.Contains(string(got), "- [普通](https://x/ok) — F1") {
+		t.Errorf("http(s) の記事が記録されていない:\n%s", got)
+	}
+}
+
 func TestIngest(t *testing.T) {
 	newsDir := filepath.Join(t.TempDir(), "news")
 	inbox := filepath.Join(newsDir, "inbox")

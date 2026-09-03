@@ -341,6 +341,7 @@ hub で `braindex news fetch` を実行すると、`news/feeds.json` のフィ�
 HTML の「選別を書き出す」が保存した JSON を `braindex news apply` が取り込み、「残す」を `news/keep/YYYY-MM.md` に追記する。
 keep は次のプロファイルの出典になるので、**選別がそのまま関心の推定に戻る**。
 外へ出る通信はフィードの GET だけで、セッション内容もノート本文も送らない。HTML は外部の JS・CSS を参照しない。
+フィードのリンクは `http(s)` のものだけを載せる（それ以外は題名だけを出し、選別 JSON にも `news/keep/` にも入れない）。
 
 フィード一覧 `news/feeds.json` は自分で作る（`braindex init` は展開しない）。`name` と `url` を持つオブジェクトの配列:
 
@@ -390,6 +391,7 @@ braindex approvals apply          # 受けた回答を反映する（聞くの�
 `braindex answer <md>` は Markdown を自己完結の HTML（外部の JS・CSS を参照しない）にして書き、既定ブラウザで開く。
 出力先の既定は一時置き場で、実行のたびに `-ttl-days`（既定 14）より古いものを消す。
 **HTML は読むための一時物**なので、残す価値のある内容は `.md` を `docs/notes/` に置いてから渡す（置き場所が寿命を表す）。
+リンクの `href` に出すのは `http(s)` と、スキームを持たないもの（相対パス・`#見出し`）だけ。`javascript:` などは文字として残す。
 
 ```sh
 braindex answer note.md            # HTML にして開く
