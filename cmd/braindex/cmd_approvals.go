@@ -132,6 +132,9 @@ func resolveApprovalsPaths(f approvalsFileFlags) (approvals.Paths, error) {
 		return approvals.Paths{}, err
 	}
 	base := filepath.Dir(cfgPath) // 設定ファイルのある場所 = hub
+	if abs, aerr := filepath.Abs(base); aerr == nil {
+		base = abs // 相対のままだと status の出力だけ体裁が崩れ、(あり) の判定もカレント基準になる
+	}
 	fromHub := func(v string) string {
 		v = filepath.FromSlash(v)
 		if v == "" || filepath.IsAbs(v) {
@@ -151,13 +154,26 @@ func resolveApprovalsPaths(f approvalsFileFlags) (approvals.Paths, error) {
 	if err != nil {
 		return p, err
 	}
-	// 設定が無いときの決定の追記先は Resolve の既定(hub/docs/decisions.md)のままにする
-	if found {
+	// 設定の decisions を採るのは、解決した APPROVALS.md が設定の hub の下にあるときだけ。
+	// -file で別プロジェクト(spoke)の APPROVALS.md を捌くときは、決定も相手側に書く
+	// (braindex init -repo は各プロジェクトに work/APPROVALS.md と docs/decisions.md の
+	// 両方を作るので、hub のカレントから spoke を捌くのは想定内の使い方)。
+	// 設定が無いときも Resolve の既定(推定した hub の docs/decisions.md)のままにする。
+	if found && underDir(base, p.Approvals) {
 		if d := fromHub(s.Decisions); d != "" {
 			p.Decisions = d
 		}
 	}
 	return p, nil
+}
+
+// underDir は path が dir と同じか、その下にあるかを返す。
+func underDir(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // loadApprovals は APPROVALS.md を読み、解析結果と置き場を返す。

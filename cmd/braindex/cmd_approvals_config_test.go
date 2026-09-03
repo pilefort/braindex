@@ -143,3 +143,49 @@ func TestApprovals_設定のdecisionsは設定ファイル基準(t *testing.T) {
 		t.Errorf("decisions が hub 基準で解けていない: %q に %q が無い", so.String(), want)
 	}
 }
+
+// -file で設定の hub の外（別プロジェクト）の APPROVALS.md を捌くとき、
+// 決定はその別プロジェクト側の docs/decisions.md に書く。
+//
+// braindex init -repo は各プロジェクトに work/APPROVALS.md と docs/decisions.md の
+// 両方を作るので、hub のカレントから spoke の判断を反映するのは想定内の使い方。
+// 設定の decisions を無条件に採ると、APPROVALS.md は spoke・decisions.md は hub という
+// 食い違いが起き、警告も終了コードも出ないので気づけない。
+func TestApprovalsApply_hubの外のfileは相手側のdecisionsに書く(t *testing.T) {
+	dir := t.TempDir()
+	hub := filepath.Join(dir, "hub")
+	spoke := filepath.Join(dir, "alpha")
+	tmp := filepath.Join(dir, "tmp")
+	cfg := filepath.Join(hub, "braindex.json")
+	ap := filepath.Join(spoke, "work", "APPROVALS.md")
+	spokeDec := filepath.Join(spoke, "docs", "decisions.md")
+	hubDec := filepath.Join(hub, "docs", "decisions.md")
+	writeFile(t, cfg, `{"root": ".."}`)
+	writeFile(t, ap, sampleApprovals)
+	writeFile(t, spokeDec, "# 設計判断\n")
+	writeFile(t, hubDec, "# 設計判断\n")
+	p, err := approvals.Resolve(ap, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, p.Reply, sampleReply)
+
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"approvals", "apply", "-config", cfg, "-file", ap, "-dir", tmp}, &so, &se); code != 0 {
+		t.Fatalf("code=%d\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	sb, err := os.ReadFile(spokeDec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hb, err := os.ReadFile(hubDec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(sb), "設定ファイルの形式") {
+		t.Errorf("相手側の decisions に書かれていない: %s", sb)
+	}
+	if strings.Contains(string(hb), "設定ファイルの形式") {
+		t.Errorf("設定側の hub の decisions に書いた: %s", hb)
+	}
+}
