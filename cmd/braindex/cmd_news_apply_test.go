@@ -14,7 +14,9 @@ import (
 func TestNewsApply_EndToEnd(t *testing.T) {
 	hub, _ := newsHub(t)
 	inbox := filepath.Join(hub, "downloads")
-	os.MkdirAll(inbox, 0o755)
+	if err := os.MkdirAll(inbox, 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	// 1 回目の fetch(採点なし)
 	if code, _, _ := newsFetch(t, hub, "-layer", "daily", "-inbox", inbox); code != 2 { // C の 404 で 2
