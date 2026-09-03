@@ -8,7 +8,7 @@ import (
 
 func TestSettings_WithDefaults(t *testing.T) {
 	s := Settings{}.WithDefaults()
-	if s.SessionsDir != "" || s.WindowDays != 14 || s.Threshold != 0.10 || s.PositionBins != "1-10,11-30,31-" || s.Dictionary != "" || s.DictionaryExtra != "" {
+	if s.SessionsDir != "" || s.WindowDays != 14 || s.Threshold != 0.08 || s.PositionBins != "1-3,4-10,11-30,31-" || s.Dictionary != "" || s.DictionaryExtra != "" {
 		t.Errorf("既定値: got=%+v", s)
 	}
 	full := Settings{SessionsDir: "~/logs", WindowDays: 7, Threshold: 0.2, PositionBins: "1-5,6-", Dictionary: "d.txt", DictionaryExtra: "e.txt"}
@@ -83,5 +83,20 @@ func TestResolvePath(t *testing.T) {
 		if got := ResolvePath(c.in, base, home); got != c.want {
 			t.Errorf("ResolvePath(%q): want=%q got=%q", c.in, c.want, got)
 		}
+	}
+}
+
+// 既定値そのものが自分の検査を通ることを守る(既定を変えたときに、解析できない区間や範囲外の閾値を入れてしまう事故を防ぐ)。
+func TestDefaults_AreValid(t *testing.T) {
+	s := Settings{}.WithDefaults()
+	if err := s.Validate(); err != nil {
+		t.Errorf("既定値が Validate を通らない: %v", err)
+	}
+	bins, err := ParseBins(DefaultPositionBins)
+	if err != nil {
+		t.Fatalf("DefaultPositionBins %q が解析できない: %v", DefaultPositionBins, err)
+	}
+	if len(bins) != 4 || bins[0].Lo != 1 || bins[len(bins)-1].Hi != 0 {
+		t.Errorf("DefaultPositionBins の解析結果: %+v", bins)
 	}
 }

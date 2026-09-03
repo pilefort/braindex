@@ -90,6 +90,26 @@ func TestBody_CRLF(t *testing.T) {
 	}
 }
 
+// NUL は行内コードの退避に使う番兵と同じ文字なので、解析前に落とす。
+// 落とさないと入力中の `\x00<数字>\x00` を退避済みコードの目印と誤認し、
+// 退避表の範囲外を引いて落ちる(移植前は mdhtml.go の復帰処理で index out of range。2026-09-03 実測)。
+func TestBody_NUL(t *testing.T) {
+	got := Body("\x00999\x00 と `コード`\n")
+	if strings.Contains(got, "\x00") {
+		t.Errorf("NUL が出力に残っている: %q", got)
+	}
+	if want := "<p>999 と <code>コード</code></p>"; got != want {
+		t.Errorf("Body = %q, want %q", got, want)
+	}
+}
+
+// 退避表の範囲外を指す目印が万一残っても落とさず、そのまま出す。
+func TestInline_StashOutOfRange(t *testing.T) {
+	if got := inline("\x0099\x00"); got != "\x0099\x00" {
+		t.Errorf("inline = %q, want 入力のまま", got)
+	}
+}
+
 func TestInline_Italic(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"*a*", "<em>a</em>"},

@@ -79,7 +79,7 @@ func TestRetroStats_WindowDaysAndPosition(t *testing.T) {
 	if !strings.HasPrefix(so, "braindex retro stats: 窓 2026-08-18 以降(14 日)・発話 3・訂正 1・率 33.3%\n") {
 		t.Errorf("見出し: %q", so)
 	}
-	if !strings.Contains(so, "| 位置 | 発話 | 訂正 | 率 |\n|---|---:|---:|---:|\n| 1-10 | 3 | 1 | 33.3% |\n| 11-30 | 0 | 0 | - |\n| 31- | 0 | 0 | - |\n| 合計 | 3 | 1 | 33.3% |\n") {
+	if !strings.Contains(so, "| 位置 | 発話 | 訂正 | 率 |\n|---|---:|---:|---:|\n| 1-3 | 3 | 1 | 33.3% |\n| 4-10 | 0 | 0 | - |\n| 11-30 | 0 | 0 | - |\n| 31- | 0 | 0 | - |\n| 合計 | 3 | 1 | 33.3% |\n") {
 		t.Errorf("位置別の表: %q", so)
 	}
 }
