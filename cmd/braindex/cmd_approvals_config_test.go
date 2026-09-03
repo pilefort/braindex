@@ -2,9 +2,12 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pilefort/braindex/internal/approvals"
 )
 
 // braindex.json の approvals 節で置き場を決められる。
@@ -78,5 +81,65 @@ func TestApprovals_負のtimeoutは設定エラー(t *testing.T) {
 	}
 	if !strings.Contains(se.String(), "timeout_sec") {
 		t.Errorf("どのキーの誤りか分からない: %s", se.String())
+	}
+}
+
+// -file を渡さない apply が、設定（無ければ既定）から置き場を決められる。
+//
+// serve と status は loadApprovals を通るが、apply だけ approvals.Resolve を直に呼んでいたため、
+// -file の既定を "" にした時点で「回答があるのに『回答はない』と言って終了コード 0 で終わる」
+// 取りこぼしになっていた（filepath.Abs("") ＝ カレントが APPROVALS.md 扱いになり、id が別物になる）。
+func TestApprovalsApply_fileを渡さなくても解決する(t *testing.T) {
+	dir := t.TempDir()
+	hub := filepath.Join(dir, "hub")
+	ap := filepath.Join(hub, "work", "APPROVALS.md")
+	dec := filepath.Join(hub, "docs", "decisions.md")
+	tmp := filepath.Join(dir, "tmp")
+	cfg := filepath.Join(hub, "braindex.json")
+	writeFile(t, ap, sampleApprovals)
+	writeFile(t, dec, "# 設計判断\n")
+	writeFile(t, cfg, `{"root": ".."}`) // approvals 節は省略＝既定の work/APPROVALS.md を使う
+	p, err := approvals.Resolve(ap, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, p.Reply, sampleReply)
+
+	var so, se bytes.Buffer
+	code := dispatch([]string{"approvals", "apply", "-config", cfg, "-dir", tmp}, &so, &se)
+	if code != 0 {
+		t.Fatalf("code=%d\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	if strings.Contains(so.String(), "回答はない") {
+		t.Fatalf("回答があるのに取りこぼした: %s", so.String())
+	}
+	b, err := os.ReadFile(dec)
+	if err != nil {
+		t.Fatalf("decisions.md を読めない: %v", err)
+	}
+	if !strings.Contains(string(b), "設定ファイルの形式") {
+		t.Errorf("決定が追記されていない: %s", b)
+	}
+}
+
+// 設定の decisions も、file と同じく braindex.json のある場所を基準に解く。
+// 基準が 2 つ（設定ファイルの場所と、APPROVALS.md から推定した hub）あると、
+// work/ 直下でない置き方をした瞬間に決定の追記先がずれる。
+func TestApprovals_設定のdecisionsは設定ファイル基準(t *testing.T) {
+	dir := t.TempDir()
+	hub := filepath.Join(dir, "hub")
+	ap := filepath.Join(hub, "work", "pending", "APPROVALS.md") // work/ 直下ではない
+	tmp := filepath.Join(dir, "tmp")
+	cfg := filepath.Join(hub, "braindex.json")
+	writeFile(t, ap, sampleApprovals)
+	writeFile(t, cfg, `{"root": "..", "approvals": {"file": "work/pending/APPROVALS.md", "decisions": "docs/decisions.md"}}`)
+
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"approvals", "status", "-config", cfg, "-dir", tmp}, &so, &se); code != 0 {
+		t.Fatalf("code=%d\n%s", code, se.String())
+	}
+	want := filepath.Join(hub, "docs", "decisions.md")
+	if !strings.Contains(so.String(), want) {
+		t.Errorf("decisions が hub 基準で解けていない: %q に %q が無い", so.String(), want)
 	}
 }
