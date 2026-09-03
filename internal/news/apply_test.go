@@ -2,6 +2,7 @@ package news
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -140,5 +141,43 @@ func TestIngest(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(empty, StatsFile)); err == nil {
 		t.Error("空でも統計ファイルを作った")
+	}
+}
+
+// 選別 JSON の置き場と hub が別ドライブだと os.Rename が失敗する
+// (Windows で実測: "The system cannot move the file to a different disk drive")。
+// そのときも取り込みを完了させ、統計まで書く。
+func TestIngest_CrossDevice(t *testing.T) {
+	newsDir := filepath.Join(t.TempDir(), "news")
+	inbox := t.TempDir()
+	name := SelectionPrefix + "2026-08-15_daily_20260815100000.json"
+	src := filepath.Join(inbox, name)
+	if err := os.WriteFile(src, []byte(selectionJSON("2026-08-15", "daily",
+		`{"id": "a", "title": "残す記事", "link": "https://x/keep", "feed": "F1"}`,
+		`"F1": {"shown": 3, "kept": 1}`)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	orig := osRename
+	osRename = func(string, string) error {
+		return errors.New("The system cannot move the file to a different disk drive.")
+	}
+	t.Cleanup(func() { osRename = orig })
+
+	msgs, err := Ingest(newsDir, []string{inbox})
+	if err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "取り込み: "+name) {
+		t.Errorf("msgs: %v", msgs)
+	}
+	if _, err := os.Stat(src); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("元のファイルが消えていない: %v", err)
+	}
+	if b, err := os.ReadFile(filepath.Join(newsDir, IngestedDir, name)); err != nil || !strings.Contains(string(b), "残す記事") {
+		t.Errorf("取り込み済みに写っていない: err=%v", err)
+	}
+	st, err := LoadStats(filepath.Join(newsDir, StatsFile))
+	if err != nil || st.Digests["2026-08-15_daily"]["F1"].Kept != 1 {
+		t.Errorf("統計: err=%v %+v", err, st.Digests)
 	}
 }

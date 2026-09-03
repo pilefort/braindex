@@ -205,7 +205,7 @@ func Ingest(newsDir string, dirs []string) (msgs []string, err error) {
 		if err := os.MkdirAll(ingested, 0o755); err != nil {
 			return msgs, err
 		}
-		if err := os.Rename(p, filepath.Join(ingested, filepath.Base(p))); err != nil {
+		if err := moveFile(p, filepath.Join(ingested, filepath.Base(p))); err != nil {
 			return msgs, fmt.Errorf("取り込み済みへ移せない: %w", err)
 		}
 		msgs = append(msgs, fmt.Sprintf("取り込み: %s（残す %d 件）", filepath.Base(p), len(sel.Keeps)))
@@ -214,6 +214,26 @@ func Ingest(newsDir string, dirs []string) (msgs []string, err error) {
 		return msgs, err
 	}
 	return msgs, nil
+}
+
+// osRename はテストで差し替える(ドライブをまたぐ失敗を再現するため)。
+var osRename = os.Rename
+
+// moveFile は src を dst へ移す。
+// 選別 JSON の置き場(ブラウザのダウンロード先)と hub が別のドライブ・別のファイルシステムにあると
+// os.Rename は失敗するので、そのときは中身を写してから元を消す。
+func moveFile(src, dst string) error {
+	if err := osRename(src, dst); err == nil {
+		return nil
+	}
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(dst, b, 0o644); err != nil {
+		return err
+	}
+	return os.Remove(src)
 }
 
 // appendKeeps は keep ファイルに、まだ無いリンクの記事だけ追記する。ファイルが無ければ見出しから作る。
