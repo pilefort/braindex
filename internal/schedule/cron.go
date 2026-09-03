@@ -109,7 +109,9 @@ func splitBlock(existing, hub string) (before, inside, after []string, found boo
 		return lines, nil, nil, false
 	}
 	if end < 0 {
-		end = len(lines) - 1
+		// 最終行までが中身。end = len(lines)-1 にすると最終行を終了マーカーの位置とみなしてしまい、
+		// 利用者が書き足した行が install のたびに 1 行ずつ消える。
+		return lines[:begin], lines[begin+1:], nil, true
 	}
 	return lines[:begin], lines[begin+1 : end], lines[end+1:], true
 }

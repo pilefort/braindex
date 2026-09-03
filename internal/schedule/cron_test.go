@@ -147,6 +147,22 @@ func TestMerge_終了マーカーが無い(t *testing.T) {
 	}
 }
 
+// 終了マーカーが無いブロックでも、中の行は最後の 1 行まで数える。
+// 最終行を終了マーカーの位置とみなすと、利用者が書き足した行が install のたびに 1 行ずつ消える。
+func TestBlockLines_終了マーカーが無い(t *testing.T) {
+	existing := "keep\n# BEGIN braindex " + hub + "\n0 9 * * 1 x # braindex:review\n手で足した行\n"
+	got := BlockLines(existing, hub)
+	want := []string{"0 9 * * 1 x # braindex:review", "手で足した行"}
+	if len(got) != len(want) {
+		t.Fatalf("行数が違う: got=%v want=%v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("%d 行目: got=%q want=%q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestJobOfLine(t *testing.T) {
 	if got := JobOfLine("0 9 * * 1 cd '/h' && '/b' 'review' # braindex:review"); got != "review" {
 		t.Errorf("got=%q", got)

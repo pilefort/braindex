@@ -131,6 +131,25 @@ func TestInstallPlan_Unix_冪等と部分更新(t *testing.T) {
 	}
 }
 
+// 終了マーカーが消えた壊れたブロックでも、利用者が書き足した最終行を落とさない。
+func TestInstallPlan_Unix_終了マーカーが無い(t *testing.T) {
+	const h, exe = "/home/u/hub", "/home/u/go/bin/braindex"
+	existing := "keep\n# BEGIN braindex " + h + "\n0 9 * * 1 x # braindex:review\n手で足した行\n"
+	got, err := InstallPlan("linux", h, exe, []Job{jobReview}, existing)
+	if err != nil {
+		t.Fatalf("InstallPlan: %v", err)
+	}
+	if !strings.Contains(got[0].Stdin, "手で足した行") {
+		t.Errorf("利用者が書き足した行を落としている: got=%q", got[0].Stdin)
+	}
+	if !strings.HasPrefix(got[0].Stdin, "keep\n") {
+		t.Errorf("ブロックより前の行は残す: got=%q", got[0].Stdin)
+	}
+	if n := strings.Count(got[0].Stdin, "# braindex:review"); n != 1 {
+		t.Errorf("review の行は 1 本: got=%q", got[0].Stdin)
+	}
+}
+
 func TestUninstallPlan_Unix(t *testing.T) {
 	const h = "/home/u/hub"
 	existing := "keep\n# BEGIN braindex " + h + "\n" +
