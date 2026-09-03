@@ -64,7 +64,11 @@ func Apply(approvalsMD, decisionsMD []byte, rep Reply, today string) ApplyResult
 			}
 			holds[idx] = note
 			res.Held++
-			res.Summary = append(res.Summary, fmt.Sprintf("[%d] %s → 保留（%s）", it.N, it.Title, note))
+			line := fmt.Sprintf("[%d] %s → 保留", it.N, it.Title)
+			if note != "" {
+				line += "（" + note + "）"
+			}
+			res.Summary = append(res.Summary, line)
 			continue
 		}
 		var heading, reason string
@@ -142,7 +146,9 @@ func Apply(approvalsMD, decisionsMD []byte, rep Reply, today string) ApplyResult
 		}
 		raw := it.Raw
 		if note, ok := holds[i]; ok {
-			raw = strings.TrimRight(raw, "\n") + "\n**保留（" + today + "）:** " + note + "\n"
+			// コメント無しのときに行末へ空白を残さない(Markdown の行末空白は強制改行になり、diff にも出る)
+			hold := strings.TrimRight("**保留（"+today+"）:** "+note, " ")
+			raw = strings.TrimRight(raw, "\n") + "\n" + hold + "\n"
 		}
 		remaining = append(remaining, raw)
 	}

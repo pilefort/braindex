@@ -29,6 +29,24 @@ func TestApply_DuplicateTitles(t *testing.T) {
 	}
 }
 
+// コメント無しの保留(フォームで「保留」だけ押した場合)でも、書き戻す行に余分な空白や空の括弧を残さない。
+func TestApply_HoldWithoutComment(t *testing.T) {
+	rep := Reply{Items: []ReplyItem{{N: 2, Title: "ログの出力先", Choice: "hold"}}}
+	res := Apply(load(t, "two-items.md"), nil, rep, "2026-03-04")
+	if res.Held != 1 {
+		t.Fatalf("held=%d summary=%v", res.Held, res.Summary)
+	}
+	if !strings.Contains(string(res.Approvals), "**保留（2026-03-04）:**\n") {
+		t.Errorf("保留行の末尾に空白が残る: %q", string(res.Approvals))
+	}
+	if got := res.Summary[0]; got != "[2] ログの出力先 → 保留" {
+		t.Errorf("summary = %q", got)
+	}
+	if d := Parse(res.Approvals); len(d.Items) != 2 || len(d.Items[1].Holds) != 2 {
+		t.Errorf("再解析: %+v", d.Items)
+	}
+}
+
 func TestApply_ChoiceAndHold(t *testing.T) {
 	rep := Reply{ReceivedAt: "2026-03-04T10:00:00+09:00", Items: []ReplyItem{
 		{N: 1, Title: "設定ファイルの形式を JSON にするか TOML にするか", Choice: "A", Comment: ""},
