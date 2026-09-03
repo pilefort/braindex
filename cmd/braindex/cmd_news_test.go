@@ -18,7 +18,7 @@ func newsHub(t *testing.T) (hub string, srv *httptest.Server) {
 		switch r.URL.Path {
 		case "/a.xml":
 			w.Write([]byte(`<rss version="2.0"><channel><title>A</title>
-			  <item><title>記事1</title><link>https://example.com/1</link><pubDate>Fri, 14 Aug 2026 10:00:00 GMT</pubDate></item>
+			  <item><title>記事1</title><link>https://example.com/1</link><pubDate>Fri, 14 Aug 2026 10:00:00 GMT</pubDate><description>ゴルーチン の話</description></item>
 			  <item><title>記事2</title><link>https://example.com/2</link></item></channel></rss>`))
 		case "/b.atom":
 			w.Write([]byte(`<feed xmlns="http://www.w3.org/2005/Atom"><title>B</title>
@@ -39,7 +39,8 @@ func newsHub(t *testing.T) (hub string, srv *httptest.Server) {
 func newsFetch(t *testing.T, hub string, args ...string) (code int, so, se string) {
 	t.Helper()
 	var sob, seb bytes.Buffer
-	code = dispatch(append([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15"}, args...), &sob, &seb)
+	// -no-score: 採点の出典(索引・実環境のセッションログ)を読まない。採点は TestNewsFetch_Scored で別に見る
+	code = dispatch(append([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-no-score"}, args...), &sob, &seb)
 	return code, sob.String(), seb.String()
 }
 
@@ -55,7 +56,7 @@ func TestNewsFetch_Flow(t *testing.T) {
 	out := filepath.Join(hub, "news", "digest_2026-08-15_all.md")
 	want := `# ニュースダイジェスト 2026-08-15（all 層）
 
-新着 3 件（フィード 2 本）
+新着 3 件（フィード 2 本）・採点なし
 
 ## A（tech・新着 2 件）
 - 2026-08-14 [記事1](https://example.com/1)
@@ -193,6 +194,48 @@ func TestNewsFetch_Errors(t *testing.T) {
 	if code := dispatch([]string{"news", "fetch", "-h"}, &so, &seb); code != 0 || !strings.Contains(seb.String(), "使い方: braindex news fetch") {
 		t.Errorf("-h: exit=%d %s", code, seb.String())
 	}
+}
+
+// 採点あり: 補助ファイルの語で主要と関心外に分かれる。索引とセッションの置き場が無い警告は fetch の警告(終了コード 2)。
+func TestNewsFetch_Scored(t *testing.T) {
+	hub, _ := newsHub(t)
+	writeFile(t, filepath.Join(hub, "news", "interests.md"), "ゴルーチン\n") // 記事1 の概要に当たる
+	var so, se bytes.Buffer
+	code := dispatch([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-layer", "daily",
+		"-stdout", "-sessions", filepath.Join(hub, "no-such-dir")}, &so, &se)
+	if code != 2 {
+		t.Fatalf("exit=%d\n%s%s", code, so.String(), se.String())
+	}
+	mustContain(t, "stderr", se.String(), "索引", "が無いので飛ばした", "セッションログの置き場", "警告 3 件(取得失敗 1 本・終了コード 2)")
+	want := `# ニュースダイジェスト 2026-08-15（daily 層）
+
+新着 2 件（フィード 1 本）・関心度 2 以上を主要表示
+
+## A（tech・新着 2 件・主要 1 件）
+- 2026-08-14 [記事1](https://example.com/1) ★2（ゴルーチン）
+- 関心外と判定 1 件:
+  - [記事2](https://example.com/2) ★0
+
+## 取得失敗
+- C: HTTP 404
+`
+	if !strings.Contains(so.String(), want) {
+		t.Errorf("digest:\n%s\nwant:\n%s", so.String(), want)
+	}
+
+	// プロファイルが空なら採点なし。出典が無い警告は残るので終了コードは 2 のまま
+	if err := os.Remove(filepath.Join(hub, "news", "interests.md")); err != nil {
+		t.Fatal(err)
+	}
+	so.Reset()
+	se.Reset()
+	code = dispatch([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-layer", "daily", "-replay",
+		"-stdout", "-sessions", filepath.Join(hub, "no-such-dir")}, &so, &se)
+	if code != 2 {
+		t.Fatalf("空のプロファイル: exit=%d\n%s%s", code, so.String(), se.String())
+	}
+	mustContain(t, "empty profile", so.String(), "関心プロファイルが空なので採点なし", "・採点なし")
+	mustContain(t, "empty profile stderr", se.String(), "警告 3 件(取得失敗 1 本・終了コード 2)")
 }
 
 func TestUnusedPath(t *testing.T) {
