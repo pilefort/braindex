@@ -60,7 +60,18 @@ func runApprovalsApply(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	rename := replyPath == "" // 既定の置き場の回答だけ .applied に改名する(手で指定した JSON は動かさない)
+	return applyReply(p, replyPath, decisionsPath, today, stdout, stderr)
+}
+
+// applyReply は回答 JSON を読んで APPROVALS.md と decisions.md に反映し、結果を stdout に書く。
+// replyPath が空なら置き場の既定(p.Reply)を使い、反映後に .applied.json へ改名する(手で指定した JSON は動かさない)。
+// serve -apply からも呼ぶ。終了コード: 0 反映した・回答なし / 1 失敗。
+func applyReply(p approvals.Paths, replyPath, decisionsPath, today string, stdout, stderr io.Writer) int {
+	fail := func(err error) int {
+		fmt.Fprintln(stderr, "braindex approvals apply:", err)
+		return 1
+	}
+	rename := replyPath == ""
 	if replyPath == "" {
 		replyPath = p.Reply
 	}
