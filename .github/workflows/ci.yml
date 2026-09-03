@@ -1,4 +1,4 @@
-# CI: ubuntu と windows で gofmt / vet / test を回し、同じ入力から 2 回生成して
+# CI: ubuntu・windows・macOS で gofmt / vet / test を回し、同じ入力から 2 回生成して
 # バイト一致することを確かめる（索引の決定性は設計の前提。設計判断 2026-08-07）。
 name: CI
 
@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
