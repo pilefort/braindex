@@ -250,6 +250,14 @@ func TestDigest_Ranked(t *testing.T) {
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
+	// 決定性: 採点からやり直しても同じバイト列。Ranking も Score.Matched も map を経由するので、
+	// 走査順が出力に漏れていれば実行のたびに揺れる(1 回だけでは捕まらないので繰り返す)
+	for i := 0; i < 5; i++ {
+		again := string(Digest(res, DigestOptions{Layer: "daily", Today: "2026-08-15", Cap: 2, Ranking: Rank(res, p), MinScore: 2}))
+		if again != got {
+			t.Fatalf("%d 回目の生成が一致しない:\n%s\nwant:\n%s", i+2, again, got)
+		}
+	}
 	// 空のプロファイルは採点無し
 	if Rank(res, interest.Profile{}) != nil {
 		t.Error("空のプロファイルで採点した")
