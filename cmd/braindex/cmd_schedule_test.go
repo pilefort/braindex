@@ -17,6 +17,9 @@ type fakeRunner struct {
 	crontab string          // crontab -l の応答。空なら「crontab が無い」として失敗を返す
 	queryOK map[string]bool // schtasks /Query でタスクがあることにする名前
 	failOn  string          // Display() にこの文字列を含むコマンドを失敗させる
+
+	// crontabErr が空でなければ、crontab -l はこの出力と error を返す(「crontab が無い」以外の失敗)。
+	crontabErr string
 }
 
 func (f *fakeRunner) Run(c schedule.Command) (string, error) {
@@ -26,6 +29,9 @@ func (f *fakeRunner) Run(c schedule.Command) (string, error) {
 	}
 	switch {
 	case c.Name == "crontab" && len(c.Args) > 0 && c.Args[0] == "-l":
+		if f.crontabErr != "" {
+			return f.crontabErr, errors.New("exit status 1")
+		}
 		if f.crontab == "" {
 			return "no crontab for user", errors.New("exit status 1")
 		}
@@ -326,35 +332,39 @@ func TestSchedule_Print(t *testing.T) {
 	}
 }
 
-// crontab を一度も書いていない利用者でも登録できる(crontab -l の失敗は空として扱う)。
-func TestSchedule_Install_crontabを読めない(t *testing.T) {
+// crontab を一度も書いていない利用者でも、手作業なしで登録できる(「no crontab」の失敗だけ空として扱う)。
+// 決定 A'。ここを「失敗は全部エラー」にすると、初回の利用者は crontab -e で空の crontab を作らないと使えない。
+func TestSchedule_Install_crontabがまだ無い(t *testing.T) {
 	hub := schedHub(t, "")
-	r := &fakeRunner{} // crontab が空 → crontab -l は失敗を返す
-	code, _, se := execSchedule(t, "linux", r, "install", "-config", filepath.Join(hub, "braindex.json"))
-	if code != 1 {
-		t.Fatalf("exit=%d want 1\n%s", code, se)
-	}
-	mustContain(t, "stderr", se, "crontab を読めない", "no crontab for user", "crontab -e", "既にある行を消してしまう")
-	if len(r.calls) != 1 || r.calls[0].Args[0] != "-l" {
-		t.Errorf("読めなかったら書き戻さない: got=%+v", r.calls)
+	for _, msg := range []string{
+		"crontab: no crontab for someone", // macOS(BSD cron)
+		"no crontab for someone",          // Linux(cronie / vixie-cron)
+	} {
+		r := &fakeRunner{crontabErr: msg}
+		code, _, se := execSchedule(t, "linux", r, "install", "-config", filepath.Join(hub, "braindex.json"))
+		if code != 0 {
+			t.Fatalf("%q: exit=%d want 0\n%s", msg, code, se)
+		}
+		if len(r.calls) != 2 || r.calls[1].Args[0] != "-" {
+			t.Fatalf("%q: crontab -l → crontab - の順に呼ぶ: got=%+v", msg, r.calls)
+		}
 	}
 }
 
-// 読めないまま進むと利用者の crontab を全消しするので、uninstall・list・print も止まる。
+// 「crontab が無い」以外の理由で読めないときは、書き戻すと全消しになるので止まる。
+// とくに uninstall(-job なし)は空文字を書き戻すので、そのまま進むと利用者の crontab が消える。
 func TestSchedule_crontabを読めないときは全部止まる(t *testing.T) {
 	hub := schedHub(t, "")
-	for _, sub := range []string{"uninstall", "list", "print"} {
-		r := &fakeRunner{}
+	for _, sub := range []string{"install", "uninstall", "list", "print"} {
+		r := &fakeRunner{crontabErr: "crontab: you are not authorized to use cron"}
 		code, _, se := execSchedule(t, "linux", r, sub, "-config", filepath.Join(hub, "braindex.json"))
 		if code != 1 {
 			t.Errorf("%s: exit=%d want 1\n%s", sub, code, se)
 		}
-		if !strings.Contains(se, "crontab を読めない") {
-			t.Errorf("%s: stderr=%s", sub, se)
-		}
+		mustContain(t, sub+" の stderr", se, "crontab を読めない", "not authorized", "既にある行を消してしまう", "crontab -e")
 		for _, c := range r.calls {
 			if c.Name == "crontab" && len(c.Args) > 0 && c.Args[0] == "-" {
-				t.Errorf("%s: 読めなかったのに書き戻している", sub)
+				t.Errorf("%s: 読めなかったのに書き戻している(全消しになる): %+v", sub, r.calls)
 			}
 		}
 	}

@@ -95,7 +95,8 @@ braindex review                                # 週に 1 回: レビューの�
 ```
 
 `braindex init` は設定 `braindex.json`（`"root": ".."`）・フォルダ規約のテンプレ・スキルを展開する。
-テンプレを使わずに始めるなら、`braindex.example.json` を `braindex.json` としてコピーするだけでもよい。
+設定の雛形はこれが正本で、braindex のリポジトリに別置きの雛形は置いていない。
+手で `braindex.json` を書くなら、キーの一覧は「braindex — 索引の生成」の設定の表を見る。
 
 **索引はコミットする。** hub が git 管理下にないと `braindex review` は索引の増減を常に 0 件と報告し、終了コード 2 で終わる。
 
@@ -476,7 +477,9 @@ macOS・Linux は `crontab`（`# BEGIN braindex <hub>` 〜 `# END braindex <hub>
 サブコマンド: `list`（設定のジョブと OS 側の登録状態）・`print`（登録に使うコマンドを出すだけ）・`install`（登録する）・`uninstall`（消す）。
 
 crontab 側では、`crontab -l` が読めなければ**何もせず終了コード 1** で止まる（読めないまま書き戻すと既にある行を消してしまうため）。
-crontab をまだ作っていない環境では、`crontab -e` で空の crontab を作ってから `braindex schedule install` を実行する。
+ただし「まだ crontab が無い」ことを示す失敗（出力が `no crontab for <利用者>` の 1 行だけ。BSD cron の `crontab: ` 接頭辞も可）だけは空の crontab として扱うので、
+`crontab` を一度も作っていない環境でもそのまま `braindex schedule install` できる。
+文言の違う cron 実装ではこの判別が効かず終了コード 1 で止まるので、その場合は `crontab -e` で空の crontab を作ってから実行する。
 フラグ: `-config` `-job 名前`（1 本だけを対象にする）`-dry-run`（`install`・`uninstall`。実行せずコマンドを出す）。
 終了コード: 0 ／1 フラグ・設定の誤り、またはスケジューラ側が失敗した（登録できていないので失敗）。
 
@@ -489,7 +492,7 @@ crontab をまだ作っていない環境では、`crontab -e` で空の crontab
    周辺機能（振り返る・知る）は LLM を採点や要約の補助に使ってよいが、取得と計測は決定論で行い、判断は人に残す。
 3. **寿命で分ける。** 蓄積するもの（`docs/`）と揮発するもの（`work/`）を混ぜない。索引は前者だけを見る。
 
-理由と却下案は作者の設計メモ（`docs/`・git 管理外）にある。
+理由と却下案は作者の設計メモ `docs/decisions.md` にある。
 
 ### やらないこと
 
@@ -530,10 +533,9 @@ v0.1.0（2026-09-03）: 索引 CLI（Phase 1）を原型から移植して可搬
 |---|---|
 | `cmd/braindex` | サブコマンドの登録とフラグ解析（`main.go`・`commands.go`・`cmd_*.go`） |
 | `internal/` | 索引の実装（`scan` → `extract` → `render` → `catalog`）と `config`・`template`（init）・`lint`・`review`・`sessions`／`retro`・`feed`／`interest`／`news`（ニュース）・`approvals`・`mdhtml`／`verify`（回答の HTML 化と照合）・`scope`・`schedule` |
-| `braindex.example.json` | 設定ファイルの雛形 |
 | `.github/workflows/ci.yml` | CI。ubuntu と windows で gofmt／vet／test に加え、同じ入力から 2 回生成してバイト一致することを確かめる |
 | `CONTRIBUTING.md` | 開発の決まり（テスト・決定性・持ち込まないもの） |
-| `docs/` `work/` | 作者の設計メモと作業状態。git 管理外（`.gitignore`。2026-09-02 決定） |
+| `docs/` `work/` | 作者の設計メモ（`overview`・`decisions`・`glossary`・`conventions`）と作業状態。git 管理下（2026-09-03 決定。複数マシン・並行セッション間で同期するため） |
 
 ```sh
 go test ./...   # 依存なし。CI は gofmt -l . と go vet ./... も回す
