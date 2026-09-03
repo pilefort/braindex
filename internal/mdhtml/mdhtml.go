@@ -119,7 +119,10 @@ func inline(text string) string {
 	text = boldRE.ReplaceAllString(text, "<strong>$1</strong>")
 	text = italic(text)
 	return stashRE.ReplaceAllStringFunc(text, func(m string) string {
-		idx, _ := strconv.Atoi(m[1 : len(m)-1])
+		idx, err := strconv.Atoi(m[1 : len(m)-1])
+		if err != nil || idx < 0 || idx >= len(stash) {
+			return m // 自分が書いた目印ではない。触らずに残す
+		}
 		return "<code>" + escapeText(stash[idx]) + "</code>"
 	})
 }
@@ -184,6 +187,7 @@ func isTableStart(lines []string, i int) bool {
 func Body(md string) string {
 	md = strings.ReplaceAll(md, "\r\n", "\n")
 	md = strings.ReplaceAll(md, "\r", "\n")
+	md = strings.ReplaceAll(md, "\x00", "") // 行内コードの退避に使う番兵と衝突するので落とす
 	lines := strings.Split(md, "\n")
 	n := len(lines)
 	var out []string

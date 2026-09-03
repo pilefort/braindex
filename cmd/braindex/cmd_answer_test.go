@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -140,7 +141,42 @@ func TestAnswer_Errors(t *testing.T) {
 	if code := dispatch([]string{"answer"}, &so, &se); code != 1 {
 		t.Errorf("引数なしは exit 1 のはず: %d", code)
 	}
+	se.Reset()
 	if code := dispatch([]string{"answer", filepath.Join(t.TempDir(), "none.md")}, &so, &se); code != 1 {
 		t.Errorf("無いファイルは exit 1 のはず: %d", code)
+	}
+	if !strings.Contains(se.String(), "braindex answer:") {
+		t.Errorf("読めない理由が stderr に出ていない: %q", se.String())
+	}
+}
+
+// ブラウザを開けなかったときは、HTML は書いたうえで開き方を案内して 1 で終わる。
+func TestAnswer_OpenFails(t *testing.T) {
+	dir, _ := stubAnswer(t)
+	openInBrowser = func(string) error { return errors.New("開けない") }
+	src := filepath.Join(t.TempDir(), "a.md")
+	writeFile(t, src, "x\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"answer", src}, &so, &se); code != 1 {
+		t.Errorf("開けなければ exit 1 のはず: %d", code)
+	}
+	out := filepath.Join(dir, "a.html")
+	if _, err := os.Stat(out); err != nil {
+		t.Errorf("開けなくても HTML は書かれているべき: %v", err)
+	}
+	if !strings.Contains(se.String(), out) {
+		t.Errorf("案内に出力先のパスが無い: %q", se.String())
+	}
+}
+
+// -h は使い方を出して 0(フラグの誤りの 1 と区別する)。
+func TestAnswer_Help(t *testing.T) {
+	stubAnswer(t)
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"answer", "-h"}, &so, &se); code != 0 {
+		t.Errorf("-h は exit 0 のはず: %d", code)
+	}
+	if !strings.Contains(se.String(), "使い方: braindex answer") {
+		t.Errorf("使い方が出ていない: %q", se.String())
 	}
 }
