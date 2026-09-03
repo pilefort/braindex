@@ -60,6 +60,25 @@ func TestInstallPlan_Windows_毎日(t *testing.T) {
 	assertCommands(t, got, want)
 }
 
+// 空白や cmd のメタ文字を含む引数は二重引用符で囲む(hub と braindex は既に囲んである)。
+// 囲まないと cmd が区切りやリダイレクトとして解釈し、黙って別のコマンドが走る。
+func TestInstallPlan_Windows_引数を引用する(t *testing.T) {
+	j := Job{Name: "news", Args: []string{"news", "fetch", "-out", `D:\out dir\a&b.md`}, When: "daily:07:30"}
+	got, err := InstallPlan("windows", winHub, winExe, []Job{j}, "")
+	if err != nil {
+		t.Fatalf("InstallPlan: %v", err)
+	}
+	want := `cmd /c cd /d "C:\Users\u\hub" && "C:\Users\u\go\bin\braindex.exe" news fetch -out "D:\out dir\a&b.md"`
+	if run := got[0].Args[len(got[0].Args)-1]; run != want {
+		t.Errorf("got= %q\nwant=%q", run, want)
+	}
+	// 二重引用符を含む引数は /TR の中で表せない。黙って壊れた行を作らずエラーにする
+	bad := Job{Name: "news", Args: []string{"news", `a"b`}, When: "daily:07:30"}
+	if _, err := InstallPlan("windows", winHub, winExe, []Job{bad}, ""); err == nil {
+		t.Error("二重引用符を含む引数はエラーにする")
+	}
+}
+
 // schtasks の /TR は 261 文字まで。黙って切られると別のコマンドが走るので、こちらでエラーにする。
 func TestInstallPlan_Windows_実行行が長すぎる(t *testing.T) {
 	long := `C:\Users\u\` + strings.Repeat("あ", 200)

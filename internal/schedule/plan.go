@@ -71,8 +71,12 @@ func windowsRun(hub, exe string, j Job) (string, error) {
 	b.WriteString(exe)
 	b.WriteString(`"`)
 	for _, a := range j.Args {
+		q, err := windowsArg(a)
+		if err != nil {
+			return "", fmt.Errorf("ジョブ %s: %w", j.Name, err)
+		}
 		b.WriteString(" ")
-		b.WriteString(a)
+		b.WriteString(q)
 	}
 	run := b.String()
 	if len(run) > maxTR {
@@ -80,6 +84,21 @@ func windowsRun(hub, exe string, j Job) (string, error) {
 			j.Name, len(run), maxTR, run)
 	}
 	return run, nil
+}
+
+// windowsArg は /TR の実行行に置く引数 1 つを返す。
+//
+// cmd は引用符の外では & | < > ^ ( ) を区切りやリダイレクトとして解釈するので、
+// それらと空白を含む引数は二重引用符で囲む(cron 側の shellQuote に相当する)。
+// 引用符そのものは囲みの中で表せないので、黙って壊れた行を作らずエラーにする。
+func windowsArg(a string) (string, error) {
+	if strings.Contains(a, `"`) {
+		return "", fmt.Errorf("引数に二重引用符は使えない: %q", a)
+	}
+	if a == "" || strings.ContainsAny(a, " \t&|<>^()") {
+		return `"` + a + `"`, nil
+	}
+	return a, nil
 }
 
 // InstallPlan は jobs を登録するコマンド列を返す。
