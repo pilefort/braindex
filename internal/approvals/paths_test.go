@@ -27,20 +27,29 @@ func TestResolve(t *testing.T) {
 		t.Errorf("Reply = %q Applied = %q", p.Reply, p.Applied)
 	}
 	// 同じパスなら同じ id、別の hub なら別の id
-	q, _ := Resolve(filepath.Join(hub, "work", "APPROVALS.md"), "")
+	q := mustResolve(t, filepath.Join(hub, "work", "APPROVALS.md"), "")
 	if q.ID != p.ID {
 		t.Errorf("同じ hub で id が違う: %q %q", p.ID, q.ID)
 	}
 	if !strings.HasPrefix(q.Reply, DefaultDir()) {
 		t.Errorf("dir 省略時は DefaultDir: %q", q.Reply)
 	}
-	r, _ := Resolve(filepath.Join(root, "other", "work", "APPROVALS.md"), "")
+	r := mustResolve(t, filepath.Join(root, "other", "work", "APPROVALS.md"), "")
 	if r.ID == p.ID {
 		t.Error("別の hub で id が同じ")
 	}
 	// work 直下でないファイルは親をプロジェクトとみなす
-	s, _ := Resolve(filepath.Join(root, "flat", "APPROVALS.md"), "")
+	s := mustResolve(t, filepath.Join(root, "flat", "APPROVALS.md"), "")
 	if s.Project != filepath.Join(root, "flat") {
 		t.Errorf("work 無し: Project = %q", s.Project)
 	}
+}
+
+func mustResolve(t *testing.T, approvalsPath, dir string) Paths {
+	t.Helper()
+	p, err := Resolve(approvalsPath, dir)
+	if err != nil {
+		t.Fatalf("Resolve(%q, %q): %v", approvalsPath, dir, err)
+	}
+	return p
 }

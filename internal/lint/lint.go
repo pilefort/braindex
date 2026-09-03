@@ -22,9 +22,11 @@ import (
 
 // Warning は 1 件の指摘。
 type Warning struct {
-	Path string // 表示用のパス(呼び出し側が決める。/ 区切り)
-	Line int    // 1 始まりの行番号。ファイル全体への指摘は 0
-	Msg  string
+	Path     string `json:"path"`               // 表示用のパス(呼び出し側が決める。/ 区切り)
+	Line     int    `json:"line"`               // 1 始まりの行番号。ファイル全体への指摘は 0
+	Msg      string `json:"msg"`                // 表示文。ノート検査では先頭に「[種別]」が付く
+	Kind     string `json:"kind,omitempty"`     // ノート検査の種別(vague_quantifier など。ISSUE 検査では空)
+	Severity string `json:"severity,omitempty"` // ノート検査の確度(warn / candidate。ISSUE 検査では空)
 }
 
 // Options は検査の入力。

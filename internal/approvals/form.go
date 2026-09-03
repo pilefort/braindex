@@ -38,7 +38,7 @@ func RenderForm(d Doc, m Meta) []byte {
 			fmt.Fprintf(&b, "<div class=\"why\">%s</div>\n", inline(pre))
 		}
 		for i := range d.Items {
-			renderItem(&b, &d.Items[i])
+			renderItem(&b, &d.Items[i], i+1)
 		}
 	}
 	b.WriteString("</main>\n")
@@ -67,9 +67,13 @@ var displayFields = []struct{ key, label string }{
 	{FieldWhat, "何を決めるか"}, {FieldWhyNow, "なぜ今決めるか"}, {FieldIfUndecided, "決めないとどうなるか"},
 }
 
-func renderItem(b *strings.Builder, it *Item) {
+// renderItem は項目 1 件を描く。pos は 1 から数えた出現位置で、ラジオのグループ名と id に使う。
+// 見出しの番号(it.N)は重なりうる(番号を振り忘れた見出しは出現順で補うため)ので、DOM の識別子には使わない。
+// 重なると 2 つの項目が同じラジオグループになり、後の項目を選んだ瞬間に前の選択が外れる。
+// it.N は表示と POST の data-n に残す(apply は題名で照合し、題名が空のときだけ番号を見る)。
+func renderItem(b *strings.Builder, it *Item, pos int) {
 	fmt.Fprintf(b, "<section class=\"ap\" data-n=\"%d\" data-title=\"%s\" id=\"i%d\">\n<h2><span class=\"num\">%d</span>%s</h2>\n",
-		it.N, html.EscapeString(it.Title), it.N, it.N, html.EscapeString(it.Title))
+		it.N, html.EscapeString(it.Title), pos, it.N, html.EscapeString(it.Title))
 	b.WriteString("<div class=\"kv\">")
 	for _, f := range displayFields {
 		if v := it.Fields[f.key]; v != "" {
@@ -96,17 +100,18 @@ func renderItem(b *strings.Builder, it *Item) {
 			badge, cls = "<span class=\"badge\">私の案</span>", " rec"
 		}
 		fmt.Fprintf(b, "<label class=\"opt%s\"><input type=\"radio\" name=\"c%d\" value=\"%s\"><span class=\"key\">%s</span><span class=\"lab\">%s%s</span>",
-			cls, it.N, o.Key, o.Key, inline(o.Label), badge)
+			cls, pos, o.Key, o.Key, inline(o.Label), badge)
 		if o.Desc != "" {
-			fmt.Fprintf(b, "<div class=\"desc\">%s</div>", inline(o.Desc))
+			// label の中身は phrasing content だけ。div は不正なので span で置く(.opt が grid なので見た目は同じ)
+			fmt.Fprintf(b, "<span class=\"desc\">%s</span>", inline(o.Desc))
 		}
 		b.WriteString("</label>")
 	}
 	if len(it.Options) == 0 && it.Fields[FieldRecommend] != "" {
 		fmt.Fprintf(b, "<div class=\"why\"><b>私の案（選択肢の形になっていない）:</b><br>%s</div>", inline(it.Fields[FieldRecommend]))
 	}
-	fmt.Fprintf(b, "<label class=\"opt alt\"><input type=\"radio\" name=\"c%d\" value=\"other\"><span class=\"key\">＋</span><span class=\"lab\">その他 — 下の欄に書く</span></label>", it.N)
-	fmt.Fprintf(b, "<label class=\"opt alt\"><input type=\"radio\" name=\"c%d\" value=\"hold\"><span class=\"key\">…</span><span class=\"lab\">保留 — 今は決めない（質問・欲しい情報を下に）</span></label>", it.N)
+	fmt.Fprintf(b, "<label class=\"opt alt\"><input type=\"radio\" name=\"c%d\" value=\"other\"><span class=\"key\">＋</span><span class=\"lab\">その他 — 下の欄に書く</span></label>", pos)
+	fmt.Fprintf(b, "<label class=\"opt alt\"><input type=\"radio\" name=\"c%d\" value=\"hold\"><span class=\"key\">…</span><span class=\"lab\">保留 — 今は決めない（質問・欲しい情報を下に）</span></label>", pos)
 	b.WriteString("</div>\n")
 	switch {
 	case it.Recommended != "" && it.Reason != "":
@@ -142,8 +147,9 @@ func inlineLine(line string) string {
 	})
 	esc = boldRe.ReplaceAllString(esc, "<b>$1</b>")
 	esc = urlRe.ReplaceAllStringFunc(esc, func(u string) string {
-		u = strings.TrimRight(u, ".,;:!?、。")
-		return "<a href=\"" + u + "\">" + u + "</a>"
+		// 末尾の句読点はリンクに含めない。ただし落とさずリンクの後ろに戻す(文の読点・句点が消えてしまう)
+		link := strings.TrimRight(u, ".,;:!?、。")
+		return "<a href=\"" + link + "\">" + link + "</a>" + u[len(link):]
 	})
 	for i, c := range codes {
 		esc = strings.Replace(esc, fmt.Sprintf("\x00%d\x00", i), c, 1)
