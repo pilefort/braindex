@@ -9,6 +9,7 @@ import (
 	iofs "io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/pilefort/braindex/internal/approvals"
@@ -17,7 +18,7 @@ import (
 // runApprovalsApply は braindex approvals apply を実行する。
 // 一時置き場の回答(-reply で差し替え可)を APPROVALS.md と docs/decisions.md に反映し、回答を .applied.json に改名する。
 // 回答が無ければ何もせず 0 で終わる(セッション開始時に毎回呼べる)。
-// 終了コード: 0 反映した・回答なし / 1 失敗(何も書かない)。
+// 終了コード: 0 反映した・回答なし / 1 失敗(何も書かない) / 2 反映したが未反映の項目がある。
 func runApprovalsApply(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("braindex approvals apply", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -31,7 +32,7 @@ func runApprovalsApply(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "使い方: braindex approvals apply [-file work/APPROVALS.md] [-reply <json>] [-decisions docs/decisions.md] [-date YYYY-MM-DD] [-dir <置き場>]")
 		fmt.Fprintln(stderr, "  serve が受けた回答を反映する。選んだ項目は docs/decisions.md に 3 段(結論 → 理由 → 根拠)で追記して APPROVALS.md から消し、")
 		fmt.Fprintln(stderr, "  保留は項目を残して「**保留（日付）:**」を付ける。反映した回答は .applied.json に改名する(2 回反映しない)。")
-		fmt.Fprintln(stderr, "  回答が無ければ何もしない(終了コード 0)。終了コード: 0 反映した・回答なし / 1 失敗")
+		fmt.Fprintln(stderr, "  回答が無ければ何もしない(終了コード 0)。終了コード: 0 反映した・回答なし / 1 失敗 / 2 未反映の項目がある")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
 		fs.PrintDefaults()
@@ -65,7 +66,10 @@ func runApprovalsApply(args []string, stdout, stderr io.Writer) int {
 
 // applyReply は回答 JSON を読んで APPROVALS.md と decisions.md に反映し、結果を stdout に書く。
 // replyPath が空なら置き場の既定(p.Reply)を使い、反映後に .applied.json へ改名する(手で指定した JSON は動かさない)。
-// serve -apply からも呼ぶ。終了コード: 0 反映した・回答なし / 1 失敗。
+// serve -apply からも呼ぶ。終了コード: 0 反映した・回答なし / 1 失敗 / 2 反映したが未反映の項目がある。
+//
+// 未反映(回答の項目が見つからない・選択が選択肢に無い)は stderr に出して 2 を返す。stdout の要約に混ぜて 0 で終わると、
+// 自動化から取りこぼしに気づけない(リポの規約: 2 は警告つき完了)。
 func applyReply(p approvals.Paths, replyPath, decisionsPath, today string, stdout, stderr io.Writer) int {
 	fail := func(err error) int {
 		fmt.Fprintln(stderr, "braindex approvals apply:", err)
@@ -119,11 +123,21 @@ func applyReply(p approvals.Paths, replyPath, decisionsPath, today string, stdou
 		}
 	}
 	fmt.Fprintf(stdout, "反映: 決定 %d 件 → %s ／ 保留 %d 件 ／ %s を更新\n", res.Decided, decisionsPath, res.Held, p.Approvals)
+	warned := 0
 	for _, line := range res.Summary {
+		if strings.HasPrefix(line, "警告:") {
+			fmt.Fprintln(stderr, line)
+			warned++
+			continue
+		}
 		fmt.Fprintln(stdout, line)
 	}
 	if res.Decided > 0 {
 		fmt.Fprintln(stdout, "next: decisions.md の見出しを結論文に整え、決定に沿って止まっていた作業を再開する")
+	}
+	if warned > 0 {
+		fmt.Fprintf(stderr, "braindex approvals apply: 警告 %d 件(未反映の項目がある・終了コード 2)\n", warned)
+		return 2
 	}
 	return 0
 }

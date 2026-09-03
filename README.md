@@ -152,16 +152,17 @@ braindex schedule uninstall  # この hub の登録を消す
 | `braindex scope` | `index/catalog.md`（`-dir` ならディレクトリ配下の `*.md`） | 矛盾検査の走査対象（chunk 分割・stdout・`-json`） |
 | `braindex schedule` | 設定の `schedule` 節 | OS のスケジューラへの登録 |
 
-0 成功／1 失敗（何も書かない）は共通。**2 の意味はコマンドで違う**。
+終了コードは共通で **0 成功／1 失敗（結果を書かない）／2 警告つき完了（結果は書いたが、飛ばしたものや取りこぼしがある）**。
+「2 なら結果は使える」が全コマンドで成り立つので、定期実行から一律に判定できる。
 
-| 2 の意味 | コマンド |
+| 2 を返す場面 | コマンド |
 |---|---|
-| 警告つきで完了（読めないものを飛ばした） | 索引の生成・`review`・`news fetch`・`news profile` |
-| 指摘・不一致があった | `lint`（指摘あり）・`verify`（NOT FOUND あり）・`approvals status`（記載漏れ・未反映の回答） |
-| 対象が足りない・待ちが切れた | `scope`（対象が 2 件未満）・`approvals serve`（時間切れ） |
-| スケジューラ側が失敗した | `schedule install`・`schedule uninstall` |
+| 読めないものを飛ばした | 索引の生成・`review`・`news fetch`（フィード・選別 JSON・統計）・`news profile` |
+| 指摘・不一致があった | `lint`（指摘あり）・`verify`（NOT FOUND あり）・`approvals status`（記載漏れ・未反映の回答）・`approvals apply`（反映できなかった項目） |
+| 突き合わせる相手がいない | `scope`（対象が 2 件未満） |
 
-`retro check` だけ 3（閾値超え）を足す。フラグの要約は `braindex -h`、各コマンドは `braindex <コマンド> -h`。
+3 を使うのは 2 つだけ: `retro check`（閾値超え）と `approvals serve`（時間切れ）。
+フラグの要約は `braindex -h`、各コマンドは `braindex <コマンド> -h`。
 
 ### braindex — 索引の生成
 
@@ -382,7 +383,7 @@ braindex approvals apply          # 受けた回答を反映する（聞くの�
 「**保留（日付）:**」を付ける。反映した回答 JSON は `.applied.json` に改名するので、2 回反映されない。
 フラグ: `-file`（既定 `work/APPROVALS.md`）`-dir`（回答 JSON の置き場。既定は OS の一時ディレクトリの `braindex-approvals`）
 `-timeout 秒`（0 で無期限）`-no-open` `-apply` `-decisions` `-date` `-reply`。
-終了コード: `serve` 0 回答あり／2 時間切れ、`apply` 0 反映した・回答なし、`status` 0 ／2 記載漏れか未反映の回答あり。いずれも 1 は失敗。
+終了コード: `serve` 0 回答あり／3 時間切れ、`apply` 0 反映した・回答なし／2 反映できなかった項目がある、`status` 0 ／2 記載漏れか未反映の回答あり。いずれも 1 は失敗。
 
 ### braindex answer — 回答の HTML 化
 
@@ -456,7 +457,7 @@ macOS・Linux は `crontab`（`# BEGIN braindex <hub>` 〜 `# END braindex <hub>
 
 サブコマンド: `list`（設定のジョブと OS 側の登録状態）・`print`（登録に使うコマンドを出すだけ）・`install`（登録する）・`uninstall`（消す）。
 フラグ: `-config` `-job 名前`（1 本だけを対象にする）`-dry-run`（`install`・`uninstall`。実行せずコマンドを出す）。
-終了コード: 0 ／1 フラグ・設定の誤り／2 スケジューラ側が失敗した。
+終了コード: 0 ／1 フラグ・設定の誤り、またはスケジューラ側が失敗した（登録できていないので失敗）。
 
 ## 設計
 

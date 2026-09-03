@@ -182,7 +182,8 @@ func readCrontab() string {
 	return out
 }
 
-// runCommands はコマンド列を順に実行する。1 つでも失敗したらそこで止め、終了コード 2 を返す。
+// runCommands はコマンド列を順に実行する。1 つでも失敗したらそこで止め、終了コード 1 を返す。
+// 2 は使わない(リポの規約で 2 は「警告つき完了」。登録できていないのは失敗)。
 func runCommands(sub string, cmds []schedule.Command, stderr io.Writer) int {
 	for _, c := range cmds {
 		out, err := scheduleRunner.Run(c)
@@ -191,7 +192,7 @@ func runCommands(sub string, cmds []schedule.Command, stderr io.Writer) int {
 			if s := strings.TrimSpace(out); s != "" {
 				fmt.Fprintln(stderr, s)
 			}
-			return 2
+			return 1
 		}
 	}
 	return 0
@@ -215,7 +216,7 @@ func runScheduleInstall(args []string, stdout, stderr io.Writer) int {
 		"使い方: braindex schedule install [-config braindex.json] [-job 名前] [-dry-run]",
 		"  設定 schedule.jobs のジョブを OS のスケジューラに登録する。再実行しても二重にならない。",
 		"  hub と braindex の絶対パスを埋め込むので、hub や braindex を移したら登録し直す。",
-		"  終了コード: 0 登録した / 1 フラグ・設定の誤り / 2 スケジューラ側が失敗した",
+		"  終了コード: 0 登録した / 1 フラグ・設定の誤り、またはスケジューラ側が失敗した",
 	})
 	if code, ok := parseScheduleArgs(fs, args, "install", stderr); !ok {
 		return code
@@ -257,7 +258,7 @@ func runScheduleUninstall(args []string, stdout, stderr io.Writer) int {
 		"使い方: braindex schedule uninstall [-config braindex.json] [-job 名前] [-dry-run]",
 		"  この hub の登録を消す。-job でジョブを 1 本だけ消す。",
 		"  crontab では # BEGIN braindex <hub> のブロックだけを触り、他の行は残す。",
-		"  終了コード: 0 消した / 1 フラグ・設定の誤り / 2 スケジューラ側が失敗した",
+		"  終了コード: 0 消した / 1 フラグ・設定の誤り、またはスケジューラ側が失敗した",
 	})
 	if code, ok := parseScheduleArgs(fs, args, "uninstall", stderr); !ok {
 		return code

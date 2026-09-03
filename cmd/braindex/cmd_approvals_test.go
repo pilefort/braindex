@@ -82,8 +82,8 @@ func TestApprovalsServe_EmptyAndWarnings(t *testing.T) {
 	so.Reset()
 	se.Reset()
 	code := dispatch([]string{"approvals", "serve", "-file", ap, "-no-open", "-timeout", "0.2", "-dir", filepath.Join(dir, "tmp")}, &so, &se)
-	if code != 2 {
-		t.Errorf("時間切れ: code=%d\n%s", code, se.String())
+	if code != 3 {
+		t.Errorf("時間切れは 3(2 は警告つき完了なので使わない): code=%d\n%s", code, se.String())
 	}
 	mustContain(t, "stderr", se.String(), "warning: [1] 欠けた項目: なぜ今決めるか が未記載", "選択肢 が 1 つ以下", "回答なし")
 }
@@ -189,8 +189,8 @@ func TestApprovalsServe_RoundTrip(t *testing.T) {
 
 	// 未反映の回答があると note を出す(2 回目は時間切れで終わる)
 	se.Reset()
-	if code := dispatch([]string{"approvals", "serve", "-file", ap, "-no-open", "-dir", tmp, "-timeout", "0.2"}, &so, &se); code != 2 {
-		t.Errorf("2 回目: code=%d", code)
+	if code := dispatch([]string{"approvals", "serve", "-file", ap, "-no-open", "-dir", tmp, "-timeout", "0.2"}, &so, &se); code != 3 {
+		t.Errorf("2 回目(時間切れ): code=%d", code)
 	}
 	mustContain(t, "stderr", se.String(), "note: 未反映の回答がある(このまま回答すると上書きする)")
 }

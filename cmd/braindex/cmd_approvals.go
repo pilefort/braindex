@@ -108,7 +108,8 @@ func printApprovalWarnings(d approvals.Doc, stderr io.Writer) int {
 }
 
 // runApprovalsServe は braindex approvals serve を実行する。
-// 終了コード: 0 回答を受け取った / 1 失敗 / 2 時間切れ(回答なし)。
+// 終了コード: 0 回答を受け取った / 1 失敗 / 3 時間切れ(回答なし)。
+// 2 は使わない(リポの規約で 2 は「警告つき完了」。時間切れは完了していない)。
 func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("braindex approvals serve", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -125,7 +126,7 @@ func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "使い方: braindex approvals serve [-file work/APPROVALS.md] [-timeout 秒] [-no-open] [-apply] [-decisions docs/decisions.md] [-dir <置き場>]")
 		fmt.Fprintln(stderr, "  判断待ちをフォームにして 127.0.0.1 の空きポートで配信し、既定ブラウザで開く。「決定を送信」を 1 回受けたら")
 		fmt.Fprintln(stderr, "  回答を <置き場>/approvals-<id>.reply.json に書いて終わる(常駐しない)。反映は braindex approvals apply(-apply で続けて行う)。")
-		fmt.Fprintln(stderr, "  終了コード: 0 回答あり / 1 失敗 / 2 時間切れ(-apply のときは反映の失敗も 1)")
+		fmt.Fprintln(stderr, "  終了コード: 0 回答あり / 1 失敗 / 3 時間切れ(-apply のときは反映の失敗も 1)")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
 		fs.PrintDefaults()
@@ -186,8 +187,8 @@ func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 	})
 	if err != nil {
 		if errors.Is(err, approvals.ErrTimeout) {
-			fmt.Fprintf(stderr, "braindex approvals serve: %g 秒待っても回答なし(終了コード 2)\n", timeoutSec)
-			return 2
+			fmt.Fprintf(stderr, "braindex approvals serve: %g 秒待っても回答なし(終了コード 3)\n", timeoutSec)
+			return 3
 		}
 		return fail(err)
 	}
