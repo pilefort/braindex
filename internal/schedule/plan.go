@@ -3,6 +3,7 @@ package schedule
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // Command は OS のスケジューラへ渡す 1 回の起動。このパッケージは組み立てるだけで、実行はしない。
@@ -27,6 +28,10 @@ func (c Command) Display() string {
 }
 
 // maxTR は schtasks /TR に渡せる文字数の上限。超えると schtasks が黙って切るので、こちらでエラーにする。
+// 数えるのは**文字数**(ルーン数)で、バイト数ではない。バイト数で数えると
+// C:\Users\山田\... のような日本語を含むパスの利用者が、実際は収まる行を弾かれる
+// (2026-09-03 実測: 同じ行が 264 バイト / 228 文字)。
+// 厳密には Windows のコマンドラインは UTF-16 コード単位で数えるが、BMP 内の文字ではルーン数と一致する。
 const maxTR = 261
 
 // IsWindows は goos が Windows かを返す(呼び出し側は runtime.GOOS を渡す)。
@@ -80,9 +85,9 @@ func windowsRun(hub, exe string, j Job) (string, error) {
 		b.WriteString(q)
 	}
 	run := b.String()
-	if len(run) > maxTR {
+	if n := utf8.RuneCountInString(run); n > maxTR {
 		return "", fmt.Errorf("ジョブ %s: 実行行が %d 文字で schtasks の上限 %d を超える(hub か braindex の置き場を短いパスに移す): %s",
-			j.Name, len(run), maxTR, run)
+			j.Name, n, maxTR, run)
 	}
 	return run, nil
 }

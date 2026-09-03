@@ -3,6 +3,7 @@ package schedule
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 const (
@@ -81,7 +82,7 @@ func TestInstallPlan_Windows_引数を引用する(t *testing.T) {
 
 // schtasks の /TR は 261 文字まで。黙って切られると別のコマンドが走るので、こちらでエラーにする。
 func TestInstallPlan_Windows_実行行が長すぎる(t *testing.T) {
-	long := `C:\Users\u\` + strings.Repeat("あ", 200)
+	long := `C:\Users\u\` + strings.Repeat("a", 300) // ASCII で余裕を持って超える(単位に依らず落ちる入力)
 	_, err := InstallPlan("windows", long, winExe, []Job{jobReview}, "")
 	if err == nil {
 		t.Fatal("上限を超えたらエラーにする")
@@ -240,5 +241,57 @@ func assertCommands(t *testing.T, got, want []Command) {
 			strings.Join(got[i].Args, "\x00") != strings.Join(want[i].Args, "\x00") {
 			t.Errorf("コマンド %d:\n got=%+v\nwant=%+v", i, got[i], want[i])
 		}
+	}
+}
+
+// trOf は Windows の install 計画から /TR の実行行を取り出す。
+func trOf(t *testing.T, hub string) (string, error) {
+	t.Helper()
+	cmds, err := InstallPlan("windows", hub, winExe, []Job{jobReview}, "")
+	if err != nil {
+		return "", err
+	}
+	for _, c := range cmds {
+		for i, a := range c.Args {
+			if a == "/TR" && i+1 < len(c.Args) {
+				return c.Args[i+1], nil
+			}
+		}
+	}
+	t.Fatalf("/TR が無い: %+v", cmds)
+	return "", nil
+}
+
+// 実行行の長さは**文字数**で数える。バイト数で数えると、日本語を含むパスの利用者が、
+// 実際は上限に収まる行を「超える」と誤って拒否される(2026-09-03: 264 バイト / 228 文字の実例で発覚)。
+func TestInstallPlan_Windows_実行行の長さは文字数で数える(t *testing.T) {
+	const base = `C:\h`
+	s, err := trOf(t, base)
+	if err != nil {
+		t.Fatalf("短い hub なら通る: %v", err)
+	}
+	n := utf8.RuneCountInString(s)
+	if n >= maxTR {
+		t.Fatalf("前提が崩れている(短い hub で既に上限): %d", n)
+	}
+	pad := maxTR - n
+
+	// 境界: ちょうど maxTR は通し、1 文字超えたら弾く。
+	if _, err := trOf(t, base+strings.Repeat("a", pad)); err != nil {
+		t.Errorf("ちょうど %d 文字は通す: %v", maxTR, err)
+	}
+	if _, err := trOf(t, base+strings.Repeat("a", pad+1)); err == nil {
+		t.Errorf("%d 文字は弾く", maxTR+1)
+	}
+
+	// 単位の取り違えの検出: 同じ文字数を日本語(1 文字 3 バイト)にすると、
+	// バイト数で数えている実装ではここで落ちる(文字数は maxTR ちょうどで、収まっている)。
+	jp := base + strings.Repeat("あ", pad)
+	got, err := trOf(t, jp)
+	if err != nil {
+		t.Fatalf("文字数は %d で収まっているのに弾いた(バイト数で数えている): %v", maxTR, err)
+	}
+	if c, b := utf8.RuneCountInString(got), len(got); c != maxTR || b <= maxTR {
+		t.Errorf("この入力は「文字数は上限ちょうど・バイト数は超過」であるべき: 文字=%d バイト=%d", c, b)
 	}
 }
