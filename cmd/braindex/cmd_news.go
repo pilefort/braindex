@@ -67,7 +67,8 @@ type newsFetchOptions struct {
 
 // runNewsFetch は braindex news fetch を実行する。
 //
-// 終了コード: 0 成功 / 1 失敗(全フィードの取得失敗を含む。何も書かない) / 2 警告つきで完了(一部のフィードが取得できなかった)。
+// 終了コード: 0 成功 / 1 失敗(全フィードの取得失敗を含む。何も書かない) /
+// 2 警告つきで完了(一部のフィードが取得できなかった・採点の出典(索引・セッションの置き場)が無かった)。
 func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	var o newsFetchOptions
 	fs := flag.NewFlagSet("braindex news fetch", flag.ContinueOnError)
