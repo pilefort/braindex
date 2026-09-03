@@ -10,9 +10,10 @@ type Command struct {
 	Name  string   // 実行ファイル(schtasks / crontab)
 	Args  []string // 引数
 	Stdin string   // 空でなければ標準入力に流す(crontab -)
+	Env   []string // 空でなければ "KEY=VALUE" を実行環境に足す(出力の文言を固定するとき用)
 }
 
-// Display は print と -dry-run で見せる 1 行。標準入力に流す内容は別に見せるので、ここには入れない。
+// Display は print と -dry-run で見せる 1 行。標準入力に流す内容と Env は入れない(実行するコマンドの見た目を変えないため)。
 func (c Command) Display() string {
 	parts := make([]string, 0, len(c.Args)+1)
 	parts = append(parts, c.Name)
@@ -207,7 +208,20 @@ func QueryTask(hub, name string) Command {
 	return Command{Name: "schtasks", Args: []string{"/Query", "/TN", TaskName(hub, name)}}
 }
 
-// ReadCrontab は現在の crontab を読むコマンドを返す(crontab が無い利用者では失敗するので、失敗は空として扱う)。
+// ReadCrontab は現在の crontab を読むコマンドを返す。
+// crontab を一度も書いていない利用者では終了コード 1 になり、その判別は出力の文言でしかできないので、
+// LC_ALL=C を付けて文言を英語に固定する(判別は IsNoCrontab)。
 func ReadCrontab() Command {
-	return Command{Name: "crontab", Args: []string{"-l"}}
+	return Command{Name: "crontab", Args: []string{"-l"}, Env: []string{"LC_ALL=C"}}
+}
+
+// IsNoCrontab は crontab -l の失敗が「その利用者の crontab がまだ無い」ことかを、出力の文言で判別する。
+// macOS(BSD cron)は "crontab: no crontab for <user>"、Linux(cronie / vixie-cron)は "no crontab for <user>" で、
+// どちらも "no crontab" を含む。ReadCrontab が LC_ALL=C を付けるので、環境の言語設定では変わらない。
+//
+// この判別を捨てて「失敗は全部 crontab が空」と畳むと、読めなかっただけの回に書き戻し(crontab -)が走り、
+// 利用者の crontab を全消しする。逆に「失敗は全部エラー」にすると、crontab がまだ無い利用者が install できない。
+// 文言の違う cron 実装(未確認: busybox)ではエラー側に倒れるだけで、全消しにはならない。
+func IsNoCrontab(output string) bool {
+	return strings.Contains(strings.ToLower(output), "no crontab")
 }

@@ -182,3 +182,37 @@ func TestMerge_改行の正規化(t *testing.T) {
 		t.Errorf("末尾の改行は 1 つ: %q", got)
 	}
 }
+
+// crontab -l の失敗が「まだ crontab が無い」ことかを、出力の文言だけで見分ける。
+// 権限などの失敗まで「無い」と読むと、書き戻しで利用者の crontab を全消しする(決定 2026-09-03 A')。
+func TestIsNoCrontab(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"crontab: no crontab for someone", true},                           // macOS(BSD cron)・2026-09-03 実測
+		{"no crontab for someone", true},                                    // Linux(cronie / vixie-cron)
+		{"crontab: you are not authorized to use cron", false},              // 権限
+		{"crontab: can't open your crontab file: Permission denied", false}, // 読めない
+		{"", false}, // 文言なし(実行ファイルが無いなど)
+	}
+	for _, c := range cases {
+		if got := IsNoCrontab(c.in); got != c.want {
+			t.Errorf("IsNoCrontab(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+// 判別を出力の文言でするので、言語設定で文言が変わらないよう LC_ALL=C を付けて実行する。
+func TestReadCrontab_文言を英語に固定する(t *testing.T) {
+	c := ReadCrontab()
+	if c.Name != "crontab" || len(c.Args) != 1 || c.Args[0] != "-l" {
+		t.Fatalf("crontab -l を返す: got=%+v", c)
+	}
+	for _, e := range c.Env {
+		if e == "LC_ALL=C" {
+			return
+		}
+	}
+	t.Errorf("LC_ALL=C が無い: Env=%v", c.Env)
+}
