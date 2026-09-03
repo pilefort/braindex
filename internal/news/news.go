@@ -50,7 +50,12 @@ func (s Settings) WithDefaults() Settings {
 		s.SeenDays = DefaultSeenDays
 	}
 	if s.CapPerLayer == nil {
-		s.CapPerLayer = DefaultCapPerLayer
+		// 複製を持たせる(そのまま指すと、返した Settings への書き込みが既定の表を汚す)
+		m := make(map[string]int, len(DefaultCapPerLayer))
+		for k, v := range DefaultCapPerLayer {
+			m[k] = v
+		}
+		s.CapPerLayer = m
 	}
 	return s
 }
