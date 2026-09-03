@@ -91,8 +91,6 @@ var (
 	reReason = regexp.MustCompile(`理由|なぜ|ため|から|背景|根拠|ので|によって|狙い|目的`)
 	// 根拠行(行頭の「根拠:」。太字・全角コロン可)
 	reEvidenceLine = regexp.MustCompile(`(?m)^\s*(?:\*\*)?根拠(?:\*\*)?\s*[:：]`)
-	// 記録日・採用日を持つブロックを決定とみなす
-	reRecordDate = regexp.MustCompile(`(?:記録日|採用日)\s*[:：]\s*\d{4}[-/]\d{1,2}[-/]\d{1,2}`)
 	// 明示的な未検証フラグ
 	reUncertaintyTag = regexp.MustCompile(`推測|未確認|要確認|要出典`)
 	// 未定義用語の抽出源: 鉤括弧の語 / [[wiki-link]] / 英大文字始まりの語
@@ -226,7 +224,8 @@ type block struct {
 	body string
 }
 
-// decisionBlocks は ## 見出しでブロックに分け、決定らしいもの(decisions.md 内の全ブロック / 記録日・採用日を持つブロック)を返す。
+// decisionBlocks は ## 見出しでブロックに分け、決定らしいもの(decisions.md 内の全ブロック / 「記録日」「採用日」の語を持つブロック)を返す。
+// 語の有無だけで見るのは、日付を書き損ねた決定こそ検査したいため(日付の形を条件にすると素通りする)。
 func decisionBlocks(lines []string, path string) []block {
 	isDecisions := strings.HasSuffix(strings.ReplaceAll(path, "\\", "/"), "decisions.md")
 	var blocks []block
@@ -252,7 +251,7 @@ func decisionBlocks(lines []string, path string) []block {
 	flush()
 	var out []block
 	for _, b := range blocks {
-		if isDecisions || reRecordDate.MatchString(b.body) {
+		if isDecisions || strings.Contains(b.body, "記録日") || strings.Contains(b.body, "採用日") {
 			out = append(out, b)
 		}
 	}

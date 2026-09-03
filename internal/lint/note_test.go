@@ -75,6 +75,7 @@ func TestCheckNote_Table(t *testing.T) {
 		{"本文の矢印リンクだけでは根拠行の代わりにならない", "## 決定\n記録日: 2026-09-01\n理由: 実測(→ docs/notes/x.md)で速かったため。\n", []string{KindMissingEvidence}, nil},
 		{"古い記録日でも根拠行は必須(遡及規則は持ち込まない)", "## 決定\n記録日: 2026-08-05\n実測(→ docs/notes/x.md)で速かったため。\n", []string{KindMissingEvidence}, nil},
 		{"記録日の無いブロックは決定でない", "2026-08-12\n## 見出し\n本文。\n", nil, []string{KindMissingWhy, KindMissingEvidence}},
+		{"記録日が日付で書かれていない決定も見る", "2026-08-12\n## 決定\n記録日: 不明(記録なし)\nこうする。\n", []string{KindMissingWhy, KindMissingEvidence}, nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
