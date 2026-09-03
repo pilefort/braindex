@@ -57,7 +57,7 @@ func Words(text string) []string {
 			for j < len(runes) && isKatakana(runes[j]) {
 				j++
 			}
-			w := strings.Trim(string(runes[i:j]), "ー・")
+			w := strings.Trim(string(runes[i:j]), "ー")
 			if n := utf8.RuneCountInString(w); n >= minKana && n <= maxKanaLn {
 				add(w)
 			}
@@ -78,7 +78,7 @@ func Words(text string) []string {
 	return out
 }
 
-// isKatakana は全角カタカナと長音・中黒。
+// isKatakana は全角カタカナと長音。中黒(U+30FB)は含めない(語の区切りとして扱う)。
 func isKatakana(r rune) bool {
 	// 中黒(U+30FB)はカタカナのコードブロックに入るが、語の区切りとして扱う(決定 2026-09-03)。
 	// 除かないと「ファイル・フォルダ」が 1 語として残り、「ファイル」「フォルダ」が
