@@ -20,7 +20,10 @@ func TestApprovalsApply_RoundTrip(t *testing.T) {
 	tmp := filepath.Join(dir, "tmp")
 	writeFile(t, ap, sampleApprovals)
 	writeFile(t, dec, "# 設計判断\n")
-	p, _ := approvals.Resolve(ap, tmp)
+	p, err := approvals.Resolve(ap, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// 回答が無ければ何もしない
 	var so, se bytes.Buffer
