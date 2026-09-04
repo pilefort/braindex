@@ -35,7 +35,7 @@ func runScope(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&catalog, "catalog", "", "索引(catalog.md)のパス(既定: 設定ファイルと同じディレクトリの index/catalog.md)")
 	fs.StringVar(&topic, "topic", "", "タイトル・要旨・パスにこの語を含む行だけ(大小無視)")
 	fs.StringVar(&repo, "repo", "", "この見出し(リポ名)の行だけ")
-	fs.StringVar(&dir, "dir", "", "索引を使わず、このディレクトリ配下の *.md を列挙する(archive と . で始まるディレクトリの配下は索引と同じく除く)")
+	fs.StringVar(&dir, "dir", "", "索引を使わず、このディレクトリ配下の *.md を列挙する(archive と . で始まるディレクトリの配下は除く)")
 	fs.BoolVar(&full, "full", false, "全件")
 	fs.IntVar(&size, "size", scope.DefaultChunkSize, "chunk あたりの件数")
 	fs.BoolVar(&asJSON, "json", false, "JSON で出す(mode・n_entries・chunks)")

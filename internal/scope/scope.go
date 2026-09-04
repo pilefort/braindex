@@ -66,8 +66,10 @@ func fromRender(r render.Entry) Entry {
 // EnumerateDir は dir 配下の *.md(再帰・パス昇順)を Entry にする。タイトルと日付は索引と同じ規則で本文から取る。
 // リポ名は dir の名前、種別は "dir"、パスは渡された dir と結合した形(/ 区切り)。呼び出し元のカレントからそのまま開ける。
 //
-// 走査規則は索引に揃える: archive セグメントとドットで始まるディレクトリは降りない(退避したノートと .git 配下を対象にしない)。
+// 走査規則: archive セグメントとドットで始まるディレクトリは降りない(退避したノートと .git 配下を対象にしない)。
 // ただし起点の dir 自身には掛けない。掛けると archive やドットディレクトリを直接渡したときに全件消えるため。
+// archive の除外は索引(scan.collectNotes)と同じ。ドットの除外はそれより広い——索引がドットを見るのは
+// root 直下のリポ選びだけなので、docs/notes/.drafts/ のような置き場の中の隠しディレクトリは索引には載る(2026-09-04 実測)。
 func EnumerateDir(dir string) ([]Entry, error) {
 	fi, err := os.Stat(dir)
 	if err != nil {
