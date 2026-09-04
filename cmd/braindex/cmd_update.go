@@ -1,0 +1,132 @@
+package main
+
+import (
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"path/filepath"
+
+	"github.com/pilefort/braindex/internal/template"
+)
+
+func init() {
+	register(&command{
+		name:    "update",
+		summary: "hub を今の braindex に追いつかせる(雛形の追従＋索引の再生成)。編集したファイルは上書きせず .new を隣に置く",
+		run:     runUpdate,
+	})
+}
+
+// runUpdate は braindex update [-repo] [-dry-run] [-force] [dir] を実行する。
+//
+// init が「まだ無いものを足す」のに対し、update は「既にあるものを今の版にする」。CLI に機能を足しても、
+// 既に立ち上がっている hub には雛形・スキル・設定の改良が届かないため(init は既存ファイルを上書きしない)。
+//
+// 判定は台帳(.braindex/template.json)のハッシュで行う。配った版のままなら黙って今の版にし、利用者が
+// 編集していれば現物を残して隣に .new を置く。台帳が無い hub は、既存ファイルを全部「編集済み」として扱う。
+//
+// 終了コード: 0 要対応なし / 1 失敗 / 2 要対応あり(.new を置いた・索引生成が警告を出した)。
+func runUpdate(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("braindex update", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	repo := fs.Bool("repo", false, "hub でなく各プロジェクトのリポ側の骨格を追従する(索引は再生成しない)")
+	dry := fs.Bool("dry-run", false, "何も書かず、何が変わるかだけを出す")
+	force := fs.Bool("force", false, "利用者が編集したファイルも今の版で上書きする(.new を置かない)")
+	fs.Usage = func() {
+		fmt.Fprintln(stderr, "使い方: braindex update [-repo] [-dry-run] [-force] [dir]")
+		fmt.Fprintln(stderr, "  dir(既定: カレントディレクトリ)の雛形由来ファイルを、今の braindex の版に追いつかせ、")
+		fmt.Fprintln(stderr, "  続けて索引を再生成する。利用者が編集したファイルは上書きせず、隣に .new を置く。")
+		fmt.Fprintln(stderr, "  終了コード: 0 要対応なし / 1 失敗 / 2 要対応あり(.new を置いた・索引生成が警告)")
+		fmt.Fprintln(stderr)
+		fmt.Fprintln(stderr, "フラグ:")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 1
+	}
+	dir := "."
+	switch fs.NArg() {
+	case 0:
+	case 1:
+		dir = fs.Arg(0)
+	default:
+		fmt.Fprintf(stderr, "braindex update: ディレクトリは 1 つまで(%d 個指定された)\n", fs.NArg())
+		return 1
+	}
+
+	kind := template.KindHub
+	if *repo {
+		kind = template.KindRepo
+	}
+	res, err := template.Update(dir, kind, template.UpdateOptions{Force: *force, DryRun: *dry})
+	// 途中で失敗しても、そこまでの結果は列挙する(書いたものを無言にしない)
+	for _, p := range res.Created {
+		fmt.Fprintln(stdout, "作成:", p)
+	}
+	for _, p := range res.Updated {
+		fmt.Fprintln(stdout, "更新:", p)
+	}
+	for _, c := range res.Conflicts {
+		fmt.Fprintf(stdout, "保持(編集済み): %s → %s に今の版を置いた\n", c.Path, c.New)
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, "braindex update:", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "braindex update: 作成 %d・更新 %d・そのまま %d・編集済み %d(%s)\n",
+		len(res.Created), len(res.Updated), len(res.Unchanged), len(res.Conflicts), dir)
+	if *dry {
+		fmt.Fprintln(stdout, "  -dry-run のため何も書いていない")
+	}
+	if len(res.Conflicts) > 0 {
+		fmt.Fprintln(stdout, "  .new は今の版。中身を見て、要るところだけ自分のファイルに取り込む(取り込んだら .new は消してよい)")
+	}
+
+	// 設定が変わるときの版差の注意(決定 2026-09-04「未知キーはエラーのまま据え置き、update が警告する」)。
+	// 新しい節の入った braindex.json を古い版の braindex で読むと、未知キーのエラーで全コマンドが止まる。
+	if touchesConfig(res) {
+		fmt.Fprintln(stderr, "braindex update: 警告: braindex.json が変わる。新しい節を取り込むと、"+
+			"古い版の braindex は設定を読めず(未知のキーはエラー)索引生成を含む全コマンドが止まる。"+
+			"他のマシンの braindex も `go install` で先に更新すること")
+	}
+
+	code := 0
+	if len(res.Conflicts) > 0 {
+		code = 2
+	}
+	if kind == template.KindRepo || *dry {
+		return code // 各リポに索引は無い。-dry-run では何も書かない
+	}
+	switch run(options{config: filepath.Join(dir, defaultConfig)}, stdout, stderr) {
+	case 1:
+		return 1
+	case 2:
+		code = 2
+	}
+	return code
+}
+
+// touchesConfig は、この更新で braindex.json が作られる／変わる／.new が置かれるかを返す。
+func touchesConfig(res template.UpdateResult) bool {
+	const cfg = "braindex.json"
+	for _, p := range res.Created {
+		if p == cfg {
+			return true
+		}
+	}
+	for _, p := range res.Updated {
+		if p == cfg {
+			return true
+		}
+	}
+	for _, c := range res.Conflicts {
+		if c.Path == cfg {
+			return true
+		}
+	}
+	return false
+}
