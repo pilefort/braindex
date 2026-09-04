@@ -419,6 +419,10 @@ braindex answer -purge             # 一時置き場の中を今すぐ全部消�
 
 フラグ: `-out` `-no-open` `-dir` `-purge` `-ttl-days`（0 で消さない）。終了コード: 0 成功／1 失敗。
 
+> **`-out` で開く先を指定するときは、パスに `&` を含めない。** Windows では `cmd /c start` に渡す過程でシェルが
+> `&` を区切りとして読み直すので、意図しないものが開く（`^` も消える）。既定の一時置き場のパスには入らない。
+> 既定ブラウザで開くコマンド（`answer`・`news fetch`・`approvals serve`）に共通する。
+
 ### braindex verify — 実在の照合
 
 ノートに書いた GitHub リポ・arXiv 論文・URL・逐語引用を、一次ソースへの GET で照合する（こちらから本文は送らない）。
