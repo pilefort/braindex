@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/pilefort/braindex/internal/template"
@@ -55,6 +56,20 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 		dir = fs.Arg(0)
 	default:
 		fmt.Fprintf(stderr, "braindex update: ディレクトリは 1 つまで(%d 個指定された)\n", fs.NArg())
+		return 1
+	}
+
+	// 無いディレクトリは作らない。update は「既にあるものを今の版にする」担当で、
+	// 何も無いところに骨格を置くのは init の担当。打ち間違えた行き先に hub が丸ごとできると気づきにくい。
+	if fi, err := os.Stat(dir); err != nil {
+		if errors.Is(err, os.ErrNotExist) { // ローカルの fs(FlagSet)が io/fs を隠すので os 側の同じ番兵を使う
+			fmt.Fprintf(stderr, "braindex update: %s が無い。新しく作るなら braindex init\n", dir)
+			return 1
+		}
+		fmt.Fprintln(stderr, "braindex update:", err)
+		return 1
+	} else if !fi.IsDir() {
+		fmt.Fprintf(stderr, "braindex update: %s はディレクトリでない\n", dir)
 		return 1
 	}
 

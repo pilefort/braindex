@@ -139,6 +139,21 @@ func TestUpdate_WarnsOnConfigChange(t *testing.T) {
 	}
 }
 
+// 存在しないディレクトリを渡したら、hub を丸ごと作らずに失敗する(init と混同しないため)。
+func TestUpdate_MissingDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "typo")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"update", dir}, &so, &se); code != 1 {
+		t.Errorf("exit=%d want 1\nstdout=%s", code, so.String())
+	}
+	if _, err := os.Stat(dir); err == nil {
+		t.Error("存在しないディレクトリを作っている")
+	}
+	if !strings.Contains(se.String(), "braindex init") {
+		t.Errorf("init への案内が無い: stderr=%s", se.String())
+	}
+}
+
 // ディレクトリは 1 つまで。
 func TestUpdate_TooManyArgs(t *testing.T) {
 	var so, se bytes.Buffer
