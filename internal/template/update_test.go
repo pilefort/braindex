@@ -95,7 +95,10 @@ func TestUpdate_OverwritesUnmodified(t *testing.T) {
 		t.Error("未編集なのに .new を置いている")
 	}
 	// 台帳は今の版のハッシュに進む
-	led, _, _ := LoadLedger(dst)
+	led, _, err := LoadLedger(dst)
+	if err != nil {
+		t.Fatalf("LoadLedger: %v", err)
+	}
 	if led.Files[f.Path] != Hash(f.Content) {
 		t.Error("台帳が今の版に更新されていない")
 	}
@@ -131,7 +134,10 @@ func TestUpdate_KeepsEditedAndWritesNew(t *testing.T) {
 		t.Error(".new が今の版になっていない")
 	}
 	// 取り込み漏れを隠さないため、台帳は進めない
-	led, _, _ := LoadLedger(dst)
+	led, _, err := LoadLedger(dst)
+	if err != nil {
+		t.Fatalf("LoadLedger: %v", err)
+	}
 	if led.Files[f.Path] != Hash(shipped) {
 		t.Error("編集済みなのに台帳を進めている")
 	}
@@ -180,7 +186,10 @@ func TestUpdate_Unchanged(t *testing.T) {
 	if !has(res.Unchanged, f.Path) {
 		t.Errorf("%s が Unchanged に無い: %v", f.Path, res.Unchanged)
 	}
-	led, _, _ := LoadLedger(dst)
+	led, _, err := LoadLedger(dst)
+	if err != nil {
+		t.Fatalf("LoadLedger: %v", err)
+	}
 	if led.Files[f.Path] != Hash(f.Content) {
 		t.Error("台帳に記録されていない")
 	}

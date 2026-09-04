@@ -14,7 +14,7 @@ import (
 func init() {
 	register(&command{
 		name:    "update",
-		summary: "hub を今の braindex に追いつかせる(雛形の追従＋索引の再生成)。編集したファイルは上書きせず .new を隣に置く",
+		summary: "hub を今の braindex に追いつかせる(雛形の追従＋索引の再生成。-repo は雛形だけ)。編集したファイルは上書きせず .new を隣に置く",
 		run:     runUpdate,
 	})
 }
