@@ -11,7 +11,7 @@
 - [構成](#構成) — 何がどこに置かれ、どう流れるか
 - [何をするか](#何をするか) — 引く・書く・回す・確かめる・振り返る・知る・決める・示す・裏を取る
 - [セットアップ](#セットアップ) — 3 手で hub リポが動く
-- [コマンド](#コマンド) — 索引／`init`／`review`／`lint`／`retro`／`news`／`approvals`／`answer`／`verify`／`scope`／`schedule`
+- [コマンド](#コマンド) — 索引／`init`／`update`／`review`／`lint`／`retro`／`news`／`approvals`／`answer`／`verify`／`scope`／`schedule`
 - [設計](#設計) — 3 原則・やらないこと・LLM wiki 型との対応
 - [開発](#開発) — 状態・リポジトリの地図
 
@@ -143,6 +143,7 @@ braindex schedule uninstall  # この hub の登録を消す
 |---|---|---|
 | `braindex` | `<root>/*/docs/notes/**/*.md`・`<root>/*/docs/decisions.md` | `index/catalog.md` |
 | `braindex init` | 埋め込みのテンプレ | hub の骨格（`-repo` で各リポの骨格） |
+| `braindex update` | 埋め込みのテンプレ・台帳 `.braindex/template.json` | 追いついた雛形（編集済みは `<名前>.new`）と `index/catalog.md` |
 | `braindex review` | 索引の前回コミット・各リポの `git log`・`work/TODO.md` | `work/review/<今日>.md` |
 | `braindex lint` | `<root>/*/work/ISSUE-*.md` | 指摘（stdout）と終了コード |
 | `braindex retro` | Claude Code のセッションログ（`~/.claude/projects/*/*.jsonl`） | 率の表（stdout）・ダイジェスト（一時ディレクトリ） |
@@ -160,6 +161,7 @@ braindex schedule uninstall  # この hub の登録を消す
 |---|---|
 | 読めないものを飛ばした | 索引の生成・`review`・`news fetch`（フィード・選別 JSON・統計）・`news profile` |
 | 指摘・不一致があった | `lint`（指摘あり）・`verify`（NOT FOUND あり）・`approvals status`（記載漏れ・未反映の回答）・`approvals apply`（反映できなかった項目） |
+| 利用者の編集を残して `.new` を置いた | `update` |
 | 突き合わせる相手がいない | `scope`（対象が 2 件未満） |
 
 3 を使うのは 2 つだけ: `retro check`（閾値超え）と `approvals serve`（時間切れ）。
@@ -209,6 +211,39 @@ braindex schedule uninstall  # この hub の登録を消す
 
 hub リポ（引数なし）か各プロジェクトのリポ（`-repo <dir>`）に、フォルダ規約の骨格を展開する。
 既存ファイルは上書きしない。展開されるものは「セットアップ」の節。
+
+### braindex update — 追いつかせる
+
+hub（引数なし）か各プロジェクトのリポ（`-repo <dir>`）の雛形由来ファイルを、いま入っている braindex の版に
+追いつかせ、続けて索引を再生成する。`init` が「まだ無いものを足す」のに対し、`update` は
+「既にあるものを今の版にする」。CLI に機能を足しても、既に立ち上がっている hub には
+スキルや雛形の改良が届かない（`init` は既存ファイルを上書きしないため）ので、その経路になる。
+
+判定は台帳 `.braindex/template.json`（`init` が書く「配った版のハッシュ」）で行う。
+
+| 現物の状態 | update の動き |
+|---|---|
+| 無い | 作る |
+| 配った版のまま（台帳のハッシュと一致） | 今の版にする |
+| 既に今の版と同じ | 何もしない |
+| 利用者が編集した | **現物を残し、隣に `<名前>.new` を置く** |
+
+台帳を持たない hub（`init` を通していない hub や、`init` にこの仕組みが入る前からある hub）は、
+既存ファイルをすべて「編集済み」として扱う。`.new` の中身を見て、要るところだけ自分のファイルに写す。
+`-dry-run` は何も書かずに変更点だけを出し、`-force` は編集済みも上書きする。
+
+取り込みは 2 手になる。**バイナリの更新は `update` の担当ではない**（実行中の自分自身を置き換えられないため）。
+
+```sh
+go install github.com/pilefort/braindex/cmd/braindex@latest   # 1. バイナリ。@latest はタグに解決する
+braindex update                                               # 2. 雛形の追従＋索引の再生成
+```
+
+Windows では実行中の実行ファイルを置換できないので、`go install` は braindex を動かしていないときに実行する。
+
+**`braindex.json` が変わるときは版差に注意する。** 新しい節の入った設定を古い版の braindex で読むと、
+未知のキーはエラーなので索引生成を含む全コマンドが止まる。複数のマシンで使っているなら、
+先にすべてのマシンの braindex を更新する（この場合 `update` は警告を出す）。
 
 ### braindex review — 週次レビューの下書き
 
