@@ -6,6 +6,9 @@
 //
 // Install は既存ファイルを上書きしない。利用者の編集を壊さず、再実行しても安全にするため。
 // 展開先に何が足りないかだけを補い、作った／残したの一覧を返す。
+//
+// 置いたファイルの内容ハッシュは台帳(LedgerPath)に記録する。後から Update が「配った版のまま
+// なのか、利用者が編集したのか」をこれで見分ける(ledger.go・update.go)。
 package template
 
 import (
@@ -78,22 +81,31 @@ func Install(dst string, kind Kind) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	led, _, err := LoadLedger(dst)
+	if err != nil {
+		return Result{}, err
+	}
+	led.Kind = string(kind)
+
 	var res Result
 	for _, f := range files {
 		target := filepath.Join(dst, filepath.FromSlash(f.Path))
 		if _, err := os.Lstat(target); err == nil {
-			res.Skipped = append(res.Skipped, f.Path)
+			res.Skipped = append(res.Skipped, f.Path) // 既存は台帳に記録しない(素性が分からない)
 			continue
 		} else if !errors.Is(err, fs.ErrNotExist) {
-			return res, err // PathError がパスを持つので包み直さない
+			_ = SaveLedger(dst, led) // ここまでに置いたものは記録してから返す
+			return res, err          // PathError がパスを持つので包み直さない
 		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return res, err
-		}
-		if err := os.WriteFile(target, f.Content, 0o644); err != nil {
+		if err := writeFile(target, f.Content); err != nil {
+			_ = SaveLedger(dst, led)
 			return res, err
 		}
 		res.Created = append(res.Created, f.Path)
+		led.Files[f.Path] = Hash(f.Content)
+	}
+	if err := SaveLedger(dst, led); err != nil {
+		return res, err
 	}
 	return res, nil
 }
