@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -87,13 +88,10 @@ func TestEnumerateDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantPaths := []string{"length_no.md", "length_yes.md", "sub/heading.md"}
-	var paths []string
-	for _, e := range es {
-		paths = append(paths, e.Path)
-	}
-	if !reflect.DeepEqual(paths, wantPaths) {
-		t.Errorf("paths=%v want %v", paths, wantPaths)
+	base := filepath.ToSlash(filepath.Join("testdata", "notes"))
+	wantPaths := []string{base + "/length_no.md", base + "/length_yes.md", base + "/sub/heading.md"}
+	if got := paths(es); !reflect.DeepEqual(got, wantPaths) {
+		t.Errorf("paths=%v want %v", got, wantPaths)
 	}
 	if es[0].Title != "長さは読了率に無関係" || es[0].Date != "2026-08-25" || es[0].Repo != "notes" || es[0].Kind != "dir" {
 		t.Errorf("先頭の内容が違う: %+v", es[0])
@@ -101,6 +99,66 @@ func TestEnumerateDir(t *testing.T) {
 	if _, err := EnumerateDir(filepath.Join("testdata", "nope")); err == nil {
 		t.Error("無いディレクトリがエラーにならない")
 	}
+}
+
+// パスは渡したディレクトリと結合した形で出る(受け取った側がそのまま開ける)。索引モードが root 相対なのと揃える。
+func TestEnumerateDir_パスは渡したディレクトリと結合して出る(t *testing.T) {
+	dir := filepath.Join("testdata", "notes", "sub")
+	es, err := EnumerateDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.ToSlash(filepath.Join(dir, "heading.md"))
+	if len(es) != 1 || es[0].Path != want {
+		t.Errorf("path=%v want [%s]", paths(es), want)
+	}
+	// 出力のパスが実在すること(そのまま開けることの検査)
+	if _, err := os.Stat(filepath.FromSlash(es[0].Path)); err != nil {
+		t.Errorf("出力のパスが開けない: %v", err)
+	}
+}
+
+// 列挙は索引と同じ走査規則: archive セグメントとドットで始まるディレクトリは除く。
+func TestEnumerateDir_archiveとドットディレクトリを除く(t *testing.T) {
+	es, err := EnumerateDir(filepath.Join("testdata", "notes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range paths(es) {
+		if strings.Contains(p, "/archive/") {
+			t.Errorf("archive 配下が入っている: %s", p)
+		}
+		if strings.Contains(p, "/.hidden/") {
+			t.Errorf("ドットディレクトリ配下が入っている: %s", p)
+		}
+	}
+	if len(es) != 3 {
+		t.Errorf("件数=%d want 3 (%v)", len(es), paths(es))
+	}
+}
+
+// 起点自身が archive やドットで始まっても、そこには規則を掛けない(掛けると全件消える)。
+func TestEnumerateDir_起点自身には規則を掛けない(t *testing.T) {
+	for _, dir := range []string{
+		filepath.Join("testdata", "notes", "archive"),
+		filepath.Join("testdata", "notes", ".hidden"),
+	} {
+		es, err := EnumerateDir(dir)
+		if err != nil {
+			t.Fatalf("%s: %v", dir, err)
+		}
+		if len(es) != 1 {
+			t.Errorf("%s: 件数=%d want 1 (%v)", dir, len(es), paths(es))
+		}
+	}
+}
+
+func paths(es []Entry) []string {
+	var out []string
+	for _, e := range es {
+		out = append(out, e.Path)
+	}
+	return out
 }
 
 // 再現シナリオ: 矛盾する 2 ノートが同じ走査対象に入る。

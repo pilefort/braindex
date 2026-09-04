@@ -28,7 +28,7 @@ type Entry struct {
 	Kind    string `json:"kind"`
 	Title   string `json:"title"`
 	Summary string `json:"summary"`
-	Path    string `json:"path"` // 索引と同じ root 相対(-dir のときは渡されたディレクトリからの相対)
+	Path    string `json:"path"` // 索引と同じ root 相対(-dir のときは渡されたディレクトリと結合した形。どちらもそのまま開ける)
 }
 
 // Result は Build の結果。
@@ -64,7 +64,10 @@ func fromRender(r render.Entry) Entry {
 }
 
 // EnumerateDir は dir 配下の *.md(再帰・パス昇順)を Entry にする。タイトルと日付は索引と同じ規則で本文から取る。
-// リポ名は dir の名前、種別は "dir"、パスは dir からの相対(/ 区切り)。
+// リポ名は dir の名前、種別は "dir"、パスは渡された dir と結合した形(/ 区切り)。呼び出し元のカレントからそのまま開ける。
+//
+// 走査規則は索引に揃える: archive セグメントとドットで始まるディレクトリは降りない(退避したノートと .git 配下を対象にしない)。
+// ただし起点の dir 自身には掛けない。掛けると archive やドットディレクトリを直接渡したときに全件消えるため。
 func EnumerateDir(dir string) ([]Entry, error) {
 	fi, err := os.Stat(dir)
 	if err != nil {
@@ -79,7 +82,16 @@ func EnumerateDir(dir string) ([]Entry, error) {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+		if d.IsDir() {
+			if p == dir {
+				return nil // 起点自身には除外規則を掛けない
+			}
+			if d.Name() == "archive" || strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir // 索引と同じ規則(archive は退避先・. で始まるのは .git など)
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".md") {
 			return nil
 		}
 		rel, rerr := filepath.Rel(dir, p)
@@ -91,7 +103,7 @@ func EnumerateDir(dir string) ([]Entry, error) {
 			return rerr
 		}
 		m := extract.Extract(d.Name(), content, "dir")
-		out = append(out, Entry{Repo: repo, Date: m.Date, Kind: "dir", Title: m.Title, Summary: m.Summary, Path: filepath.ToSlash(rel)})
+		out = append(out, Entry{Repo: repo, Date: m.Date, Kind: "dir", Title: m.Title, Summary: m.Summary, Path: filepath.ToSlash(filepath.Join(dir, rel))})
 		return nil
 	})
 	if err != nil {

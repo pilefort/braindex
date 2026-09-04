@@ -64,8 +64,32 @@ func TestScope_DirJSON(t *testing.T) {
 	if err := json.Unmarshal(so.Bytes(), &got); err != nil {
 		t.Fatalf("JSON でない: %v\n%s", err, so.String())
 	}
-	if !strings.HasPrefix(got.Mode, "dir:") || got.N != 2 || len(got.Chunks) != 2 || got.Chunks[0][0].Title != "甲" || got.Chunks[0][0].Path != "a.md" || got.Chunks[0][0].Date != "2026-08-01" {
+	wantPath := filepath.ToSlash(filepath.Join(dir, "a.md")) // 渡したディレクトリと結合した形＝そのまま開ける
+	if !strings.HasPrefix(got.Mode, "dir:") || got.N != 2 || len(got.Chunks) != 2 || got.Chunks[0][0].Title != "甲" || got.Chunks[0][0].Path != wantPath || got.Chunks[0][0].Date != "2026-08-01" {
 		t.Errorf("内容が違う: %s", so.String())
+	}
+	if _, err := os.Stat(filepath.FromSlash(got.Chunks[0][0].Path)); err != nil {
+		t.Errorf("出力のパスが開けない: %v", err)
+	}
+}
+
+// -dir の列挙は索引と同じ走査規則: archive セグメントとドットで始まるディレクトリは対象外。
+func TestScope_Dirは索引と同じ走査規則で除外する(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a.md"), "# 甲\n\n記録日: 2026-08-01\n")
+	writeFile(t, filepath.Join(dir, "b.md"), "# 乙\n\n記録日: 2026-08-02\n")
+	writeFile(t, filepath.Join(dir, "archive", "old.md"), "# 退避\n\n記録日: 2026-07-01\n")
+	writeFile(t, filepath.Join(dir, ".hidden", "h.md"), "# 隠し\n\n記録日: 2026-07-02\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"scope", "-dir", dir}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d\n%s%s", code, so.String(), se.String())
+	}
+	out := so.String()
+	if !strings.Contains(out, "対象 2 件") {
+		t.Errorf("件数が違う: %s", out)
+	}
+	if strings.Contains(out, "退避") || strings.Contains(out, "隠し") {
+		t.Errorf("除外されるはずのノートが出ている: %s", out)
 	}
 }
 
