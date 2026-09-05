@@ -1,17 +1,56 @@
 {
   "root": "..",
-  "notes_dirs": ["docs/notes"],
+  "notes_dirs": [
+    "docs/notes"
+  ],
   "extra": [],
-  "review": { "dir": "work/review", "since_days": 14, "stale_todo_weeks": 4, "archive_months": 6 },
-  "retro": { "window_days": 14, "threshold": 0.08, "position_bins": "1-3,4-10,11-30,31-" },
-  "approvals": { "file": "work/APPROVALS.md", "decisions": "docs/decisions.md", "timeout_sec": 0 },
-  "news": { "dir": "news", "feeds": "news/feeds.json", "seen_days": 90, "profile_days": 14,
-            "cap_per_layer": { "daily": 15, "weekly": 25 }, "show_min_score": 2,
-            "llm": "off", "llm_model": "", "llm_timeout_sec": 120 },
+  "review": {
+    "dir": "work/review",
+    "since_days": 14,
+    "stale_todo_weeks": 4,
+    "archive_months": 6
+  },
+  "retro": {
+    "window_days": 14,
+    "threshold": 0.08,
+    "position_bins": "1-3,4-10,11-30,31-"
+  },
+  "approvals": {
+    "file": "work/APPROVALS.md",
+    "decisions": "docs/decisions.md",
+    "timeout_sec": 0
+  },
+  "news": {
+    "dir": "news",
+    "feeds": "news/feeds.json",
+    "seen_days": 90,
+    "profile_days": 14,
+    "cap_per_layer": {
+      "daily": 15,
+      "weekly": 25
+    },
+    "show_min_score": 2,
+    "llm": "off",
+    "llm_model": "",
+    "llm_timeout_sec": 120
+  },
   "schedule": {
     "jobs": [
-      { "name": "review", "args": ["review"], "when": "weekly:mon:09:00" },
-      { "name": "retro", "args": ["retro", "check"], "when": "weekly:mon:09:05" }
+      {
+        "name": "review",
+        "args": [
+          "review"
+        ],
+        "when": "weekly:mon:09:00"
+      },
+      {
+        "name": "retro",
+        "args": [
+          "retro",
+          "check"
+        ],
+        "when": "weekly:mon:09:05"
+      }
     ]
   }
 }

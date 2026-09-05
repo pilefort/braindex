@@ -21,10 +21,13 @@ const (
 )
 
 // Ledger は展開した雛形の記録。Files は雛形からの相対パス("/" 区切り)から内容のハッシュへ。
+// Features は init -add で足した機能(core を除く・名前の昇順)。update はこの分だけ追従する(決定 2026-09-05)。
+// repo の台帳には無い(機能は hub だけの概念)。
 type Ledger struct {
-	Version int               `json:"version"`
-	Kind    string            `json:"kind"`
-	Files   map[string]string `json:"files"`
+	Version  int               `json:"version"`
+	Kind     string            `json:"kind"`
+	Features []string          `json:"features,omitempty"`
+	Files    map[string]string `json:"files"`
 }
 
 // Hash は雛形 1 ファイルの内容ハッシュ(sha256 の 16 進)を返す。
