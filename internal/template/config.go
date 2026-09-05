@@ -38,6 +38,9 @@ func configSections() (map[string]json.RawMessage, error) {
 // (無い機能の定期実行を配らないため)。
 // feats は Resolve で core と依存を足してから使う(all もここで展開される)。
 func BuildConfig(existing []byte, feats []Feature) (out []byte, changed bool, err error) {
+	if err := checkFeatures(feats); err != nil {
+		return nil, false, err
+	}
 	feats, _ = Resolve(feats)
 	cur := map[string]json.RawMessage{}
 	if len(bytes.TrimSpace(existing)) > 0 {
@@ -53,11 +56,7 @@ func BuildConfig(existing []byte, feats []Feature) (out []byte, changed bool, er
 		return nil, false, err
 	}
 	for _, f := range feats {
-		spec, ok := features[f]
-		if !ok {
-			return nil, false, fmt.Errorf("未知の機能 %q", f)
-		}
-		for _, key := range spec.Sections {
+		for _, key := range features[f].Sections {
 			if _, ok := cur[key]; ok {
 				continue
 			}

@@ -94,6 +94,9 @@ func Install(dst string, kind Kind) (Result, error) {
 // braindex.json と .gitignore は既にあっても上書きせず、無い節・行だけ足して Merged に積む
 // (同じ機能を 2 回足しても安全・利用者の編集は残る)。足した機能は台帳の Features に記録する。
 func InstallFeatures(dst string, feats []Feature) (Result, error) {
+	if err := checkFeatures(feats); err != nil {
+		return Result{}, err
+	}
 	feats, _ = Resolve(feats)
 	files, err := FeatureFiles(feats)
 	if err != nil {

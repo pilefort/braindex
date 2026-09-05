@@ -312,3 +312,22 @@ func TestInstallFeatures_MergesIntoEditedConfig(t *testing.T) {
 		t.Errorf("features=%s", got)
 	}
 }
+
+// 対応表に無い機能は、Resolve で黙って落とさず入口でエラーにする(CLI は ParseFeatures で弾くが、
+// ライブラリとして呼ばれたときに core だけ配って成功扱いにしない)。
+func TestUnknownFeature_IsError(t *testing.T) {
+	bogus := []Feature{FeatureRetro, Feature("bogus")}
+	if _, err := FeatureFiles(bogus); err == nil {
+		t.Error("FeatureFiles が未知の機能でエラーにならない")
+	}
+	if _, _, err := BuildConfig(nil, bogus); err == nil {
+		t.Error("BuildConfig が未知の機能でエラーにならない")
+	}
+	dst := t.TempDir()
+	if _, err := InstallFeatures(dst, bogus); err == nil {
+		t.Error("InstallFeatures が未知の機能でエラーにならない")
+	}
+	if _, err := os.Stat(filepath.Join(dst, ConfigPath)); err == nil {
+		t.Error("未知の機能を含む要求で braindex.json を配った")
+	}
+}
