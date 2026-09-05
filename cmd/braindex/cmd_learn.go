@@ -104,18 +104,21 @@ func runLearn(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	dicts, err := learnDictionaries(fc, hubDir)
+	if err := fc.Retro.Validate(); err != nil {
+		return fail(err)
+	}
+	home, _ := os.UserHomeDir()
+	dicts, err := loadRetroDictionaries(fc.Retro.WithDefaults(), hubDir, home)
 	if err != nil {
 		return fail(err)
 	}
-	since, err := profileSince(today, in.Days)
-	if err != nil {
-		return fail(err)
-	}
+	// 窓は interest.Build と同じ(UTC の日付で today-days 〜 today+1)。信号 1・3 と 2 が同じ材料を見るように揃える
+	day, _ := time.Parse("2006-01-02", today)
 	r := learn.Build(learn.Input{
 		Profile:  p,
+		Catalog:  in.Catalog,
 		Sessions: in.Sessions,
-		Window:   retro.Window{Since: since},
+		Window:   retro.Window{Since: day.AddDate(0, 0, -in.Days), Until: day.AddDate(0, 0, 1)},
 		Dicts:    dicts,
 		Options:  learn.Options{Top: o.top},
 	})
@@ -139,29 +142,4 @@ func runLearn(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return 0
-}
-
-// learnDictionaries は訂正辞書を retro と同じ規則で読む: 設定 retro.dictionary があればそれ(無ければ既定の辞書)、
-// retro.dictionary_extra があれば足す。相対パスは hub 基準、~ は展開する。
-func learnDictionaries(fc config.Config, hubDir string) ([]*retro.Dictionary, error) {
-	home, _ := os.UserHomeDir()
-	s := fc.Retro.WithDefaults()
-	var out []*retro.Dictionary
-	if s.Dictionary != "" {
-		d, err := retro.Load(retro.ResolvePath(s.Dictionary, hubDir, home))
-		if err != nil {
-			return nil, fmt.Errorf("設定 retro.dictionary: %w", err)
-		}
-		out = append(out, d)
-	} else {
-		out = append(out, retro.Corrections())
-	}
-	if s.DictionaryExtra != "" {
-		d, err := retro.Load(retro.ResolvePath(s.DictionaryExtra, hubDir, home))
-		if err != nil {
-			return nil, fmt.Errorf("設定 retro.dictionary_extra: %w", err)
-		}
-		out = append(out, d)
-	}
-	return out, nil
 }

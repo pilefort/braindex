@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/pilefort/braindex/internal/interest"
+	"github.com/pilefort/braindex/internal/render"
 	"github.com/pilefort/braindex/internal/retro"
 	"github.com/pilefort/braindex/internal/sessions"
 )
@@ -144,5 +145,68 @@ func TestBuild_全セッションに出る汎用語は除く(t *testing.T) {
 	r = Build(in)
 	if len(r.Unsettled) != 1 || r.Unsettled[0].Word != "kubernetes" {
 		t.Errorf("閾値 0.5 で kubernetes だけ載るはず: %+v", r.Unsettled)
+	}
+}
+
+func TestBuild_窓の外のノートも索引として見る(t *testing.T) {
+	in := fixture()
+	// kubernetes は窓内の索引には無い(idx=0)が、古いノートのタイトルにある → 「ノートに無い」に載せない
+	in.Catalog = []render.Entry{{Date: "2026-07-01", Title: "Kubernetes の Ingress 入門"}}
+	r := Build(in)
+	for _, it := range r.Unsettled {
+		if it.Word == "kubernetes" {
+			t.Errorf("古いノートにある語が載った: %+v", r.Unsettled)
+		}
+	}
+}
+
+func TestBuild_URLの断片は語にしない(t *testing.T) {
+	in := fixture()
+	in.Sessions = append(in.Sessions,
+		sessions.Session{ID: "u1", Turns: []sessions.Turn{human(1, at(3, 9), "https://github.com/someuser/secret-repo/blob/main/x.md を見て"), human(2, at(3, 10), "違う。https://github.com/someuser/secret-repo/pull/1 のほう")}},
+		sessions.Session{ID: "u2", Turns: []sessions.Turn{human(1, at(3, 11), "https://github.com/someuser/secret-repo/issues/2 を読んで"), human(2, at(3, 12), "違う。そっちじゃない https://github.com/someuser/secret-repo/pull/3")}},
+	)
+	r := Build(in)
+	for _, it := range r.Stumbles {
+		if it.Word == "someuser" || it.Word == "secret-repo" || it.Word == "blob" {
+			t.Errorf("URL の断片が語として載った: %+v", r.Stumbles)
+		}
+	}
+}
+
+func TestBuild_短い同文の訂正は定型にしない(t *testing.T) {
+	in := fixture()
+	// 3 セッションで「ingress の設定をして」→「違う」。短い訂正は定型とみなさず、直前の語 ingress が拾われる
+	for i := 0; i < 3; i++ {
+		in.Sessions = append(in.Sessions, sessions.Session{ID: "k" + string(rune('1'+i)), Turns: []sessions.Turn{human(1, at(4, 9), "ingress の設定をして"), human(2, at(4, 10), "違う")}})
+	}
+	r := Build(in)
+	if r.Sources["boilerplate"] != 0 {
+		t.Errorf("短い訂正を定型として除いた: %d", r.Sources["boilerplate"])
+	}
+	found := false
+	for _, it := range r.Stumbles {
+		if it.Word == "ingress" && it.Corrections == 5 {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("ingress が 5 発話で載るはず: %+v", r.Stumbles)
+	}
+}
+
+func TestBuild_辞書に当たった語そのものは除く(t *testing.T) {
+	in := fixture()
+	dict, _ := retro.Parse("test", "ハルシネ\n")
+	in.Dicts = []*retro.Dictionary{dict}
+	in.Sessions = []sessions.Session{
+		{ID: "h1", Turns: []sessions.Turn{human(1, at(3, 9), "Ingress を直して"), human(2, at(3, 10), "それはハルシネーションでは")}},
+		{ID: "h2", Turns: []sessions.Turn{human(1, at(3, 11), "Ingress を見て"), human(2, at(3, 12), "またハルシネーションだ")}},
+	}
+	r := Build(in)
+	for _, it := range r.Stumbles {
+		if it.Word == "ハルシネーション" {
+			t.Errorf("引き金の語が載った: %+v", r.Stumbles)
+		}
 	}
 }

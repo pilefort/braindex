@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/pilefort/braindex/internal/interest"
+	"github.com/pilefort/braindex/internal/render"
 	"github.com/pilefort/braindex/internal/retro"
 	"github.com/pilefort/braindex/internal/sessions"
 )
@@ -26,6 +27,10 @@ type Options struct {
 
 // boilerplatePrefixRunes は定型の判定に使う冒頭の長さ(文字)。空白は 1 つに畳んでから切る。
 const boilerplatePrefixRunes = 120
+
+// boilerplateMinRunes より短い発話は定型の判定にかけない。「違う」「そうじゃない」のような短い同文の訂正は、
+// 何セッションで言われても定型(機械実行・貼り付け)ではなく、むしろ検出したい訂正そのものだから。
+const boilerplateMinRunes = 40
 
 func (o Options) withDefaults() Options {
 	if o.MinSessions <= 0 {
@@ -49,6 +54,7 @@ func (o Options) withDefaults() Options {
 // Input は Build の材料。
 type Input struct {
 	Profile  interest.Profile    // 関心プロファイル(Term.Counts の出典別の数を使う)
+	Catalog  []render.Entry      // 索引の全行。「ノートに無い」は窓に関係なく全行のタイトル・要旨で見る(古いノートに書いた語は除く)
 	Sessions []sessions.Session  // 人間の発話を読む(Window の中だけ)
 	Window   retro.Window        // 訂正を数える窓
 	Dicts    []*retro.Dictionary // 訂正辞書(どれかに当たれば訂正)。空なら retro.Corrections() だけ
@@ -85,13 +91,21 @@ func Build(in Input) Report {
 		r.Sources[k] = in.Profile.Sources[k]
 	}
 
+	// 「ノートに無い」の判定は索引の全行で見る(プロファイルの index は窓内のノートしか数えないため)
+	noted := map[string]bool{}
+	for _, e := range in.Catalog {
+		for _, w := range interest.Words(interest.StripURLs(e.Title + " " + e.Summary)) {
+			noted[w] = true
+		}
+	}
+
 	// 信号 1・3: プロファイルの出典別の数から
 	totalSessions := in.Profile.Sources[interest.SourceSessions]
 	for _, t := range in.Profile.Terms {
 		idx := t.Counts[interest.SourceIndex]
 		ses := int(t.Counts[interest.SourceSessions])
 		keep := int(t.Counts[interest.SourceKeep])
-		if idx > 0 {
+		if idx > 0 || noted[t.Word] {
 			continue
 		}
 		generic := totalSessions > 0 && float64(ses)/float64(totalSessions) > o.MaxSessionRatio
@@ -103,14 +117,28 @@ func Build(in Input) Report {
 		}
 	}
 
-	// 信号 2: 訂正発話と、その直前の人間の発話に出る語
+	// 信号 2: 訂正発話と、その直前の人間の発話に出る語。
+	// 辞書の引き金になった語そのもの(Match.Text とそれを含む語)は学ぶ対象ではないので除く。
 	exclude := map[string]bool{}
+	triggers := []string{}
 	for _, d := range dicts {
 		for _, p := range d.Patterns {
 			for _, w := range interest.Words(p) {
 				exclude[w] = true
+				triggers = append(triggers, w)
 			}
 		}
+	}
+	isTrigger := func(w string) bool {
+		if exclude[w] {
+			return true
+		}
+		for _, t := range triggers {
+			if strings.Contains(w, t) {
+				return true
+			}
+		}
+		return false
 	}
 	type acc struct {
 		corrections int
@@ -123,7 +151,10 @@ func Build(in Input) Report {
 			if !in.Window.Contains(t.Time) {
 				continue
 			}
-			k := prefix(t.Text)
+			k, ok := prefix(t.Text)
+			if !ok {
+				continue
+			}
 			if prefixSessions[k] == nil {
 				prefixSessions[k] = map[string]bool{}
 			}
@@ -138,18 +169,23 @@ func Build(in Input) Report {
 			if !in.Window.Contains(t.Time) || len(retro.Classify(t.Text, dicts...)) == 0 {
 				continue
 			}
-			if len(prefixSessions[prefix(t.Text)]) >= o.BoilerplateSessions {
+			if k, ok := prefix(t.Text); ok && len(prefixSessions[k]) >= o.BoilerplateSessions {
 				boiler++
 				continue
 			}
 			total++
+			for _, m := range retro.Classify(t.Text, dicts...) {
+				for _, w := range interest.Words(m.Text) {
+					exclude[w] = true
+				}
+			}
 			seen := map[string]bool{}
 			ctx := t.Text
 			if i > 0 {
 				ctx += "\n" + turns[i-1].Text
 			}
-			for _, w := range interest.Words(ctx) {
-				if exclude[w] || seen[w] {
+			for _, w := range interest.Words(interest.StripURLs(ctx)) {
+				if isTrigger(w) || seen[w] {
 					continue
 				}
 				seen[w] = true
@@ -181,13 +217,17 @@ func Build(in Input) Report {
 }
 
 // prefix は定型の判定に使う鍵。空白を 1 つに畳み、先頭 boilerplatePrefixRunes 文字で切る。
-func prefix(text string) string {
+// boilerplateMinRunes より短い発話は判定にかけない(ok=false)。
+func prefix(text string) (string, bool) {
 	t := strings.Join(strings.Fields(text), " ")
 	rs := []rune(t)
+	if len(rs) < boilerplateMinRunes {
+		return "", false
+	}
 	if len(rs) > boilerplatePrefixRunes {
 		rs = rs[:boilerplatePrefixRunes]
 	}
-	return string(rs)
+	return string(rs), true
 }
 
 func sortItems(xs []Item, key func(Item) int) {

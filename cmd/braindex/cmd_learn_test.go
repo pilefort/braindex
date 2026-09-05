@@ -57,3 +57,16 @@ func TestLearn_フラグの誤りは1(t *testing.T) {
 		t.Errorf("設定なし: exit=%d\n%s", code, se.String())
 	}
 }
+
+// -date より後の発話は数えない(窓の上限)。testdata の発話は 2026-08 下旬なので、遠い過去の -date では訂正 0
+func TestLearn_窓の上限(t *testing.T) {
+	hub := profileHub(t)
+	var so, se bytes.Buffer
+	dispatch([]string{"learn", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-01-15", "-sessions", retroTestdata, "-json"}, &so, &se)
+	var v struct {
+		Sources map[string]int `json:"sources"`
+	}
+	if err := json.Unmarshal(so.Bytes(), &v); err != nil || v.Sources["corrections"] != 0 {
+		t.Errorf("窓の外の訂正を数えた: err=%v %+v", err, v.Sources)
+	}
+}
