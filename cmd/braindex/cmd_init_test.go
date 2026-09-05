@@ -220,9 +220,9 @@ func TestInit_DefaultIsCoreOnly(t *testing.T) {
 			t.Errorf("段 0 なのに %s がある", p)
 		}
 	}
-	cfg, _ := os.ReadFile(filepath.Join(dir, "braindex.json"))
+	cfg := readFile(t, filepath.Join(dir, "braindex.json"))
 	for _, bad := range []string{`"review"`, `"retro"`, `"news"`, `"schedule"`, `"approvals"`} {
-		if strings.Contains(string(cfg), bad) {
+		if strings.Contains(cfg, bad) {
 			t.Errorf("段 0 の braindex.json に %s がある:\n%s", bad, cfg)
 		}
 	}
@@ -244,7 +244,7 @@ func TestInit_DefaultIsCoreOnly(t *testing.T) {
 	if code := dispatch([]string{"-config", filepath.Join(dir, "braindex.json"), "-date", "2026-01-03"}, &so, &se); code != 0 {
 		t.Fatalf("generate exit=%d\n%s", code, se.String())
 	}
-	if b, _ := os.ReadFile(filepath.Join(dir, "index", "catalog.md")); !strings.Contains(string(b), "repo-a/docs/notes/a.md") {
+	if b := readFile(t, filepath.Join(dir, "index", "catalog.md")); !strings.Contains(b, "repo-a/docs/notes/a.md") {
 		t.Errorf("段 0 の設定で索引が作られていない:\n%s", b)
 	}
 }
@@ -290,7 +290,7 @@ func TestInit_AddStepwise(t *testing.T) {
 			t.Errorf("段階的な hub に %s が無い", f.Path)
 			continue
 		}
-		b, _ := os.ReadFile(filepath.Join(once, filepath.FromSlash(f.Path)))
+		b := []byte(readFile(t, filepath.Join(once, filepath.FromSlash(f.Path))))
 		if !bytes.Equal(a, b) {
 			t.Errorf("%s が段階的と一括で違う:\n--- 段階的\n%s\n--- 一括\n%s", f.Path, a, b)
 		}
