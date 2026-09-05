@@ -70,8 +70,9 @@ func TestBuildConfig_Sections(t *testing.T) {
 		{[]Feature{FeatureReview}, "root,notes_dirs,extra,review,approvals", ""},
 		{[]Feature{FeatureSchedule}, "root,notes_dirs,extra,schedule", ""},
 		{[]Feature{FeatureSchedule, FeatureRetro}, "root,notes_dirs,extra,retro,schedule", "retro"},
+		{[]Feature{FeatureSchedule, FeatureNews}, "root,notes_dirs,extra,news,schedule", "news"},
 		{[]Feature{FeatureSchedule, FeatureReview}, "root,notes_dirs,extra,review,approvals,schedule", "review"},
-		{[]Feature{FeatureAll}, "root,notes_dirs,extra,review,retro,approvals,news,schedule", "review,retro"},
+		{[]Feature{FeatureAll}, "root,notes_dirs,extra,review,retro,approvals,news,schedule", "review,retro,news"},
 	}
 	dir := t.TempDir()
 	for i, c := range cases {
@@ -177,5 +178,68 @@ func TestBuildConfig_InvalidExisting(t *testing.T) {
 	// null は json.Unmarshal がエラーにせず map を nil にする。panic せずエラーにする
 	if _, _, err := BuildConfig([]byte(`null`), nil); err == nil {
 		t.Error("null でエラーにならない")
+	}
+}
+
+// schedule 節が先にある hub に後から機能を足すと、その job だけを末尾に足す。既にある job は触らず、
+// 利用者が消した job(以前からある機能の分)は足し直さない(入口の設計 2026-09-05「review は足したら加える」)。
+func TestBuildConfig_AddsJobsForFeaturesAddedLater(t *testing.T) {
+	jobs := func(b []byte) string {
+		var c struct {
+			Schedule struct {
+				Jobs []struct {
+					Name string
+					When string
+				} `json:"jobs"`
+			} `json:"schedule"`
+		}
+		if err := json.Unmarshal(b, &c); err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, j := range c.Schedule.Jobs {
+			names = append(names, j.Name+"@"+j.When)
+		}
+		return strings.Join(names, ",")
+	}
+	// schedule だけ → review を足す → job review が入る
+	b, _, err := BuildConfig(nil, []Feature{FeatureSchedule})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := jobs(b); got != "" {
+		t.Errorf("schedule だけ: jobs=%s want 空", got)
+	}
+	b2, changed, err := BuildConfig(b, []Feature{FeatureReview})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed || jobs(b2) != "review@weekly:mon:09:00" {
+		t.Errorf("review を後から: changed=%v jobs=%s", changed, jobs(b2))
+	}
+	// 利用者が job の時刻を変え、retro の job を消した設定に news を足す → 時刻はそのまま・retro は戻らない・news だけ足す
+	edited := []byte(`{"root": "..", "retro": {}, "schedule": {"jobs": [{"name": "review", "args": ["review"], "when": "weekly:fri:18:00"}]}}`)
+	b3, changed, err := BuildConfig(edited, []Feature{FeatureNews})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed || jobs(b3) != "review@weekly:fri:18:00,news@daily:07:30" {
+		t.Errorf("news を後から: changed=%v jobs=%s", changed, jobs(b3))
+	}
+	// 同じ機能をもう一度足しても変わらない
+	b4, changed, err := BuildConfig(b3, []Feature{FeatureNews})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed || !bytes.Equal(b3, b4) {
+		t.Errorf("2 回目: changed=%v equal=%v", changed, bytes.Equal(b3, b4))
+	}
+	// jobs が無い・null の schedule 節でも壊れない
+	b5, _, err := BuildConfig([]byte(`{"retro": {}, "schedule": {"jobs": null}}`), []Feature{FeatureSchedule, FeatureRetro})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobs(b5) != "" { // retro も schedule も以前からあるので足し直さない
+		t.Errorf("以前からある機能の job を足し直した: %s", jobs(b5))
 	}
 }

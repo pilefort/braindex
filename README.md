@@ -10,7 +10,7 @@
 
 **誰のための道具か**: Claude Code を日常的に使い、リポジトリごとに知識や wiki を整えている人。索引が中核で、その周りに
 週次レビュー・振り返り（セッションの訂正率）・ニュース・学習の提案がある。**Claude Code 専用**で、他のコーディングエージェントの
-ログには対応しない。索引だけから始めて、必要な機能を 1 つずつ足せる（[段階的な取り込み](#段階的な取り込み)）。
+ログには対応しない。既定は利用者の置き場を変えない機能だけで、規約への乗り換えは選んだときだけ（[段階的な取り込み](#段階的な取り込み)）。
 
 コマンドごとの詳しい説明は [`manual/`](manual/README.md) にある。
 
@@ -24,10 +24,10 @@ parent/                            ← braindex.json の root（既定 ".."＝hu
 ├── hub/                           ← 索引を置くリポ。braindex はここで実行する
 │   ├── braindex.json              設定（root / notes_dirs / extra ＋ 足した機能の節）
 │   ├── index/catalog.md           ■ 索引：1 ノート 1 行（日付・種別・タイトル・要旨・パス）
+│   ├── news/                      ニュースの置き場（既定で入る）
+│   ├── .claude/skills/            判断を埋めるスキル（retro は既定。他は機能ごとに入る）
 │   ├── docs/  work/               hub 自身のノートと作業状態（-add conventions）
-│   ├── work/review/               週次レビューの下書き（-add review）
-│   ├── news/                      ニュースの置き場（-add news）
-│   └── .claude/skills/            判断を埋めるスキル（機能ごとに入る）
+│   └── work/review/               週次レビューの下書き（-add review）
 ├── alpha/                         ← 各プロジェクトのリポ。知識の正本はこちら
 │   ├── docs/notes/**/*.md         索引に載る
 │   ├── docs/decisions.md          索引に載る（末尾の H2 見出し 3 件）
@@ -40,36 +40,38 @@ parent/                            ← braindex.json の root（既定 ".."＝hu
 ```sh
 go install github.com/pilefort/braindex/cmd/braindex@latest   # Go 1.26 以降。依存は標準ライブラリのみ
 mkdir hub && cd hub
-braindex init                                  # 段 0: README・CLAUDE.md・braindex.json(索引の設定だけ)
+braindex init                                  # 索引の設定(README・CLAUDE.md・braindex.json)と retro・news・schedule
 git init && git add . && git commit -m "hub"   # 索引の diff を「前回からの差分」にするため git 管理下に置く
 braindex                                       # 索引 index/catalog.md を生成
 ```
 
-これで段 0（索引だけ）が動く。**索引はコミットする**（git 管理下にないと `braindex review` の増減が常に 0 件になる）。
+これで索引が動く。**索引はコミットする**（git 管理下にないと `braindex review` の増減が常に 0 件になる）。
 hub の外のリポで作業するセッションからも引かせる設定は [manual/init-update.md](manual/init-update.md#エージェントに横断検索させる)。
 
 ## 段階的な取り込み
 
-全部を一度に入れる必要はない。各段は前の段の設定を捨てずに足せる（2026-09-05・設計の条件。`docs/decisions.md`）。機能は `braindex init -add <機能>` で 1 つずつ足す（一覧は `braindex init -list`）。
-既存ファイルは上書きせず、`braindex.json` には無い節だけ足すので、何度実行しても安全。`braindex update` は足した機能の分だけ追従する。
+全部を一度に入れる必要はない。入口は「何を約束するか」で 3 つに分かれ、前の入口の設定を捨てずに足せる（2026-09-05・`docs/decisions.md`）。
 
-```sh
-braindex init -add conventions   # 段 1: docs/・work/ の規約とスキル record-lint・contradiction-scan・research-distill
-braindex init -add review        # 段 2: 週次レビュー(スキル braindex-review・work/review/・設定 review 節)。conventions を自動で足す
-braindex init -add retro         # 段 3: 振り返り(スキル retro・設定 retro 節)
-braindex init -add news          # 段 4: ニュース(news/feeds.example.json・設定 news 節・.gitignore の行)
-braindex init -add schedule      #        定期実行(設定 schedule 節。jobs は足してある review・retro の分)
-braindex init -add all           # 全部を一度に(従来の一括セットアップ)
+```text
+braindex init（既定）                約束: 利用者の置き場と書き方を変えない
+├── core        索引（braindex.json の root・notes_dirs・extra／README・CLAUDE.md・.gitattributes）
+├── retro       振り返り（設定 retro 節・skill retro）              材料: Claude Code のセッションログ（既定の置き場）
+├── news        ニュース（設定 news 節・news/feeds.example.json）   材料: フィードの URL（news/feeds.json に書く）
+└── schedule    定期実行（設定 schedule 節。jobs は retro check・news fetch。review は足したら加わる）
+braindex init -add conventions      約束: 新しく書くノートを規約に寄せる（docs/・work/・skill 3 本・approvals 節）← 唯一の「乗り換え」
+└── braindex init -add review       週次レビュー（skill braindex-review・work/review/・review 節と job）。conventions を自動で含める
+braindex init -add all              フル: 上の全部。learn（学習の提案）は配布物が無いので、材料が揃えば `braindex learn` で動く
 ```
 
-| 段 | 入れるもの | 要るもの | 得られること |
-|---|---|---|---|
-| 0. 索引だけ | `braindex init` → `braindex.json`（`root` と、今の置き場を指す `notes_dirs`／`extra`） | 既存のノート。規約の乗り換えは不要 | `index/catalog.md`。別のリポで済ませたことを grep で引ける |
-| 1. 規約と hub | `braindex init -add conventions` → `docs/`・`work/`・skill 3 本 | 新しくノートを書く場所を規約に寄せる意思 | 決定 3 段・ISSUE・TODO の形が揃い、`lint` が使える |
-| 2. 週次レビュー | `braindex init -add review`（＋`-add schedule`）→ `braindex review` | 段 1 と hub の git 管理 | 前回からの差分・放置 TODO・アーカイブ候補の下書き |
-| 3. 振り返り | `braindex init -add retro` → `braindex retro` | Claude Code のセッションログ（既定の置き場） | 訂正率の常時計測と、閾値超えのレトロスペクティブ |
-| 4. ニュース | `braindex init -add news` → `braindex news`（`news/feeds.json`。`news suggest` と束で始められる） | フィードの URL | 関心で選んだダイジェストと、残す／不要の選別 |
-| 5. 学習の提案 | `braindex learn`（配布物は無いので `-add` は要らない） | 段 0・3・4 の材料（索引・セッション・keep） | いま学ぶと良さそうなことの候補 |
+機能は `-add <機能>` で個別にも足せる（一覧は `braindex init -list`）。既存ファイルは上書きせず、`braindex.json` には無い節と
+その機能の job だけ足すので、何度実行しても安全。`braindex update` は足した機能の分だけ追従する。
+
+| 入口 | 要るもの | 得られること |
+|---|---|---|
+| `braindex init` | 既存のノート。規約の乗り換えは不要 | `index/catalog.md`（別のリポで済ませたことを grep で引ける）・訂正率の常時計測・関心で選んだニュースの選別・その定期実行 |
+| `-add conventions` | 新しくノートを書く場所を規約に寄せる意思 | 決定 3 段・ISSUE・TODO の形が揃い、`lint`・`approvals` が使える |
+| `-add review` | conventions と hub の git 管理 | 前回からの差分・放置 TODO・アーカイブ候補の下書き（週次） |
+| `-add all` | 上の全部 | skill 5 本と全節。`braindex learn` の材料も揃う |
 
 各リポの骨格（`docs/notes/`・`docs/decisions.md`・`work/`）は `braindex init -repo <リポ>` で置く。
 
@@ -78,7 +80,7 @@ braindex init -add all           # 全部を一度に(従来の一括セット�
 | コマンド | 入力 | 出力 | 手引き |
 |---|---|---|---|
 | `braindex` | `<root>/*/docs/notes/**/*.md`・`<root>/*/docs/decisions.md` | `index/catalog.md` | [generate](manual/generate.md) |
-| `braindex init` | 埋め込みのテンプレ | hub の骨格（既定は段 0。`-add <機能>` で足す・`-repo` で各リポの骨格） | [init-update](manual/init-update.md) |
+| `braindex init` | 埋め込みのテンプレ | hub の骨格（既定は索引＋retro・news・schedule。`-add <機能>` で足す・`-repo` で各リポの骨格） | [init-update](manual/init-update.md) |
 | `braindex update` | 埋め込みのテンプレ・台帳 `.braindex/template.json` | 足した機能の分だけ追いついた雛形（編集済みは `<名前>.new`）と `index/catalog.md` | [init-update](manual/init-update.md) |
 | `braindex review` | 索引の前回コミット・各リポの `git log`・`work/TODO.md` | `work/review/<今日>.md` | [review-lint](manual/review-lint.md) |
 | `braindex lint` | `<root>/*/work/ISSUE-*.md`・ノート | 指摘（stdout）と終了コード | [review-lint](manual/review-lint.md) |

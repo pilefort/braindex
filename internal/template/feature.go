@@ -32,6 +32,24 @@ type featureSpec struct {
 // featureOrder は表示と解決の順(段の順)。all は含めない。
 var featureOrder = []Feature{FeatureCore, FeatureConventions, FeatureReview, FeatureRetro, FeatureNews, FeatureSchedule}
 
+// DefaultFeatures は braindex init が既定で足す機能(core は常に入る)。利用者の置き場・書き方を変えないもの
+// (設定の節と skill を足すだけ)は既定に入れ、規約への乗り換えを迫る conventions とそれに依存する review だけを
+// -add で選ばせる(入口の設計 2026-09-05。同日の「段 0 だけ」を上書き)。
+var DefaultFeatures = []Feature{FeatureRetro, FeatureNews, FeatureSchedule}
+
+// IsDefault は f が既定で入る機能か(core を含む)。
+func IsDefault(f Feature) bool {
+	if f == FeatureCore {
+		return true
+	}
+	for _, d := range DefaultFeatures {
+		if d == f {
+			return true
+		}
+	}
+	return false
+}
+
 // features は機能と配布物の対応表。templates/hub/ の全ファイルがどれか 1 つに属する(テストで確かめる)。
 //
 // SPEC からのずれ(2026-09-05・実装時の判断): 設定の extra は「索引の設定」なので core に、approvals 節は
@@ -76,7 +94,7 @@ var features = map[Feature]featureSpec{
 		Sections: []string{"news"},
 	},
 	FeatureSchedule: {
-		Summary:  "定期実行(braindex schedule): 設定の schedule 節(jobs は review・retro のうち足した分)",
+		Summary:  "定期実行(braindex schedule): 設定の schedule 節(jobs は review・retro・news のうち足した分)",
 		Sections: []string{"schedule"},
 	},
 }

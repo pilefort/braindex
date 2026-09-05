@@ -50,6 +50,17 @@
           "check"
         ],
         "when": "weekly:mon:09:05"
+      },
+      {
+        "name": "news",
+        "args": [
+          "news",
+          "fetch",
+          "-layer",
+          "daily",
+          "-no-open"
+        ],
+        "when": "daily:07:30"
       }
     ]
   }

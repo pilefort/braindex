@@ -2,8 +2,8 @@
 
 複数リポを横断する索引（`index/catalog.md`）と、どのリポにも属さない知識を置くリポジトリ。
 `braindex init` で展開した。ここにあるファイルは自由に書き換えてよい（`braindex init` は既存ファイルを上書きしない）。
-この README は全機能の説明を持つ。まだ足していない機能（`docs/`・`work/`・スキル・`braindex.json` の節が無いもの）は
-`braindex init -add <機能>` で足す（一覧は `braindex init -list`。`conventions`・`review`・`retro`・`news`・`schedule`・`all`）。
+この README は全機能の説明を持つ。`braindex init` が既定で入れるのは索引・振り返り（retro）・ニュース（news）・定期実行（schedule）で、
+規約（`docs/`・`work/`・スキル 3 本）と週次レビューは `braindex init -add conventions`／`-add review` で足す（一覧は `braindex init -list`）。
 
 ## 日々の使い方
 

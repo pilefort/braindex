@@ -29,14 +29,15 @@ func TestHub_ScheduleSection(t *testing.T) {
 	if err := json.Unmarshal([]byte(byPath["braindex.json"]), &cfg); err != nil {
 		t.Fatalf("braindex.json を読めない: %v", err)
 	}
-	if len(cfg.Schedule.Jobs) != 2 {
-		t.Fatalf("schedule.jobs は 2 本(review・retro): %+v", cfg.Schedule.Jobs)
+	if len(cfg.Schedule.Jobs) != 3 {
+		t.Fatalf("schedule.jobs は 3 本(review・retro・news): %+v", cfg.Schedule.Jobs)
 	}
 	want := []struct {
 		name, when, args string
 	}{
 		{"review", "weekly:mon:09:00", "review"},
 		{"retro", "weekly:mon:09:05", "retro check"},
+		{"news", "daily:07:30", "news fetch -layer daily -no-open"},
 	}
 	for i, w := range want {
 		got := cfg.Schedule.Jobs[i]
