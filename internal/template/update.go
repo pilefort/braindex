@@ -21,8 +21,9 @@ type UpdateOptions struct {
 
 // Conflict は、利用者が編集していたので置き換えなかったファイル。
 type Conflict struct {
-	Path string // 利用者のファイル(そのまま残す)
-	New  string // 隣に置いた今の版
+	Path    string   // 利用者のファイル(そのまま残す)
+	New     string   // 隣に置いた今の版
+	Missing []string // braindex.json だけ: 雛形の節の中にあって利用者の設定に無いキー(節.キー)
 }
 
 // UpdateResult は Update の結果。パスは展開先からの相対・"/" 区切り・雛形の順(昇順)。
@@ -34,6 +35,7 @@ type UpdateResult struct {
 	Conflicts []Conflict // 編集されていたので .new を置いた
 	Features  []Feature  // 追従の対象にした機能(core を含む・段の順)
 	Inferred  bool       // 台帳に機能の記録が無く、存在するファイルから推定した
+	Unknown   []string   // 台帳にあるが今の版が知らない機能名(新しい版の braindex が記録したもの。追従していない)
 }
 
 // Update は dst の雛形由来ファイルを今の版に追いつかせる。Install が「無いものを足す」のに対し、
@@ -42,8 +44,10 @@ type UpdateResult struct {
 //
 // hub は台帳の Features に記録された機能の分だけ追従する(足していない機能のファイルは作らない・決定 2026-09-05)。
 // 記録の無い hub(機能を持たない旧版で作ったもの)は、存在するファイルと設定の節から機能を推定し、台帳に書く。
-// braindex.json と .gitignore は、編集済みでも無い節・行だけは足す(Merged)。braindex.json はそのうえで
-// 今の版と違えば .new も置く(節の中の新しいキーは足さないため)。.gitignore は行が揃えば .new を置かない。
+// braindex.json と .gitignore は、編集済みでも(-force でも)無い節・行だけを足す(Merged)。利用者の root や行は消さない。
+// braindex.json は、節を足しても雛形の節の中にしか無いキーが残るときだけ .new を置く(節の中の新しいキーは足さないため。
+// 決定 2026-09-05)。揃っていれば「そのまま」に数え、台帳は据え置く(利用者の版のハッシュを記録すると、次回「配った版のまま」と
+// 誤認して上書きしてしまう)。.gitignore は行が揃えば同じく「そのまま」。
 //
 // 台帳は、実際に置いた(または既に一致していた)ファイルについてだけ進める。.new を置いたファイルは
 // 記録を据え置く——次に走らせたときも「編集済み」と分かり、取り込み漏れを隠さないため。
@@ -64,6 +68,7 @@ func Update(dst string, kind Kind, opt UpdateOptions) (UpdateResult, error) {
 		res.Features, res.Inferred = feats, inferred
 		// 台帳に足すだけで、書いてあった名前は消さない。今の版が知らない機能(新しい版の braindex が
 		// 記録したもの)は追従の対象にならないが、記録を落とすと新しい版に戻したときに消えたままになる
+		res.Unknown = unknownFeatureNames(led.Features)
 		led.Features = mergeNames(led.Features, FeatureNames(feats))
 		if files, err = FeatureFiles(feats); err != nil {
 			return UpdateResult{}, err
@@ -85,11 +90,9 @@ func Update(dst string, kind Kind, opt UpdateOptions) (UpdateResult, error) {
 			res.Unchanged = append(res.Unchanged, f.Path)
 			led.Files[f.Path] = Hash(f.Content)
 			continue
-		case opt.Force || led.Files[f.Path] == Hash(cur):
-			// 配った版のまま(または -force)。黙って今の版にする
-			res.Updated = append(res.Updated, f.Path)
-		default:
-			// 利用者が編集している。braindex.json・.gitignore は無い節・行を足し、それ以外は現物を残して今の版を隣に置く
+		case (f.Path == ConfigPath || f.Path == GitignorePath) && !(led.Files[f.Path] == Hash(cur)):
+			// 利用者が編集した設定と .gitignore は、-force でも無い節・行を足すだけ(root や利用者の行を消さない)。
+			// 足しても雛形の節の中にしか無いキーが残るときだけ .new を置く
 			merged, changed, merr := mergeExisting(f.Path, cur, res.Features)
 			if merr != nil {
 				return res, merr // BuildConfig がパスを添える。ここで包むと "braindex.json: braindex.json: ..." になる
@@ -103,8 +106,33 @@ func Update(dst string, kind Kind, opt UpdateOptions) (UpdateResult, error) {
 				}
 			}
 			if f.Path == GitignorePath {
-				continue // 行が揃えば十分。雛形そのものを .new で置いても読む価値が無い
+				if !changed {
+					res.Unchanged = append(res.Unchanged, f.Path) // 行は揃っている。台帳は据え置く
+				}
+				continue
 			}
+			missing, merr := MissingConfigKeys(merged, res.Features)
+			if merr != nil {
+				return res, merr
+			}
+			if len(missing) == 0 {
+				if !changed {
+					res.Unchanged = append(res.Unchanged, f.Path) // 節も中のキーも揃っている。台帳は据え置く
+				}
+				continue
+			}
+			res.Conflicts = append(res.Conflicts, Conflict{Path: f.Path, New: f.Path + NewSuffix, Missing: missing})
+			if !opt.DryRun {
+				if err := writeFile(target+NewSuffix, f.Content); err != nil {
+					return res, err
+				}
+			}
+			continue
+		case opt.Force || led.Files[f.Path] == Hash(cur):
+			// 配った版のまま(または -force)。黙って今の版にする
+			res.Updated = append(res.Updated, f.Path)
+		default:
+			// 利用者が編集している。現物を残して今の版を隣に置く
 			res.Conflicts = append(res.Conflicts, Conflict{Path: f.Path, New: f.Path + NewSuffix})
 			if !opt.DryRun {
 				if err := writeFile(target+NewSuffix, f.Content); err != nil {
@@ -126,6 +154,17 @@ func Update(dst string, kind Kind, opt UpdateOptions) (UpdateResult, error) {
 		}
 	}
 	return res, nil
+}
+
+// unknownFeatureNames は台帳の機能名のうち、今の版の対応表に無いものを返す(昇順)。
+func unknownFeatureNames(names []string) []string {
+	var out []string
+	for _, n := range names {
+		if _, ok := features[Feature(n)]; !ok {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // hubFeatures は hub が持つ機能を返す。台帳に記録があればそれ(core と依存を足す)。無ければ推定する。
