@@ -120,7 +120,7 @@ func TestRenderForm_LFOnly(t *testing.T) {
 
 func TestRenderForm_Empty(t *testing.T) {
 	h := string(RenderForm(Parse(load(t, "empty.md")), sampleMeta()))
-	if !strings.Contains(h, "承認待ちはありません") || strings.Contains(h, `id="send"`) {
+	if !strings.Contains(h, "承認待ちはありません") || strings.Contains(h, `id="send"`) || strings.Contains(h, `id="done"`) {
 		t.Errorf("空のとき: %s", h)
 	}
 }
@@ -138,5 +138,23 @@ func TestInline(t *testing.T) {
 		if got := inline(in); got != want {
 			t.Errorf("inline(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// 送信が通ったことは、フォームを薄くするのではなく畳んで完了パネルで示す。
+// 薄くなる変化のほうが目立ち、完了文(13.5px)は視線の外に出て「白くなっただけ」に見える(会話 2026-09-05)。
+func TestRenderForm_SentPanel(t *testing.T) {
+	h := string(RenderForm(Parse(load(t, "two-items.md")), sampleMeta()))
+	for _, want := range []string{
+		`<div id="done" class="done"`, "受け取りました", "このタブは閉じてください",
+		`id="dn"`, `id="dpath"`, // 件数と保存先を JS が埋める
+		"body.sent .doc", "document.title=",
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("HTML に %q が無い", want)
+		}
+	}
+	if strings.Contains(h, "body.sent .ap{opacity") {
+		t.Error("成功時にフォームを薄くする CSS が残っている")
 	}
 }

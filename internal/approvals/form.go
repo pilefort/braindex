@@ -45,6 +45,13 @@ func RenderForm(d Doc, m Meta) []byte {
 	if len(d.Items) > 0 {
 		b.WriteString("<div class=\"bar\"><button id=\"send\">決定を送信</button><span id=\"st\" class=\"st\"></span>" +
 			"<textarea id=\"fb\" hidden></textarea></div>\n")
+		// 送信が通ったときはフォームを畳んでこれだけを出す(JS が body に .sent を付ける)。
+		// 件数と保存先は空のまま置き、応答を受けてから埋める。
+		b.WriteString("<div id=\"done\" class=\"done\" role=\"status\" aria-live=\"polite\">" +
+			"<div class=\"mark\">✓</div>" +
+			"<h2>受け取りました（<span id=\"dn\">0</span> 件）</h2>" +
+			"<p>このタブは閉じてください。決定は <code>docs/decisions.md</code> に記録されます。</p>" +
+			"<p class=\"path\" id=\"dpath\" hidden></p></div>\n")
 	}
 	fmt.Fprintf(&b, "<script id=\"meta\" type=\"application/json\">%s</script>\n<script>%s</script>\n</body>\n</html>\n", metaJSON, formJS)
 	return []byte(b.String())
@@ -194,7 +201,14 @@ a{color:var(--accent)}
 .bar button:disabled{opacity:.6;cursor:default}
 .st{font-size:13.5px;color:var(--sub)}.st.ok{color:#2b8a3e;font-weight:700}.st.err{color:#c92a2a}
 #fb{width:100%;min-height:90px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
-body.sent .ap{opacity:.5;pointer-events:none}
+.done{display:none}
+body.sent{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+body.sent .doc,body.sent .bar{display:none}
+body.sent .done{display:block;width:100%;max-width:620px;text-align:center;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:48px 32px}
+.done .mark{width:78px;height:78px;line-height:78px;margin:0 auto 14px;border-radius:50%;background:#2b8a3e;color:#fff;font-size:44px}
+.done h2{font-size:26px;margin:0 0 .3em}
+.done p{color:var(--sub);font-size:14.5px;margin:.4em 0}
+.done .path{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--mut);word-break:break-all;margin-top:1.4em}
 .empty{color:var(--sub);padding:30px 0}
 `
 
@@ -222,8 +236,13 @@ const formJS = `
       .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
       .then(function(x){
         if(!x.ok)throw new Error(x.j&&x.j.error||'error');
-        st.textContent='送信しました（'+items.length+' 件）。このタブは閉じて構いません。'; st.className='st ok';
+        st.textContent=''; st.className='st';
+        document.getElementById('dn').textContent=items.length;
+        var dp=document.getElementById('dpath');
+        if(x.j&&x.j.saved){dp.textContent='回答の保存先: '+x.j.saved; dp.hidden=false;}
+        document.title='✓ 送信済み — '+document.title;
         document.body.classList.add('sent');
+        window.scrollTo(0,0);
       })
       .catch(function(e){
         btn.disabled=false;

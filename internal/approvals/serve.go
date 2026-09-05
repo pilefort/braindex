@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -32,11 +35,12 @@ var ErrTimeout = errors.New("回答が来ないまま時間切れ")
 
 // ServeOptions は Serve の設定。
 type ServeOptions struct {
-	HTML    []byte           // 配信するフォーム(RenderForm の出力)
-	Nonce   string           // フォームに埋めた nonce。POST の nonce と一致しなければ拒否
-	Timeout time.Duration    // 0 なら無期限
-	OnReady func(url string) // 待ち受けを始めたら呼ぶ(ブラウザを開く・URL を表示する)
-	Now     func() time.Time // 受信時刻(テスト用。nil なら time.Now)
+	HTML      []byte           // 配信するフォーム(RenderForm の出力)
+	Nonce     string           // フォームに埋めた nonce。POST の nonce と一致しなければ拒否
+	Timeout   time.Duration    // 0 なら無期限
+	ReplyPath string           // 回答 JSON の書き込み先。空なら書かない(呼び出し側が Serve の戻り値を書く)
+	OnReady   func(url string) // 待ち受けを始めたら呼ぶ(ブラウザを開く・URL を表示する)
+	Now       func() time.Time // 受信時刻(テスト用。nil なら time.Now)
 }
 
 // Serve は 127.0.0.1 の空きポートでフォームを配信し、正しい回答の POST を 1 回受けたら止まる。
@@ -58,6 +62,8 @@ func Serve(ctx context.Context, o ServeOptions) (Reply, error) {
 		now = time.Now
 	}
 	got := make(chan Reply, 1)
+	var mu sync.Mutex // 回答は 1 回だけ。保存 → 受理の間に 2 本目の POST を割り込ませない
+	answered := false
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -95,14 +101,28 @@ func Serve(ctx context.Context, o ServeOptions) (Reply, error) {
 			fail(http.StatusBadRequest, "項目が無い")
 			return
 		}
-		rep.ReceivedAt = now().Format(time.RFC3339)
-		select {
-		case got <- rep:
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"ok":true}` + "\n"))
-		default:
+		// 応答を返す前にディスクへ書く。後から呼び出し側が書くと、書けなかったときに
+		// ブラウザは完了表示のまま回答だけ消える(押した本人には成功に見える)。
+		mu.Lock()
+		defer mu.Unlock()
+		if answered {
 			fail(http.StatusConflict, "既に回答を受け取った")
+			return
 		}
+		rep.ReceivedAt = now().Format(time.RFC3339)
+		saved := ""
+		if o.ReplyPath != "" {
+			if err := WriteReply(o.ReplyPath, rep); err != nil {
+				// 受け取ったことにしない(押し直せる・フォームは JSON 貼り付けの失敗表示に落ちる)
+				fail(http.StatusInternalServerError, "回答を保存できない: "+err.Error())
+				return
+			}
+			saved = o.ReplyPath
+		}
+		answered = true
+		got <- rep
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]any{"ok": true, "saved": saved})
 	})
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	serveErr := make(chan error, 1)
@@ -135,6 +155,18 @@ func Serve(ctx context.Context, o ServeOptions) (Reply, error) {
 		srv.Close()
 	}
 	return rep, result
+}
+
+// WriteReply は回答を JSON で書く(置き場が無ければ作る)。Serve が応答を返す前に呼ぶ。
+func WriteReply(path string, rep Reply) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	b, err := json.MarshalIndent(rep, "", " ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(b, '\n'), 0o644)
 }
 
 // NewNonce は起動ごとの照合値(16 バイトの乱数を 16 進 32 文字)を返す。
