@@ -28,7 +28,7 @@ parent/                            ← braindex.json の root（既定 ".."＝hu
 │   ├── work/review/2026-09-03.md  週次レビューの下書き（braindex review）
 │   ├── news/                      ニュースの置き場（ダイジェストと、選別で残した見出し keep/）
 │   ├── docs/  work/               hub 自身のノートと作業状態（work/APPROVALS.md は判断待ち）
-│   └── .claude/skills/            判断を埋めるスキル（braindex-review・retro・record-lint・contradiction-scan）
+│   └── .claude/skills/            判断を埋めるスキル（braindex-review・retro・record-lint・contradiction-scan・research-distill）
 ├── alpha/                         ← 各プロジェクトのリポ。知識の正本はこちら
 │   ├── docs/notes/**/*.md         索引に載る（種別 notes・notes/<サブディレクトリ>）
 │   ├── docs/decisions.md          索引に載る（種別 decisions・末尾の H2 見出し 3 件）
@@ -107,7 +107,7 @@ braindex init -repo ../alpha   # docs/notes/{common,project}/・docs/decisions.m
 ```
 
 hub 側・リポ側とも既存ファイルは上書きしないので、再実行しても安全。
-hub には判断を埋めるスキルも入る（`.claude/skills/` の `braindex-review`・`retro`・`record-lint`・`contradiction-scan`）。
+hub には判断を埋めるスキルも入る（`.claude/skills/` の `braindex-review`・`retro`・`record-lint`・`contradiction-scan`・`research-distill`）。
 
 ### 4. エージェントに横断検索させる
 
