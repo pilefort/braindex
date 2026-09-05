@@ -62,7 +62,9 @@ func Update(dst string, kind Kind, opt UpdateOptions) (UpdateResult, error) {
 			return UpdateResult{}, err
 		}
 		res.Features, res.Inferred = feats, inferred
-		led.Features = FeatureNames(feats)
+		// 台帳に足すだけで、書いてあった名前は消さない。今の版が知らない機能(新しい版の braindex が
+		// 記録したもの)は追従の対象にならないが、記録を落とすと新しい版に戻したときに消えたままになる
+		led.Features = mergeNames(led.Features, FeatureNames(feats))
 		if files, err = FeatureFiles(feats); err != nil {
 			return UpdateResult{}, err
 		}
@@ -90,7 +92,7 @@ func Update(dst string, kind Kind, opt UpdateOptions) (UpdateResult, error) {
 			// 利用者が編集している。braindex.json・.gitignore は無い節・行を足し、それ以外は現物を残して今の版を隣に置く
 			merged, changed, merr := mergeExisting(f.Path, cur, res.Features)
 			if merr != nil {
-				return res, fmt.Errorf("%s: %w", f.Path, merr)
+				return res, merr // BuildConfig がパスを添える。ここで包むと "braindex.json: braindex.json: ..." になる
 			}
 			if changed {
 				res.Merged = append(res.Merged, f.Path)
