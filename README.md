@@ -180,7 +180,7 @@ braindex schedule uninstall  # この hub の登録を消す
 | `extra` | 規約外の置き場を個別に足す配列。各要素は `repo`（root 直下のリポ名）・`path`（リポ内の起点。`"."` はリポ直下。`notes_dirs` と同じくリポ内の相対パスに限る）・`recursive`（`true` でサブディレクトリも走査）・`kind`（種別ラベル）・`exclude`（グロブの配列。`/` を含むパターンは起点からの相対パス、含まなければファイル名とディレクトリ名に掛ける。ディレクトリに当たるとその枝ごと除外する。大文字小文字は区別する） |
 | `review` | 週次レビュー（`braindex review`）の節。`dir`（記録の置き場。既定 `work/review`）・`since_days`（前回の記録が無いときに遡る日数。既定 14）・`stale_todo_weeks`（TODO を放置とみなす週数。既定 4）・`archive_months`（何か月より前をアーカイブ候補にするか。既定 6）。省略可 |
 | `retro` | 振り返り（`braindex retro`）の節。`sessions_dir`・`window_days`・`threshold`・`position_bins`・`dictionary`・`dictionary_extra`。省略可。詳細は `braindex retro` の節 |
-| `news` | ニュースサジェスト（`braindex news`）の節。`dir`（既定 `news`）・`feeds`（既定 `news/feeds.json`）・`seen_days`（既定 90）・`cap_per_layer`（層ごとの 1 フィード表示上限。既定 `{"daily": 15, "weekly": 25}`・表に無い層は 20）・`profile_days`（既定 14）・`sessions_dir`・`show_min_score`（主要表示にする関心度の下限。0〜3・既定 2。**0 は全件を主要表示**で、省略とは別の意味）。省略可。範囲外の値は設定の誤りとしてエラー |
+| `news` | ニュースサジェスト（`braindex news`）の節。`dir`（既定 `news`）・`feeds`（既定 `news/feeds.json`）・`seen_days`（既定 90）・`cap_per_layer`（層ごとの 1 フィード表示上限。既定 `{"daily": 15, "weekly": 25}`・表に無い層は 20）・`profile_days`（既定 14）・`sessions_dir`・`show_min_score`（主要表示にする関心度の下限。0〜3・既定 2。**0 は全件を主要表示**で、省略とは別の意味）・`llm`（`off`（既定）か `claude-cli`。LLM 補助の opt-in）・`llm_model`・`llm_timeout_sec`（既定 120）。省略可。範囲外の値は設定の誤りとしてエラー |
 | `schedule` | 定期実行（`braindex schedule`）の節。`jobs` の配列（`name`・`args`・`when`）。省略すると既定の 2 本。省略可 |
 
 未知のキーはエラーにする（`notes_dir` のような打ち間違いを無言で無視しない）。
@@ -380,7 +380,8 @@ keep は次のプロファイルの出典になるので、**選別がそのま�
 外へ出る通信はフィードの GET だけで、セッション内容もノート本文も送らない。HTML は外部の JS・CSS を参照しない。
 フィードのリンクは `http(s)` のものだけを載せる（それ以外は題名だけを出し、選別 JSON にも `news/keep/` にも入れない）。
 
-フィード一覧 `news/feeds.json` は自分で作る（`braindex init` は展開しない）。`name` と `url` を持つオブジェクトの配列:
+フィード一覧 `news/feeds.json` は自分で作る。`braindex init` は隣に `news/feeds.example.json`（公開フィード 3 件の見本）を置くので、
+コピーして書き換える。`name` と `url` を持つオブジェクトの配列:
 
 ```json
 [
@@ -401,11 +402,42 @@ keep は次のプロファイルの出典になるので、**選別がそのま�
 | `news profile` | 関心プロファイル（語 → 重み・出典）を表示する。出典は索引の直近差分・直近のセッション内容・`news/keep/`・`news/interests.md` |
 | `news apply` | 選別 JSON を `<news.dir>/inbox` と `-inbox`（既定 `~/Downloads`）から取り込む |
 
-重みは出典ごとに最大を 1 に正規化した値の和で、決定論。LLM は使わない。窓の起点は `retro` と同じローカルの 0 時。
-主なフラグ: `-config` `-date YYYY-MM-DD` `-layer` `-out` `-stdout` `-no-open` `-no-score`（採点せず全件を主要表示）
+重みは出典ごとに最大を 1 に正規化した値の和で、決定論。既定では LLM を使わない。窓の起点は `retro` と同じローカルの 0 時。
+主なフラグ: `-config` `-date YYYY-MM-DD` `-layer` `-out` `-stdout` `-no-open` `-no-score`（採点せず全件を主要表示）`-no-llm`
 `-replay`（既読を無視して再生成し、既読も更新しない）`-days` `-top` `-json` `-sessions` `-inbox`。
-終了コード: 0 成功／1 失敗（**同じ日の出力先が既にある**・全フィードの取得失敗。何も書かない）／2 警告つきで完了（一部のフィードが取れなかった・採点の出典が無かった・選別や統計を取り込めなかった）。
+終了コード: 0 成功／1 失敗（**同じ日の出力先が既にある**・全フィードの取得失敗。何も書かない）／2 警告つきで完了（一部のフィードが取れなかった・採点の出典が無かった・選別や統計を取り込めなかった・LLM 補助が呼べなかった）。
 同じ日に 2 回動かすと、既にあるダイジェストは上書きせず終了コード 1 で止まる（`braindex review` と同じ。読み直すだけなら `-out` で別名に、捨ててよければ `-stdout` に出す）。
+
+**設定例**（`braindex init` の雛形と同じ。全部省略可で、値は既定）:
+
+```json
+"news": { "dir": "news", "feeds": "news/feeds.json", "seen_days": 90, "profile_days": 14,
+          "cap_per_layer": { "daily": 15, "weekly": 25 }, "show_min_score": 2,
+          "llm": "off", "llm_model": "", "llm_timeout_sec": 120 }
+```
+
+**置き場 `news/`**: `feeds.json`（自分で書く）・`keep/YYYY-MM.md`（残した見出し。蓄積側なので版管理に残す）・`interests.md`（任意の補助）が利用者のもの。
+`digest_*`・`.seen.json`（既読）・`.stats.json`（選別の統計）・`.llm_cache.json`・`.ingested/`（取り込み済みの選別 JSON）は作業ファイルで、
+`braindex init` が配る hub の `.gitignore` が除外する。
+
+**補助ファイル `news/interests.md` の書き方**: 1 行 1 語。空行と `#` 始まりは読まない。行は記事側と同じ語の抽出規則（ラテン文字 3 字以上・カタカナ 2 字以上・漢字 2〜6 字。
+大文字小文字は畳む）を通してから語にするので、**規則で語にならない書き方（`ai`・`go` のような 2 字のラテン文字、記号だけ、長い漢字の複合語）は記事側でも語にならず、
+表に重みつきで並んでも照合には効かない**。`braindex news profile` の表で `extra` 列に載っている語が、記事の見出しに現れる形と同じかを確かめる。
+`|` を含む行は表の描画を崩すので書かない。
+
+**LLM 補助（opt-in）**: `"llm": "claude-cli"` にすると、`claude` CLI（PATH にあるもの）をヘッドレスで呼び、英語見出しの日本語訳と関心度 0〜3 を受け取って
+語の一致の点に重ねる（バッジの説明とダイジェストに `LLM` と出る）。渡すのは見出し・概要・言語・関心プロファイルの語・keep の見出しだけで、リンク・セッション本文・
+ノート本文は渡さない。結果は `news/.llm_cache.json` に記事 ID で覚え、同じ記事を 2 回聞かない。`llm_model` で `--model` を指定できる（空なら CLI の既定）。
+CLI が無い・`llm_timeout_sec` を超えた・応答が JSON でないときは警告（終了コード 2）にして、その記事は語の点のまま出す。`-no-llm`（と `-no-score`）で止まる。
+
+**定期実行**: 設定の `schedule.jobs` に足して `braindex schedule install`（登録の仕組みは [`braindex schedule`](#braindex-schedule--定期実行の登録)）:
+
+```json
+{ "name": "news", "args": ["news", "fetch", "-layer", "daily", "-no-open"], "when": "daily:07:30" }
+```
+
+`-no-open` にしておき、朝に `news/digest_<日付>_daily.html` を自分で開く（cron・schtasks から起動したプロセスはログイン中のデスクトップにウィンドウを出せない）。
+選別を書き出した JSON は次回の `fetch` か `braindex news apply` が拾う。
 
 ### braindex approvals — 判断待ちのフォーム
 
