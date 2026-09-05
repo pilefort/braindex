@@ -174,21 +174,7 @@ func loadProfile(fc config.Config, hubDir, today string, days int, sessionsDir s
 	}
 
 	// 出典 3: keep 履歴
-	keepDir := filepath.Join(newsDir, news.KeepDir)
-	if names, err := os.ReadDir(keepDir); err == nil {
-		sort.Slice(names, func(i, j int) bool { return names[i].Name() < names[j].Name() })
-		for _, de := range names {
-			m := keepFileName.FindStringSubmatch(de.Name())
-			if m == nil || de.IsDir() {
-				continue
-			}
-			b, err := os.ReadFile(filepath.Join(keepDir, de.Name()))
-			if err != nil {
-				return interest.Profile{}, nil, err
-			}
-			in.Keeps = append(in.Keeps, interest.ParseKeep(m[1], string(b))...)
-		}
-	} else if !errors.Is(err, iofs.ErrNotExist) {
+	if in.Keeps, err = readKeeps(newsDir); err != nil {
 		return interest.Profile{}, nil, err
 	}
 
@@ -216,4 +202,31 @@ func profileSince(today string, days int) (time.Time, error) {
 		return time.Time{}, err
 	}
 	return t.AddDate(0, 0, -days), nil
+}
+
+// readKeeps は keep(news/keep/YYYY-MM.md)の見出しを月ファイル名の昇順(古→新)で返す。置き場が無ければ空。
+// 関心プロファイルの出典 3 と、LLM 補助のプロンプトに載せる例の両方が使う。
+func readKeeps(newsDir string) ([]interest.Keep, error) {
+	keepDir := filepath.Join(newsDir, news.KeepDir)
+	names, err := os.ReadDir(keepDir)
+	if errors.Is(err, iofs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(names, func(i, j int) bool { return names[i].Name() < names[j].Name() })
+	var out []interest.Keep
+	for _, de := range names {
+		m := keepFileName.FindStringSubmatch(de.Name())
+		if m == nil || de.IsDir() {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(keepDir, de.Name()))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, interest.ParseKeep(m[1], string(b))...)
+	}
+	return out, nil
 }

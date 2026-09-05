@@ -166,3 +166,53 @@ func TestNewsFetch_LLM設定の誤り(t *testing.T) {
 	}
 	mustContain(t, "stderr", se, "news.llm", "claude-cli")
 }
+
+// レビュー #91-1: -no-score のときは LLM も呼ばない。
+func TestNewsFetch_NoScoreはLLMも呼ばない(t *testing.T) {
+	hub, _ := newsHub(t)
+	writeFile(t, filepath.Join(hub, "braindex.json"), `{"root": "..", "news": {"llm": "claude-cli"}}`)
+	f := &cliFake{reply: `[]`}
+	useFakeCLI(t, f)
+	code, _, se := llmFetch(t, hub, "-no-score")
+	if code != 2 {
+		t.Fatalf("exit=%d\n%s", code, se)
+	}
+	if len(f.prompts) != 0 {
+		t.Errorf("-no-score なのに LLM を %d 回呼んだ", len(f.prompts))
+	}
+}
+
+// レビュー #91-3: claude が無くても、読み込んだキャッシュの訳と点は効かせる。
+func TestNewsFetch_LLM無しでもキャッシュは効く(t *testing.T) {
+	hub, _ := newsHub(t)
+	writeFile(t, filepath.Join(hub, "braindex.json"), `{"root": "..", "news": {"llm": "claude-cli"}}`)
+	writeFile(t, filepath.Join(hub, "news", "interests.md"), "ゴルーチン\n")
+	// 記事2 の ID を拾うために 1 回、fake で走らせてキャッシュを作る
+	ids := map[string]string{}
+	orig := newNewsAnnotator
+	t.Cleanup(func() { newNewsAnnotator = orig })
+	newNewsAnnotator = func(news.Settings) (news.Annotator, error) {
+		return annotatorFunc(func(_ context.Context, p string) (string, error) {
+			for _, l := range strings.Split(p, "\n") {
+				if strings.HasPrefix(l, "[{") {
+					var got []map[string]string
+					json.Unmarshal([]byte(l), &got)
+					for _, g := range got {
+						ids[g["t"]] = g["id"]
+					}
+				}
+			}
+			return `[{"id":"` + ids["記事2"] + `","t":"記事二の訳","s":"","r":3}]`, nil
+		}), nil
+	}
+	if code, so, se := llmFetch(t, hub); code != 2 {
+		t.Fatalf("exit=%d\n%s%s", code, so, se)
+	}
+	newNewsAnnotator = func(news.Settings) (news.Annotator, error) { return nil, news.ErrNoClaudeCLI }
+	code, so, se := llmFetch(t, hub, "-replay")
+	if code != 2 {
+		t.Fatalf("exit=%d\n%s", code, se)
+	}
+	mustContain(t, "stderr", se, "claude CLI が見つからない")
+	mustContain(t, "stdout", so, "[記事2](https://example.com/2) ★3（LLM）／訳: 記事二の訳")
+}

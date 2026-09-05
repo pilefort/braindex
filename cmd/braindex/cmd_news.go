@@ -14,7 +14,6 @@ import (
 
 	"github.com/pilefort/braindex/internal/config"
 	"github.com/pilefort/braindex/internal/feed"
-	"github.com/pilefort/braindex/internal/interest"
 	"github.com/pilefort/braindex/internal/news"
 )
 
@@ -248,7 +247,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	// LLM 補助(opt-in)。翻訳と関心度を語の点に重ねる。失敗はその分を語の点のままにして警告に数える
 	var annotations news.Annotations
 	llmWarnings := 0
-	if s.LLM == news.LLMClaudeCLI && !o.noLLM {
+	if s.LLM == news.LLMClaudeCLI && !o.noLLM && !o.noScore { // -no-score は「採点しない」なので LLM の採点も止める
 		ann, ws, err := annotateWithLLM(s, newsDir, results, profileTerms, progress)
 		if err != nil {
 			return fail(err)
@@ -259,7 +258,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		llmWarnings = len(ws)
 		if ann != nil {
 			annotations = ann
-			ranking = news.ApplyAnnotations(ranking, results, ann, s.MinScore())
+			ranking = news.ApplyAnnotations(ranking, results, ann)
 		}
 	}
 	do := news.DigestOptions{Layer: o.layer, Today: today, Cap: s.Cap(o.layer), Ranking: ranking, MinScore: s.MinScore(), Totals: stats.Totals(), Annotations: annotations}
@@ -339,7 +338,7 @@ func unusedPath(path string) (string, error) {
 
 // annotateWithLLM は claude CLI で新着に翻訳と関心度を付け、キャッシュ(news/.llm_cache.json)に合流させて返す。
 // 返す警告は 呼び出し側の不在(CLI 無し)・バッチの失敗・キャッシュの保存失敗。キャッシュが壊れているときだけ error(消せば直る旨を伝える)。
-// CLI が無いときは注釈 nil(語の点だけで続ける)。
+// CLI が無いときは新しく聞かないが、読み込んだキャッシュは返す(前回までの訳と点は効かせる)。
 func annotateWithLLM(s news.Settings, newsDir string, results []news.Result, terms []string, progress io.Writer) (news.Annotations, []string, error) {
 	cachePath := filepath.Join(newsDir, news.LLMCacheFile)
 	cache, err := news.LoadAnnotations(cachePath)
@@ -348,11 +347,19 @@ func annotateWithLLM(s news.Settings, newsDir string, results []news.Result, ter
 	}
 	a, err := newNewsAnnotator(s)
 	if err != nil {
-		return nil, []string{fmt.Sprintf("%v(語の一致の点で続ける。設定 news.llm を off にすれば出なくなる)", err)}, nil
+		return cache, []string{fmt.Sprintf("%v(キャッシュ済みの分と語の一致の点で続ける。設定 news.llm を off にすれば出なくなる)", err)}, nil
+	}
+	keeps, err := readKeeps(newsDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	examples := make([]string, 0, len(keeps))
+	for _, k := range keeps {
+		examples = append(examples, k.Title)
 	}
 	rep := news.Annotate(context.Background(), a, results, cache, news.AnnotateOptions{
 		Terms:    terms,
-		Examples: recentKeepTitles(newsDir),
+		Examples: examples,
 	})
 	var ws []string
 	if rep.Failed > 0 {
@@ -365,29 +372,4 @@ func annotateWithLLM(s news.Settings, newsDir string, results []news.Result, ter
 		ws = append(ws, fmt.Sprintf("キャッシュを書けない(次回も同じ記事を聞く): %v", err))
 	}
 	return cache, ws, nil
-}
-
-// recentKeepTitles は keep(news/keep/YYYY-MM.md)に残した見出しを古い月から順に返す(プロンプトの例に使う。直近は末尾)。
-// 読めないファイルは飛ばす(例は無くても採点できる)。
-func recentKeepTitles(newsDir string) []string {
-	keepDir := filepath.Join(newsDir, news.KeepDir)
-	names, err := os.ReadDir(keepDir)
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, de := range names {
-		m := keepFileName.FindStringSubmatch(de.Name())
-		if m == nil {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join(keepDir, de.Name()))
-		if err != nil {
-			continue
-		}
-		for _, k := range interest.ParseKeep(m[1], string(b)) {
-			out = append(out, k.Title)
-		}
-	}
-	return out
 }
