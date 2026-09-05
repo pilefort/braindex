@@ -119,6 +119,9 @@ func RenderHTML(results []Result, o DigestOptions) []byte {
 	scoring := "採点なし（全件を主要表示）"
 	if o.Ranking != nil {
 		scoring = fmt.Sprintf("関心度は語の一致（braindex news profile）。%d 以上を主要表示", o.MinScore)
+		if o.Annotations != nil {
+			scoring = fmt.Sprintf("関心度は語の一致（braindex news profile）に LLM 補助（news.llm・バッジの説明に LLM と出る）を重ねたもの。%d 以上を主要表示", o.MinScore)
+		}
 	}
 	foot = append(foot, fmt.Sprintf("生成: %s / braindex news fetch（取得・既読・採点は決定論。%s）", esc(o.Today), scoring))
 
@@ -177,6 +180,14 @@ func itemHTML(e feed.Entry, r Result, o DigestOptions, low bool) string {
 	sum := ""
 	if e.Summary != "" {
 		sum = "<div class=\"sum\">" + esc(e.Summary) + "</div>"
+	}
+	// LLM 補助の訳(見出し・概要)。原文の下に添える(原文は残す。訳の誤りを見比べられるように)
+	if a, ok := o.Annotations[e.ID]; ok && a.Title != "" {
+		tr := "訳: " + esc(a.Title)
+		if a.Summary != "" {
+			tr += " — " + esc(a.Summary)
+		}
+		sum = "<div class=\"sum\">" + tr + "</div>" + sum
 	}
 	// フィード由来のリンクは信用しない。http(s) でなければ表示にも選別 JSON(data-link)にも載せず、
 	// 題名だけを出す(決定 2026-09-03「生成物のリンクは http(s) 以外を落とす」)。

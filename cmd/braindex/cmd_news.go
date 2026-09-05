@@ -14,6 +14,7 @@ import (
 
 	"github.com/pilefort/braindex/internal/config"
 	"github.com/pilefort/braindex/internal/feed"
+	"github.com/pilefort/braindex/internal/interest"
 	"github.com/pilefort/braindex/internal/news"
 )
 
@@ -27,6 +28,16 @@ func init() {
 
 // newsFetcher は fetch が使う取得器。テストで差し替える(ネットワークに出ないため)。
 var newsFetcher news.Fetcher = feed.Fetcher{}
+
+// newNewsAnnotator は LLM 補助(news.llm = claude-cli)の呼び出し側を作る。claude CLI が PATH に無ければ news.ErrNoClaudeCLI。
+// テストで差し替える(CLI を呼ばないため)。
+var newNewsAnnotator = func(s news.Settings) (news.Annotator, error) {
+	c := news.ClaudeCLI{Model: s.LLMModel, Timeout: time.Duration(s.LLMTimeoutSec) * time.Second}
+	if err := c.Available(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
 
 // runNews は braindex news <サブコマンド> を振り分ける(fetch / profile。apply は後続で足す)。
 func runNews(args []string, stdout, stderr io.Writer) int {
@@ -68,6 +79,7 @@ type newsFetchOptions struct {
 	inbox    string // -inbox。選別 JSON を探すディレクトリ(既定 ~/Downloads)
 	noOpen   bool   // -no-open。HTML を既定ブラウザで開かない
 	noScore  bool   // -no-score。関心プロファイルで採点しない(全件を主要表示)
+	noLLM    bool   // -no-llm。設定 news.llm が claude-cli でも LLM 補助を呼ばない
 	sessions string // -sessions。関心プロファイルのセッションログの置き場(news profile と同じ既定)
 }
 
@@ -89,14 +101,18 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.inbox, "inbox", "", "選別 JSON を探すディレクトリ(既定: ~/Downloads。<news.dir>/inbox はいつも見る)")
 	fs.BoolVar(&o.noOpen, "no-open", false, "HTML を既定ブラウザで開かない(定期実行やテスト用)")
 	fs.BoolVar(&o.noScore, "no-score", false, "関心プロファイルで採点しない(全件を主要表示・出典を読まない)")
+	fs.BoolVar(&o.noLLM, "no-llm", false, "LLM 補助(設定 news.llm = claude-cli の翻訳＋採点)を呼ばない(語の一致の点だけで出す)")
 	fs.StringVar(&o.sessions, "sessions", "", "関心プロファイルが読むセッションログの置き場(既定: news profile と同じ)")
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "使い方: braindex news fetch [-config braindex.json] [-date YYYY-MM-DD] [-layer <層>] [-replay] [-stdout] [-out <path>] [-no-open] [-no-score] [-sessions DIR]")
+		fmt.Fprintln(stderr, "使い方: braindex news fetch [-config braindex.json] [-date YYYY-MM-DD] [-layer <層>] [-replay] [-stdout] [-out <path>] [-no-open] [-no-score] [-no-llm] [-sessions DIR]")
 		fmt.Fprintln(stderr, "  hub のルートで実行し、news/feeds.json のフィードを GET して、既読(news/.seen.json)に無い記事を")
 		fmt.Fprintln(stderr, "  news/digest_<日付>_<層>.md(記録用)と同名の .html(選別 UI・既定ブラウザで開く)に書く。")
 		fmt.Fprintln(stderr, "  関心プロファイル(braindex news profile)で採点し、関心度 news.show_min_score 以上を主要表示、未満を「関心外と判定」に")
 		fmt.Fprintln(stderr, "  折りたたむ。HTML の「選別を書き出す」が出す JSON は braindex news apply が取り込む。")
 		fmt.Fprintln(stderr, "  外へ出る通信はフィードの GET だけ(セッション本文は送らない)。HTML は外部の JS / CSS を参照しない。")
+		fmt.Fprintln(stderr, "  LLM 補助(opt-in): 設定 news.llm を \"claude-cli\" にすると、claude CLI をヘッドレスで呼んで英語見出しの翻訳と関心度(0〜3)を付け、")
+		fmt.Fprintln(stderr, "  語の一致の点に重ねる(バッジの説明に LLM と出る)。渡すのは見出し・概要・プロファイルの語・keep の見出しだけ。")
+		fmt.Fprintln(stderr, "  結果は news/.llm_cache.json に覚えて同じ記事を 2 回聞かない。CLI が無い・失敗した分は語の点のまま(警告・終了コード 2)。")
 		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗(出力先が既にある・全フィードの取得失敗。何も書かない) / 2 警告つきで完了(一部のフィードが取得できなかった・")
 		fmt.Fprintln(stderr, "  採点の出典(索引・セッションの置き場)が無かった・選別や統計を取り込めなかった)")
 		fmt.Fprintln(stderr)
@@ -209,6 +225,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 
 	// 採点(関心プロファイル)。出典が無い警告は fetch の警告として数える
 	var ranking news.Ranking
+	var profileTerms []string
 	profileWarnings := 0
 	if !o.noScore {
 		p, ws, err := loadProfile(fc, hubDir, today, 0, o.sessions)
@@ -223,8 +240,29 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		if ranking == nil {
 			fmt.Fprintln(stdout, "関心プロファイルが空なので採点なし(全件を主要表示)")
 		}
+		for _, t := range p.Terms {
+			profileTerms = append(profileTerms, t.Word)
+		}
 	}
-	do := news.DigestOptions{Layer: o.layer, Today: today, Cap: s.Cap(o.layer), Ranking: ranking, MinScore: s.MinScore(), Totals: stats.Totals()}
+
+	// LLM 補助(opt-in)。翻訳と関心度を語の点に重ねる。失敗はその分を語の点のままにして警告に数える
+	var annotations news.Annotations
+	llmWarnings := 0
+	if s.LLM == news.LLMClaudeCLI && !o.noLLM {
+		ann, ws, err := annotateWithLLM(s, newsDir, results, profileTerms, progress)
+		if err != nil {
+			return fail(err)
+		}
+		for _, w := range ws {
+			fmt.Fprintln(stderr, "braindex news fetch: 警告: LLM 補助:", w)
+		}
+		llmWarnings = len(ws)
+		if ann != nil {
+			annotations = ann
+			ranking = news.ApplyAnnotations(ranking, results, ann, s.MinScore())
+		}
+	}
+	do := news.DigestOptions{Layer: o.layer, Today: today, Cap: s.Cap(o.layer), Ranking: ranking, MinScore: s.MinScore(), Totals: stats.Totals(), Annotations: annotations}
 	digest := news.Digest(results, do)
 	openWarning := 0
 	if o.stdout {
@@ -272,7 +310,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	if n := len(news.Failed(results)) + profileWarnings + openWarning + ingestWarning; n > 0 {
+	if n := len(news.Failed(results)) + profileWarnings + openWarning + ingestWarning + llmWarnings; n > 0 {
 		fmt.Fprintf(stderr, "braindex news fetch: 警告 %d 件(取得失敗 %d 本・終了コード 2)\n", n, len(news.Failed(results)))
 		return 2
 	}
@@ -297,4 +335,59 @@ func unusedPath(path string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("空いている名前が無い: %s", path)
+}
+
+// annotateWithLLM は claude CLI で新着に翻訳と関心度を付け、キャッシュ(news/.llm_cache.json)に合流させて返す。
+// 返す警告は 呼び出し側の不在(CLI 無し)・バッチの失敗・キャッシュの保存失敗。キャッシュが壊れているときだけ error(消せば直る旨を伝える)。
+// CLI が無いときは注釈 nil(語の点だけで続ける)。
+func annotateWithLLM(s news.Settings, newsDir string, results []news.Result, terms []string, progress io.Writer) (news.Annotations, []string, error) {
+	cachePath := filepath.Join(newsDir, news.LLMCacheFile)
+	cache, err := news.LoadAnnotations(cachePath)
+	if err != nil {
+		return nil, nil, err
+	}
+	a, err := newNewsAnnotator(s)
+	if err != nil {
+		return nil, []string{fmt.Sprintf("%v(語の一致の点で続ける。設定 news.llm を off にすれば出なくなる)", err)}, nil
+	}
+	rep := news.Annotate(context.Background(), a, results, cache, news.AnnotateOptions{
+		Terms:    terms,
+		Examples: recentKeepTitles(newsDir),
+	})
+	var ws []string
+	if rep.Failed > 0 {
+		ws = append(ws, fmt.Sprintf("%d バッチ失敗(その分は語の一致の点のまま): %s", rep.Failed, strings.Join(rep.Errors, " / ")))
+	}
+	if rep.Requested > 0 {
+		fmt.Fprintf(progress, "LLM 補助: %d 件を聞いて %d 件に注釈(キャッシュ合計 %d 件)\n", rep.Requested, rep.Annotated, len(cache))
+	}
+	if err := cache.Save(cachePath); err != nil {
+		ws = append(ws, fmt.Sprintf("キャッシュを書けない(次回も同じ記事を聞く): %v", err))
+	}
+	return cache, ws, nil
+}
+
+// recentKeepTitles は keep(news/keep/YYYY-MM.md)に残した見出しを古い月から順に返す(プロンプトの例に使う。直近は末尾)。
+// 読めないファイルは飛ばす(例は無くても採点できる)。
+func recentKeepTitles(newsDir string) []string {
+	keepDir := filepath.Join(newsDir, news.KeepDir)
+	names, err := os.ReadDir(keepDir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, de := range names {
+		m := keepFileName.FindStringSubmatch(de.Name())
+		if m == nil {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(keepDir, de.Name()))
+		if err != nil {
+			continue
+		}
+		for _, k := range interest.ParseKeep(m[1], string(b)) {
+			out = append(out, k.Title)
+		}
+	}
+	return out
 }

@@ -3,7 +3,8 @@
 // フィード一覧(feeds.json)を読み、各フィードを取得(internal/feed)し、既読(.seen.json)との差分を新着として
 // ダイジェスト(Markdown)にする。取得は internal/feed に任せ、ここは既読・上限・失敗の扱いと出力の組み立て。
 // 外へ出る通信はフィードの GET だけで、セッション内容やノートは送らない。
-// 関心の採点(internal/interest)と HTML の選別 UI は後続で足す。ここは LLM を使わない。
+// 関心の採点は internal/interest(語の一致・決定論)。LLM 補助(llm.go)は設定 news.llm で明示したときだけ動く opt-in で、
+// 既定では LLM を呼ばない。
 package news
 
 import (
@@ -30,7 +31,17 @@ type Settings struct {
 	SessionsDir  string         `json:"sessions_dir"`   // セッションログの置き場。空なら retro.sessions_dir → ~/.claude/projects
 	ShowMinScore *int           `json:"show_min_score"` // この関心度(0〜interest.MaxScore)以上を主要表示。未満は「関心外と判定」に折りたたむ。
 	// ポインタなのは 0(全件を主要表示)と未設定(既定 2)を区別するため。他のキーのように 0 を未設定とみなすと、0 を設定できない
+	LLM           string `json:"llm"`             // LLM 補助(翻訳＋採点)。"off"(既定)か "claude-cli"(claude CLI のヘッドレス呼び出し・opt-in)
+	LLMModel      string `json:"llm_model"`       // claude CLI に渡すモデル名(--model)。空なら CLI の既定
+	LLMTimeoutSec int    `json:"llm_timeout_sec"` // 1 バッチの待ち時間(秒)。既定 120
 }
+
+// LLM 補助の値。
+const (
+	LLMOff               = "off"
+	LLMClaudeCLI         = "claude-cli"
+	DefaultLLMTimeoutSec = 120
+)
 
 // 既定値。
 const (
@@ -74,6 +85,12 @@ func (s Settings) WithDefaults() Settings {
 		n := DefaultShowMinScore
 		s.ShowMinScore = &n
 	}
+	if s.LLM == "" {
+		s.LLM = LLMOff
+	}
+	if s.LLMTimeoutSec <= 0 {
+		s.LLMTimeoutSec = DefaultLLMTimeoutSec
+	}
 	return s
 }
 
@@ -101,6 +118,14 @@ func (s Settings) Validate() error {
 		if n < 0 {
 			return fmt.Errorf("設定 news.cap_per_layer[%q]: 0 以上(0 は既定 %d): %d", layer, DefaultCap, n)
 		}
+	}
+	switch s.LLM {
+	case "", LLMOff, LLMClaudeCLI:
+	default:
+		return fmt.Errorf("設定 news.llm: %q か %q(既定 %q・LLM を呼ばない): %q", LLMOff, LLMClaudeCLI, LLMOff, s.LLM)
+	}
+	if s.LLMTimeoutSec < 0 {
+		return fmt.Errorf("設定 news.llm_timeout_sec: 0 以上(0 は既定 %d): %d", DefaultLLMTimeoutSec, s.LLMTimeoutSec)
 	}
 	return nil
 }

@@ -1,0 +1,348 @@
+package news
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/pilefort/braindex/internal/interest"
+)
+
+// LLM 補助(翻訳＋関心度採点)。設定 news.llm を "claude-cli" にしたときだけ動く opt-in。
+//
+// 外へ渡すのは 公開ニュースの見出し・概要・言語、関心プロファイルの語、keep に残した見出し だけで、
+// セッション本文やノートは渡さない。失敗(CLI 無し・タイムアウト・応答の形が違う)はその分を未採点のまま残し、
+// 語の一致の点(無ければ主要表示)にフォールバックする。結果は news/.llm_cache.json に記事 ID で覚え、同じ記事を 2 回聞かない。
+
+// LLMCacheFile は Dir の下。LLM の注釈のキャッシュ。git 管理外。
+const LLMCacheFile = ".llm_cache.json"
+
+// LLMMark は LLM が付けた点であることを示す印(Score.Matched に 1 つだけ入れる)。
+const LLMMark = "LLM"
+
+// Annotation は 1 記事の注釈。Title / Summary は日本語訳(日本語の記事は空)。Score が nil なら未採点。
+type Annotation struct {
+	Title   string `json:"t"`
+	Summary string `json:"s"`
+	Score   *int   `json:"r"`
+}
+
+// Annotations は記事 ID → 注釈。
+type Annotations map[string]Annotation
+
+// LoadAnnotations はキャッシュを読む。無ければ空。壊れていればエラー(黙って捨てると同じ記事を毎回聞き直す)。
+func LoadAnnotations(path string) (Annotations, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return Annotations{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("LLM キャッシュを読めない: %w", err)
+	}
+	var a Annotations
+	if err := json.Unmarshal(b, &a); err != nil {
+		return nil, fmt.Errorf("LLM キャッシュ %s が壊れている(消せば作り直す): %w", path, err)
+	}
+	if a == nil {
+		a = Annotations{}
+	}
+	return a, nil
+}
+
+// Save はキャッシュを書く(キーは encoding/json が昇順に並べるので決定的)。
+func (a Annotations) Save(path string) error {
+	b, err := json.MarshalIndent(a, "", " ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(b, '\n'), 0o644)
+}
+
+// Annotator は LLM を呼ぶ側。実体は ClaudeCLI。テストでは差し替える(ネットワークにも CLI にも出ない)。
+type Annotator interface {
+	Annotate(ctx context.Context, prompt string) (string, error)
+}
+
+// ClaudeCLI は claude CLI(claude -p --output-format text)をヘッドレスで呼ぶ Annotator。
+type ClaudeCLI struct {
+	Model   string        // --model。空なら CLI の既定
+	Timeout time.Duration // 1 回の呼び出しの上限。0 なら無制限
+}
+
+// ErrNoClaudeCLI は PATH に claude が無いとき。
+var ErrNoClaudeCLI = errors.New("claude CLI が見つからない(PATH に無い)")
+
+// Available は claude CLI が PATH にあるか。無いときは 1 回も呼ばずに済ませるために先に見る。
+func (c ClaudeCLI) Available() error {
+	if _, err := exec.LookPath("claude"); err != nil {
+		return ErrNoClaudeCLI
+	}
+	return nil
+}
+
+// Annotate はプロンプトを標準入力で渡し、標準出力を返す。
+func (c ClaudeCLI) Annotate(ctx context.Context, prompt string) (string, error) {
+	if c.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.Timeout)
+		defer cancel()
+	}
+	args := []string{"-p", "--output-format", "text"}
+	if c.Model != "" {
+		args = append(args, "--model", c.Model)
+	}
+	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd.Stdin = strings.NewReader(prompt)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("claude CLI が %s 以内に返らなかった", c.Timeout)
+		}
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return "", fmt.Errorf("claude CLI: %w: %s", err, firstLine(msg))
+		}
+		return "", fmt.Errorf("claude CLI: %w", err)
+	}
+	return string(out), nil
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+// annotationItem はプロンプトに載せる 1 記事(JSON のキーは原型と同じ短い名前)。
+type annotationItem struct {
+	ID      string `json:"id"`
+	Lang    string `json:"lang"`
+	Title   string `json:"t"`
+	Summary string `json:"s"`
+}
+
+// AnnotateOptions は Annotate の範囲。
+type AnnotateOptions struct {
+	Pool     int      // 1 フィードあたり採点する新着の上限(記載順の先頭)。0 なら DefaultAnnotatePool
+	Batch    int      // 1 回の呼び出しに載せる記事数。0 なら DefaultAnnotateBatch
+	Terms    []string // 関心プロファイルの語(重み降順)。プロンプトに載せる
+	Examples []string // keep に残した見出し(直近)。プロンプトに載せる
+}
+
+// 既定値。原型(2026-08-15〜の運用値)と同じ。
+const (
+	DefaultAnnotatePool  = 30
+	DefaultAnnotateBatch = 20
+	annotateSummaryLimit = 300 // プロンプトに載せる概要の上限(文字)
+	promptTermsLimit     = 40  // プロンプトに載せる語の上限
+	promptExamplesLimit  = 20  // プロンプトに載せる keep 見出しの上限
+)
+
+// AnnotateReport は Annotate の集計(進捗の表示用)。
+type AnnotateReport struct {
+	Requested int // 聞いた記事数(キャッシュにあった分は含まない)
+	Annotated int // 応答で注釈が付いた記事数
+	Failed    int // 失敗したバッチ数
+	Errors    []string
+}
+
+// Annotate は各フィードの新着(先頭 Pool 件)のうち採点済みでないものをバッチで聞き、cache に合流させる。
+// 翻訳だけの旧キャッシュ(Score が nil)は採点し直し、新しい応答に訳が無ければ旧訳を残す。
+// 失敗したバッチは数えて次へ進む(その分は未採点のまま=フォールバック)。
+func Annotate(ctx context.Context, a Annotator, results []Result, cache Annotations, o AnnotateOptions) AnnotateReport {
+	if o.Pool <= 0 {
+		o.Pool = DefaultAnnotatePool
+	}
+	if o.Batch <= 0 {
+		o.Batch = DefaultAnnotateBatch
+	}
+	var todo []annotationItem
+	for _, r := range results {
+		if r.Err != nil {
+			continue
+		}
+		lang := r.Source.Lang
+		if lang == "" {
+			lang = "en"
+		}
+		for i, e := range r.New {
+			if i >= o.Pool {
+				break
+			}
+			if c, ok := cache[e.ID]; ok && c.Score != nil {
+				continue
+			}
+			todo = append(todo, annotationItem{ID: e.ID, Lang: lang, Title: e.Title, Summary: truncateRunes(e.Summary, annotateSummaryLimit)})
+		}
+	}
+	rep := AnnotateReport{Requested: len(todo)}
+	for i := 0; i < len(todo); i += o.Batch {
+		end := i + o.Batch
+		if end > len(todo) {
+			end = len(todo)
+		}
+		out, err := a.Annotate(ctx, BuildAnnotationPrompt(todo[i:end], o.Terms, o.Examples))
+		if err != nil {
+			rep.Failed++
+			rep.Errors = append(rep.Errors, err.Error())
+			continue
+		}
+		got := ParseAnnotationResponse(out)
+		if len(got) == 0 {
+			rep.Failed++
+			rep.Errors = append(rep.Errors, "応答に JSON 配列が無い")
+			continue
+		}
+		for id, v := range got {
+			if old, ok := cache[id]; ok && v.Title == "" && old.Title != "" {
+				v.Title = old.Title
+				if v.Summary == "" {
+					v.Summary = old.Summary
+				}
+			}
+			cache[id] = v
+		}
+		rep.Annotated += len(got)
+	}
+	return rep
+}
+
+func truncateRunes(s string, n int) string {
+	rs := []rune(s)
+	if len(rs) <= n {
+		return s
+	}
+	return string(rs[:n])
+}
+
+// BuildAnnotationPrompt は 1 バッチ分のプロンプト。渡すのは公開ニュースの見出し・概要と、プロファイルの語・keep の見出しだけ。
+func BuildAnnotationPrompt(batch []annotationItem, terms, examples []string) string {
+	if len(terms) > promptTermsLimit {
+		terms = terms[:promptTermsLimit]
+	}
+	if len(examples) > promptExamplesLimit {
+		examples = examples[len(examples)-promptExamplesLimit:]
+	}
+	prof := "(未設定)"
+	if len(terms) > 0 {
+		prof = strings.Join(terms, "・")
+	}
+	ex := "(まだ無し)"
+	if len(examples) > 0 {
+		var sb strings.Builder
+		for _, t := range examples {
+			sb.WriteString("- " + t + "\n")
+		}
+		ex = strings.TrimRight(sb.String(), "\n")
+	}
+	items, _ := json.Marshal(batch) // 文字列と構造体だけなので失敗しない
+	var sb strings.Builder
+	sb.WriteString("あなたは個人向けニュースダイジェストの選別係。各項目に関心度 r を 0〜3 の整数で付けよ。\n")
+	sb.WriteString("3=確実に読む(関心の中心・一次情報・技術的に深い) / 2=読む価値あり / 1=薄い(関心の周辺・二番煎じ・中身の無い体験談) / 0=無関係・宣伝・資金調達・人事・相場。\n")
+	sb.WriteString("基準は下の「関心プロファイル」と「最近『残す』にした見出しの例」。迷ったら例に似ているかで決めよ。\n")
+	sb.WriteString("lang が ja 以外の項目は見出し t と概要 s を自然な日本語に翻訳して付けよ(固有名詞・製品名・専門用語はむやみにカタカナ化せず原語を残してよい。s が空なら空のまま)。")
+	sb.WriteString("lang=ja の項目は t,s を空文字にせよ。\n")
+	sb.WriteString("出力は同じ id を付けた JSON 配列だけ: [{\"id\":\"...\",\"t\":\"...\",\"s\":\"...\",\"r\":2}] 。JSON 以外の文・コードフェンスは出力禁止。\n\n")
+	sb.WriteString("## 関心プロファイル(語・重み降順)\n" + prof + "\n\n")
+	fmt.Fprintf(&sb, "## 最近「残す」にした見出しの例(直近 %d 件)\n%s\n\n", len(examples), ex)
+	sb.WriteString("## 採点対象\n")
+	sb.Write(items)
+	return sb.String()
+}
+
+var codeFence = regexp.MustCompile("(?s)^```(?:json)?\\s*|\\s*```$")
+
+// ParseAnnotationResponse は claude の出力(JSON 配列。コードフェンスや前置きが混ざっても許容)を注釈にする。失敗は空。
+// id の無い要素は捨てる。r が 0〜MaxScore の整数でなければ未採点(nil)。
+func ParseAnnotationResponse(text string) Annotations {
+	out := Annotations{}
+	t := codeFence.ReplaceAllString(strings.TrimSpace(text), "")
+	start, end := strings.Index(t, "["), strings.LastIndex(t, "]")
+	if start < 0 || end <= start {
+		return out
+	}
+	var arr []struct {
+		ID      string          `json:"id"`
+		Title   string          `json:"t"`
+		Summary string          `json:"s"`
+		Score   json.RawMessage `json:"r"`
+	}
+	if err := json.Unmarshal([]byte(t[start:end+1]), &arr); err != nil {
+		return out
+	}
+	for _, it := range arr {
+		if it.ID == "" {
+			continue
+		}
+		out[it.ID] = Annotation{Title: strings.TrimSpace(it.Title), Summary: strings.TrimSpace(it.Summary), Score: normScore(it.Score)}
+	}
+	return out
+}
+
+// normScore は r(数値か文字列)を 0〜MaxScore の整数にする。欠落・範囲外・非数は nil。
+func normScore(raw json.RawMessage) *int {
+	s := strings.Trim(strings.TrimSpace(string(raw)), `"`)
+	if s == "" || s == "null" {
+		return nil
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || n < 0 || n > interest.MaxScore {
+		return nil
+	}
+	return &n
+}
+
+// ApplyAnnotations は語の一致の Ranking に LLM の関心度を重ねる(LLM が採点した記事はその点で上書きし、Matched は LLMMark だけ)。
+// LLM 未採点の記事は rk の点を保つ。rk が nil(プロファイルが空)のときは、注釈に採点が 1 件でもあれば新しい Ranking を作り、
+// 未採点の記事は minScore(主要表示=フォールバック)にする。採点が 1 件も無ければ rk をそのまま返す。
+func ApplyAnnotations(rk Ranking, results []Result, ann Annotations, minScore int) Ranking {
+	scored := false
+	for _, r := range results {
+		for _, e := range r.New {
+			if a, ok := ann[e.ID]; ok && a.Score != nil {
+				scored = true
+			}
+		}
+	}
+	if !scored {
+		return rk
+	}
+	out := Ranking{}
+	for _, r := range results {
+		for _, e := range r.New {
+			if a, ok := ann[e.ID]; ok && a.Score != nil {
+				out[e.ID] = interest.Score{Value: *a.Score, Matched: []string{LLMMark}}
+				continue
+			}
+			if rk != nil {
+				out[e.ID] = rk[e.ID]
+			} else {
+				out[e.ID] = interest.Score{Value: minScore}
+			}
+		}
+	}
+	return out
+}
+
+// translation は表示用の訳(見出し)。無ければ空。
+func (a Annotations) translation(id string) string {
+	if a == nil {
+		return ""
+	}
+	return a[id].Title
+}
