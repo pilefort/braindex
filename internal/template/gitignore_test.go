@@ -89,3 +89,28 @@ func TestInstallFeatures_MergesGitignore(t *testing.T) {
 		t.Errorf("2 回目: merged=%v skipped=%v", res.Merged, res.Skipped)
 	}
 }
+
+// 既存が CRLF なら足す行も CRLF(改行の混在を作らない)。雛形の注釈行が既にあれば二重にしない。
+func TestMergeGitignore_CRLFAndComment(t *testing.T) {
+	tmpl := gitignoreTemplate(t)
+	got, changed := MergeGitignore([]byte("*.tmp\r\nnews/digest_*\r\n"), tmpl)
+	if !changed {
+		t.Fatal("無い行があるのに changed=false")
+	}
+	if bytes.Contains(bytes.ReplaceAll(got, []byte("\r\n"), nil), []byte("\n")) {
+		t.Errorf("CRLF の既存に LF の行を足した:\n%q", got)
+	}
+	if !bytes.Contains(got, []byte("news/.ingested/\r\n")) {
+		t.Errorf("無い行が CRLF で足されていない:\n%q", got)
+	}
+	// 注釈行と一部のパターン行が既にある → 注釈は足さず、無いパターン行だけ足す
+	lines := strings.Split(strings.TrimRight(string(tmpl), "\n"), "\n")
+	comment := lines[0]
+	if !strings.HasPrefix(comment, "#") {
+		t.Fatalf("雛形の 1 行目が注釈でない: %q", comment)
+	}
+	got, _ = MergeGitignore([]byte(comment+"\nnews/digest_*\n"), tmpl)
+	if n := strings.Count(string(got), comment); n != 1 {
+		t.Errorf("注釈行が %d 回ある:\n%s", n, got)
+	}
+}
