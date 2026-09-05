@@ -244,6 +244,19 @@ func runRetroCheck(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	total := retro.Total(retro.Judge(ss, w, env.dicts...))
+	if total.Utterances == 0 {
+		// 「訂正率 -(発話 0・訂正 0)は閾値以下」は判定したように読める。判定の材料が無いことを言う(終了コードは閾値以下と同じ)
+		if !o.quiet {
+			fmt.Fprintf(stdout, "braindex retro check: 直近 %d 日に発話が無い(読んだセッションログ %d 件)。閾値 %.1f%% の判定は発話が入ってから\n", days, len(ss), thr*100)
+		}
+		if len(warns) > 0 {
+			if !o.quiet {
+				fmt.Fprintf(stderr, "braindex retro check: 警告 %d 件(終了コード 2)\n", len(warns))
+			}
+			return 2
+		}
+		return 0
+	}
 	msg := fmt.Sprintf("直近 %d 日の訂正率 %s(発話 %d・訂正 %d)", days, total.Percent(), total.Utterances, total.Corrections)
 	if total.Rate() > thr {
 		fmt.Fprintf(stdout, "braindex retro check: %sが閾値 %.1f%% を超えた → レトロスペクティブの時期(braindex retro extract で材料を出す)\n", msg, thr*100)

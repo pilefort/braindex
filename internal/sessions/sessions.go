@@ -15,8 +15,10 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -105,6 +107,11 @@ func DefaultDir() (string, error) {
 func (d Dir) Sessions(opts Options) ([]Session, []string, error) {
 	slugs, err := os.ReadDir(d.Path)
 	if err != nil {
+		// 置き場が無いのは「まだ Claude Code を使っていない」か置き場の指定違い。初めての利用者が最初に見る文言なので
+		// OS の生エラー(open …: The system cannot find the path specified.)でなく、何が無くていつ作られるかを言う
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil, fmt.Errorf("セッションログの置き場が無い: %s(Claude Code を使うと ~/.claude/projects に作られる)", d.Path)
+		}
 		return nil, nil, fmt.Errorf("セッションログの置き場を読めない: %w", err)
 	}
 	var out []Session

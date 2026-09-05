@@ -182,8 +182,13 @@ func TestDir_Sessions_Deterministic(t *testing.T) {
 }
 
 func TestDir_Sessions_MissingRoot(t *testing.T) {
-	if _, _, err := (Dir{Path: "testdata/no-such-dir"}).Sessions(Options{}); err == nil {
-		t.Error("無い置き場はエラーにする")
+	_, _, err := (Dir{Path: "testdata/no-such-dir"}).Sessions(Options{})
+	if err == nil {
+		t.Fatal("無い置き場はエラーにする")
+	}
+	// 初めての利用者が最初に見る文言なので、OS の生エラーでなく「何が無いか・いつ作られるか」を言う
+	if want := "セッションログの置き場が無い: testdata/no-such-dir(Claude Code を使うと ~/.claude/projects に作られる)"; err.Error() != want {
+		t.Errorf("err:\n want=%q\n  got=%q", want, err.Error())
 	}
 }
 
