@@ -38,13 +38,14 @@ var newNewsAnnotator = func(s news.Settings) (news.Annotator, error) {
 	return c, nil
 }
 
-// runNews は braindex news <サブコマンド> を振り分ける(fetch / profile。apply は後続で足す)。
+// runNews は braindex news <サブコマンド> を振り分ける(fetch / profile / apply / suggest)。
 func runNews(args []string, stdout, stderr io.Writer) int {
 	usage := func() {
 		fmt.Fprintln(stderr, "使い方: braindex news <サブコマンド> [フラグ]")
 		fmt.Fprintln(stderr, "  fetch    フィードを取得し、既読に無い記事のダイジェスト(Markdown)を書く")
 		fmt.Fprintln(stderr, "  profile  関心プロファイル(語 → 重み・出典)を表示する")
 		fmt.Fprintln(stderr, "  apply    HTML で書き出した選別 JSON を取り込む(keep に追記・統計を更新)")
+		fmt.Fprintln(stderr, "  suggest  関心プロファイルに当たる取材先(RSS)を同梱の目録から候補として出す")
 		fmt.Fprintln(stderr, "フラグは braindex news <サブコマンド> -h")
 	}
 	if len(args) == 0 {
@@ -58,6 +59,8 @@ func runNews(args []string, stdout, stderr io.Writer) int {
 		return runNewsProfile(args[1:], stdout, stderr)
 	case "apply":
 		return runNewsApply(args[1:], stdout, stderr)
+	case "suggest":
+		return runNewsSuggest(args[1:], stdout, stderr)
 	case "-h", "-help", "--help":
 		usage()
 		return 0
