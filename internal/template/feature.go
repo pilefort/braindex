@@ -126,6 +126,17 @@ func featureNames() []string {
 	return append(names, string(FeatureAll))
 }
 
+// checkFeatures は req が全部対応表にある(か all)ことを確かめる。Resolve は対応表に無い名前を
+// 黙って落とすので、配布物を作る入口(FeatureFiles・BuildConfig・InstallFeatures)はこれを先に通す。
+func checkFeatures(req []Feature) error {
+	for _, f := range req {
+		if _, ok := features[f]; !ok && f != FeatureAll {
+			return fmt.Errorf("未知の機能 %q(候補: %s)", f, strings.Join(featureNames(), ", "))
+		}
+	}
+	return nil
+}
+
 // Resolve は要求された機能に core と依存を足し、段の順に並べて返す。all は全機能に展開する。
 // added は要求に無かったが依存として足した機能(利用者に「足した」と伝えるため)。
 func Resolve(req []Feature) (feats, added []Feature) {
@@ -180,6 +191,9 @@ func FeatureNames(feats []Feature) []string {
 // FeatureFiles は feats の配布物を Path の昇順で返す。braindex.json は feats の節だけで組み立て、
 // .gitignore は news の行を持つ。core と依存は Resolve で足す(all もここで展開される)。
 func FeatureFiles(feats []Feature) ([]File, error) {
+	if err := checkFeatures(feats); err != nil {
+		return nil, err
+	}
 	feats, _ = Resolve(feats)
 	all, err := Files(KindHub)
 	if err != nil {
@@ -192,11 +206,7 @@ func FeatureFiles(feats []Feature) ([]File, error) {
 	seen := map[string]bool{}
 	var out []File
 	for _, f := range feats {
-		spec, ok := features[f]
-		if !ok {
-			return nil, fmt.Errorf("未知の機能 %q", f)
-		}
-		for _, p := range spec.Files {
+		for _, p := range features[f].Files {
 			if seen[p] {
 				continue
 			}

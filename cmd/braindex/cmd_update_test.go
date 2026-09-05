@@ -214,3 +214,33 @@ func TestUpdate_InfersFeaturesAndSays(t *testing.T) {
 		t.Errorf("設定に足すものは無いはず:\n%s", out)
 	}
 }
+
+// 編集済みの braindex.json に無い節を足したときは、「保持」でなく足した旨を添えた行にする
+// (追記した直後に「保持(編集済み)」と出ると、書き換えていないように読める)。
+func TestUpdate_MergedConfigLineSaysAdded(t *testing.T) {
+	hub := filepath.Join(t.TempDir(), "hub")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"init", "-add", "retro", hub}, &so, &se); code != 0 {
+		t.Fatalf("init exit=%d\n%s", code, se.String())
+	}
+	// 利用者が root を直し、retro 節を消した(段 0 の形に戻した)
+	edited := "{\n  \"root\": \"..\",\n  \"notes_dirs\": [\"docs/notes\"],\n  \"extra\": []\n}\n"
+	if err := os.WriteFile(filepath.Join(hub, "braindex.json"), []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	so.Reset()
+	se.Reset()
+	if code := dispatch([]string{"update", "-dry-run", hub}, &so, &se); code != 2 {
+		t.Fatalf("exit=%d want 2\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	out := so.String()
+	if !strings.Contains(out, "追記(無い節・行を足した): braindex.json") {
+		t.Errorf("追記の行が無い:\n%s", out)
+	}
+	if strings.Contains(out, "保持(編集済み): braindex.json") {
+		t.Errorf("節を足したのに「保持(編集済み)」と出ている:\n%s", out)
+	}
+	if !strings.Contains(out, "保持(編集済み・無い節は足した): braindex.json → braindex.json.new") {
+		t.Errorf("足した旨を添えた行が無い:\n%s", out)
+	}
+}

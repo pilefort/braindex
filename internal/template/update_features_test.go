@@ -84,7 +84,10 @@ func TestUpdate_InfersFeaturesWithoutLedger(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(dst, ConfigPath+NewSuffix)); err != nil {
 		t.Error("編集済みの braindex.json に .new が無い")
 	}
-	led, _, _ := LoadLedger(dst)
+	led, _, err := LoadLedger(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := strings.Join(led.Features, ","); got != "conventions,news,retro" {
 		t.Errorf("台帳の features=%s", got)
 	}
@@ -106,12 +109,15 @@ func TestInferFeatures(t *testing.T) {
 		t.Errorf("空: got=%v err=%v", got, err)
 	}
 	writeAt(t, dst, GitignorePath, []byte("news/digest_*\n"))
-	if got, _ := InferFeatures(dst); len(got) != 0 {
-		t.Errorf(".gitignore だけで推定した: %v", got)
+	if got, err := InferFeatures(dst); err != nil || len(got) != 0 {
+		t.Errorf(".gitignore だけで推定した: got=%v err=%v", got, err)
 	}
 	writeAt(t, dst, "work/review/.gitkeep", nil)
 	writeAt(t, dst, ConfigPath, []byte(`{"schedule": {"jobs": []}}`))
-	got, _ = InferFeatures(dst)
+	got, err = InferFeatures(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if s := strings.Join(FeatureNames(got), ","); s != "review,schedule" {
 		t.Errorf("got=%s want review,schedule", s)
 	}
@@ -178,18 +184,74 @@ func TestInstallFeatures_KeepsInferredOnOldLedger(t *testing.T) {
 	if _, err := InstallFeatures(dst, []Feature{FeatureAll}); err != nil {
 		t.Fatal(err)
 	}
-	led, _, _ := LoadLedger(dst)
-	b, _ := json.MarshalIndent(struct {
+	led, _, err := LoadLedger(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.MarshalIndent(struct {
 		Version int               `json:"version"`
 		Kind    string            `json:"kind"`
 		Files   map[string]string `json:"files"`
 	}{led.Version, led.Kind, led.Files}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
 	writeAt(t, dst, LedgerPath, b) // features キーの無い旧版の台帳
 	if _, err := InstallFeatures(dst, []Feature{FeatureRetro}); err != nil {
 		t.Fatal(err)
 	}
-	led, _, _ = LoadLedger(dst)
+	led, _, err = LoadLedger(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := strings.Join(led.Features, ","); got != "conventions,news,retro,review,schedule" {
 		t.Errorf("features=%s", got)
+	}
+}
+
+// 台帳の features に今の版が知らない名前(新しい版の braindex が書いたもの)があっても、update は落とさず残す。
+// 追従の対象は知っている機能だけ。
+func TestUpdate_KeepsUnknownFeatureNamesInLedger(t *testing.T) {
+	dst := t.TempDir()
+	if _, err := InstallFeatures(dst, []Feature{FeatureRetro}); err != nil {
+		t.Fatal(err)
+	}
+	led, _, err := LoadLedger(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	led.Features = []string{"future-feature", "retro"}
+	if err := SaveLedger(dst, led); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Update(dst, KindHub, UpdateOptions{})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if got := strings.Join(FeatureNames(res.Features), ","); got != "retro" {
+		t.Errorf("features=%s want retro", got)
+	}
+	led, _, err = LoadLedger(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(led.Features, ","); got != "future-feature,retro" {
+		t.Errorf("台帳の features=%s want future-feature,retro(未知の名前を落とした)", got)
+	}
+}
+
+// 編集済みの braindex.json が壊れていたら、パスを 1 回だけ添えたエラーで止まる(BuildConfig が既に添える)。
+func TestUpdate_BrokenConfigErrorHasPathOnce(t *testing.T) {
+	dst := t.TempDir()
+	if _, err := InstallFeatures(dst, []Feature{FeatureRetro}); err != nil {
+		t.Fatal(err)
+	}
+	writeAt(t, dst, ConfigPath, []byte(`{"root": `))
+	_, err := Update(dst, KindHub, UpdateOptions{})
+	if err == nil {
+		t.Fatal("壊れた braindex.json でエラーにならない")
+	}
+	if n := strings.Count(err.Error(), ConfigPath+": "); n != 1 {
+		t.Errorf("エラーにパスが %d 回: %v", n, err)
 	}
 }

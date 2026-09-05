@@ -220,9 +220,9 @@ func TestInit_DefaultIsCoreOnly(t *testing.T) {
 			t.Errorf("段 0 なのに %s がある", p)
 		}
 	}
-	cfg, _ := os.ReadFile(filepath.Join(dir, "braindex.json"))
+	cfg := readFile(t, filepath.Join(dir, "braindex.json"))
 	for _, bad := range []string{`"review"`, `"retro"`, `"news"`, `"schedule"`, `"approvals"`} {
-		if strings.Contains(string(cfg), bad) {
+		if strings.Contains(cfg, bad) {
 			t.Errorf("段 0 の braindex.json に %s がある:\n%s", bad, cfg)
 		}
 	}
@@ -244,7 +244,7 @@ func TestInit_DefaultIsCoreOnly(t *testing.T) {
 	if code := dispatch([]string{"-config", filepath.Join(dir, "braindex.json"), "-date", "2026-01-03"}, &so, &se); code != 0 {
 		t.Fatalf("generate exit=%d\n%s", code, se.String())
 	}
-	if b, _ := os.ReadFile(filepath.Join(dir, "index", "catalog.md")); !strings.Contains(string(b), "repo-a/docs/notes/a.md") {
+	if b := readFile(t, filepath.Join(dir, "index", "catalog.md")); !strings.Contains(b, "repo-a/docs/notes/a.md") {
 		t.Errorf("段 0 の設定で索引が作られていない:\n%s", b)
 	}
 }
@@ -263,7 +263,7 @@ func TestInit_AddStepwise(t *testing.T) {
 		t.Fatalf("-add review exit=%d\n%s", code, se.String())
 	}
 	out := so.String()
-	for _, want := range []string{"依存として足した機能: conventions", "追記(無い節・行を足した): braindex.json", "作成: docs/conventions.md", "作成: .claude/skills/braindex-review/SKILL.md", "保持(既存): README.md", "`braindex review`", "`braindex lint`"} {
+	for _, want := range []string{"依存として含めた機能: conventions", "追記(無い節・行を足した): braindex.json", "作成: docs/conventions.md", "作成: .claude/skills/braindex-review/SKILL.md", "保持(既存): README.md", "`braindex review`", "`braindex lint`"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("-add review の stdout に %q が無い:\n%s", want, out)
 		}
@@ -290,7 +290,7 @@ func TestInit_AddStepwise(t *testing.T) {
 			t.Errorf("段階的な hub に %s が無い", f.Path)
 			continue
 		}
-		b, _ := os.ReadFile(filepath.Join(once, filepath.FromSlash(f.Path)))
+		b := []byte(readFile(t, filepath.Join(once, filepath.FromSlash(f.Path))))
 		if !bytes.Equal(a, b) {
 			t.Errorf("%s が段階的と一括で違う:\n--- 段階的\n%s\n--- 一括\n%s", f.Path, a, b)
 		}
@@ -298,13 +298,16 @@ func TestInit_AddStepwise(t *testing.T) {
 			t.Errorf("一括の %s が雛形と違う", f.Path)
 		}
 	}
-	// 2 回目は何も変わらない
+	// 2 回目は何も変わらない。依存(conventions)は既にあるので「足した」とは言わず「含めた」と出す
 	so.Reset()
 	if code := dispatch([]string{"init", "-add", "review", step}, &so, &se); code != 0 {
 		t.Fatalf("2 回目 exit=%d\n%s", code, se.String())
 	}
 	if strings.Contains(so.String(), "作成: ") || strings.Contains(so.String(), "追記") && !strings.Contains(so.String(), "追記 0") {
 		t.Errorf("2 回目に変更がある:\n%s", so.String())
+	}
+	if !strings.Contains(so.String(), "依存として含めた機能: conventions") || strings.Contains(so.String(), "足した機能") {
+		t.Errorf("2 回目の依存の文言が不正(既にある機能を「足した」と言っている):\n%s", so.String())
 	}
 	if strings.Contains(so.String(), "次:") {
 		t.Errorf("何も変えていないのに案内が出ている:\n%s", so.String())
@@ -345,5 +348,13 @@ func TestInit_List(t *testing.T) {
 	}
 	if _, err := os.Stat(dir); err == nil {
 		t.Errorf("-list なのに %s が作られた", dir)
+	}
+	// 引数の誤り(ディレクトリ 2 つ・-repo との併用)は -list でも 1。一覧は出さない
+	for _, args := range [][]string{{"init", "-list", dir, "other"}, {"init", "-list", "-repo", "-add", "retro", dir}} {
+		so.Reset()
+		se.Reset()
+		if code := dispatch(args, &so, &se); code != 1 || so.Len() != 0 {
+			t.Errorf("%v: exit=%d want 1・stdout=%q want 空\nstderr=%s", args[1:], code, so.String(), se.String())
+		}
 	}
 }
