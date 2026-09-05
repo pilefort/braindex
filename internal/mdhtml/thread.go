@@ -109,6 +109,24 @@ func ThreadPage(md, title string) string {
 	return shell(title, b.String(), threadJS)
 }
 
+// SplitH1 は先頭(最初の空行でない行)が `# 見出し` ならタイトルとして切り出し、残りの本文と共に返す。
+// スレッドに足すエントリの本文からタイトル行を落とすのに使う(エントリごとに h1 が並ばないように)。
+func SplitH1(md string) (string, string) {
+	md = strings.ReplaceAll(md, "\r\n", "\n")
+	md = strings.ReplaceAll(md, "\r", "\n")
+	lines := strings.Split(md, "\n")
+	for i, ln := range lines {
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		if m := headingRE.FindStringSubmatch(ln); m != nil && len(m[1]) == 1 {
+			return strings.TrimSpace(m[2]), strings.Trim(strings.Join(lines[i+1:], "\n"), "\n")
+		}
+		break
+	}
+	return "", strings.Trim(md, "\n")
+}
+
 // parseEntryLine は 1 行がエントリのマーカーなら日時と質問を返す。
 func parseEntryLine(ln string) (at, q string, ok bool) {
 	s := strings.TrimSpace(ln)

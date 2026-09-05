@@ -32,10 +32,12 @@ var answersDir = func() string { return filepath.Join(os.TempDir(), "braindex-an
 func runAnswer(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("braindex answer", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	var out string
+	var out, topic, question string
 	var noOpen, showDir, purge bool
 	var ttlDays float64
 	fs.StringVar(&out, "out", "", "出力する HTML のパス(既定: 一時置き場の <同名>.html)")
+	fs.StringVar(&topic, "append", "", "この話題のスレッド(一時置き場の <話題>.md)の先頭に足す")
+	fs.StringVar(&question, "q", "", "そのエントリの見出しに出すユーザーの質問(逐語・-append と併用)")
 	fs.BoolVar(&noOpen, "no-open", false, "書くだけで開かない")
 	fs.Float64Var(&ttlDays, "ttl-days", 14, "一時置き場でこの日数より古いファイルを実行時に消す(0 で消さない)")
 	fs.BoolVar(&showDir, "dir", false, "一時置き場のパスを表示して終わる")
@@ -44,6 +46,10 @@ func runAnswer(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "使い方: braindex answer [フラグ] <md>")
 		fmt.Fprintln(stderr, "  Markdown を自己完結 HTML にして書き、既定ブラウザで開く。出力先の既定は一時置き場で、古いものは実行のたびに消える。")
 		fmt.Fprintln(stderr, "  残す価値のある回答は md を docs/notes/ に置いてから渡す(HTML は表示用の一時物)。終了コード: 0 成功 / 1 失敗")
+		fmt.Fprintln(stderr)
+		fmt.Fprintln(stderr, "  -append <話題> を付けると 1 つの話題にスレッドとして重ねる。新しい回答が先頭に積まれ、")
+		fmt.Fprintln(stderr, "  一度見たエントリは次に開いたとき畳まれる。スレッドも一時置き場に置く(残すなら docs/notes/ へ)。")
+		fmt.Fprintln(stderr, "    braindex answer -append 索引の設計 -q \"走査の順番は決まってる？\" ans.md")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
 		fs.PrintDefaults()
@@ -56,6 +62,10 @@ func runAnswer(args []string, stdout, stderr io.Writer) int {
 	}
 	if ttlDays < 0 {
 		fmt.Fprintln(stderr, "braindex answer: -ttl-days は 0 以上")
+		return 1
+	}
+	if question != "" && topic == "" {
+		fmt.Fprintln(stderr, "braindex answer: -q は -append と一緒に使う(スレッドのエントリの見出しになる)")
 		return 1
 	}
 	dir := answersDir()
@@ -83,23 +93,41 @@ func runAnswer(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	md := strings.TrimPrefix(string(raw), "\uFEFF") // UTF-8 BOM を落とす
-	title := mdhtml.ExtractTitle(md, filepath.Base(src))
-	if out == "" {
-		base := strings.TrimSuffix(filepath.Base(src), filepath.Ext(src))
-		out = filepath.Join(dir, base+".html")
-	}
+	// 古いものの掃除はスレッドを読む前に済ませる(期限切れのスレッドへの追記は、新しいスレッドとして始まる)。
 	if ttlDays > 0 {
-		limit := time.Now().Add(-time.Duration(ttlDays * 24 * float64(time.Hour)))
+		limit := answerNow().Add(-time.Duration(ttlDays * 24 * float64(time.Hour)))
 		removed := removeFiles(dir, func(_ string, fi os.FileInfo) bool { return fi.ModTime().Before(limit) })
 		if len(removed) > 0 {
 			fmt.Fprintf(stdout, "braindex answer: %g 日より古い %d ファイルを消した (%s)\n", ttlDays, len(removed), dir)
 		}
 	}
+	base := strings.TrimSuffix(filepath.Base(src), filepath.Ext(src))
+	title := mdhtml.ExtractTitle(md, filepath.Base(src))
+	page := mdhtml.Page
+	if topic != "" {
+		name, nerr := threadName(topic)
+		if nerr != nil {
+			fmt.Fprintf(stderr, "braindex answer: %v\n", nerr)
+			return 1
+		}
+		threadPath := filepath.Join(dir, name+".md")
+		thread, terr := appendToThread(threadPath, name, question, md, answerNow())
+		if terr != nil {
+			fmt.Fprintf(stderr, "braindex answer: %v\n", terr)
+			return 1
+		}
+		fmt.Fprintf(stdout, "braindex answer: 足した %s\n", threadPath)
+		md, base, page = thread, name, mdhtml.ThreadPage
+		title, _ = mdhtml.ParseThread(thread)
+	}
+	if out == "" {
+		out = filepath.Join(dir, base+".html")
+	}
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		fmt.Fprintf(stderr, "braindex answer: %v\n", err)
 		return 1
 	}
-	if err := os.WriteFile(out, []byte(mdhtml.Page(md, title)), 0o644); err != nil {
+	if err := os.WriteFile(out, []byte(page(md, title)), 0o644); err != nil {
 		fmt.Fprintf(stderr, "braindex answer: %v\n", err)
 		return 1
 	}
@@ -116,6 +144,46 @@ func runAnswer(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// answerNow はスレッドのエントリに刻む日時と TTL の基準。テストで差し替える。
+var answerNow = time.Now
+
+// threadName は -append の話題名をファイル名に使える形にする。
+// 一時置き場の外へ書かせないため、パス区切りと Windows で使えない文字を弾く。
+func threadName(topic string) (string, error) {
+	t := strings.TrimSuffix(strings.TrimSpace(topic), ".md")
+	if t == "" {
+		return "", errors.New("-append の話題名が空")
+	}
+	if t == "." || t == ".." || strings.ContainsAny(t, `/\:*?"<>|`) {
+		return "", fmt.Errorf("-append の話題名にパス区切りや記号は使えない: %s", topic)
+	}
+	return t, nil
+}
+
+// appendToThread はスレッド .md の先頭に新しいエントリを足して書き戻し、書いた .md 全体を返す。
+// スレッドが無ければ新しく作る。エントリの本文からは先頭の `# 見出し` を落とす
+// (エントリごとに h1 が並ばないように。1 回目はそれがスレッドのタイトルになる)。
+func appendToThread(path, name, question, md string, now time.Time) (string, error) {
+	prev, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	h1, body := mdhtml.SplitH1(md)
+	fallback := h1
+	if fallback == "" {
+		fallback = name
+	}
+	e := mdhtml.Entry{At: now.Format(time.RFC3339), Q: question, Body: body}
+	thread := mdhtml.Prepend(string(prev), fallback, e)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, []byte(thread), 0o644); err != nil {
+		return "", err
+	}
+	return thread, nil
 }
 
 // removeFiles は dir 直下の通常ファイルのうち should が真のものを消し、消した名前を昇順で返す。
