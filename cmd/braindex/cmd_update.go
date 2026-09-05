@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/pilefort/braindex/internal/template"
@@ -92,7 +93,11 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "追記(無い節・行を足した):", p)
 	}
 	for _, c := range res.Conflicts {
-		fmt.Fprintf(stdout, "保持(編集済み): %s → %s に今の版を置いた\n", c.Path, c.New)
+		label := "保持(編集済み)"
+		if slices.Contains(res.Merged, c.Path) {
+			label = "保持(編集済み・無い節は足した)" // 節を足したうえで .new も置く(節の中の新しいキーは足さないため)
+		}
+		fmt.Fprintf(stdout, "%s: %s → %s に今の版を置いた\n", label, c.Path, c.New)
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "braindex update:", err)
