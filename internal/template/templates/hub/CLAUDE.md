@@ -7,6 +7,8 @@
 3. 何も当たらなければ、そう言う。ノートや決定をでっち上げない。
 4. 外の事実（最近の動向・論文・数字・固有名詞）を調べるときはスキル `research-distill` の手順で。裏取りは `braindex verify`、
    結果は `docs/notes/` に書いてから `braindex answer` で HTML にして開く。
+   同じ話題に回答を重ねるときは `braindex answer -append <話題> -q "<ユーザーの質問を逐語で>" <md>`
+   （新しい回答が上に積まれ、一度見たものは次に開くと畳まれる）。
 5. 日本語の推敲スキル（例: ja-tensaku）は braindex が同梱しない。要れば自分の `.claude/skills/` に置き、まとまった日本語を送る前に通す。
 6. ここに書いてあるスキルや置き場が無ければ、その機能はまだ足していない。使うなら `braindex init -add <機能>`
    （規約は `conventions`、週次レビューは `review`。`retro`・`news`・`schedule` は既定で入る）で足す。無いものを手で作らない。
