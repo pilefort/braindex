@@ -224,3 +224,19 @@ func TestUpdate_KeepsUnknownFeatureNamesInLedger(t *testing.T) {
 		t.Errorf("台帳の features=%s want future-feature,retro(未知の名前を落とした)", got)
 	}
 }
+
+// 編集済みの braindex.json が壊れていたら、パスを 1 回だけ添えたエラーで止まる(BuildConfig が既に添える)。
+func TestUpdate_BrokenConfigErrorHasPathOnce(t *testing.T) {
+	dst := t.TempDir()
+	if _, err := InstallFeatures(dst, []Feature{FeatureRetro}); err != nil {
+		t.Fatal(err)
+	}
+	writeAt(t, dst, ConfigPath, []byte(`{"root": `))
+	_, err := Update(dst, KindHub, UpdateOptions{})
+	if err == nil {
+		t.Fatal("壊れた braindex.json でエラーにならない")
+	}
+	if n := strings.Count(err.Error(), ConfigPath+": "); n != 1 {
+		t.Errorf("エラーにパスが %d 回: %v", n, err)
+	}
+}

@@ -92,7 +92,7 @@ func Update(dst string, kind Kind, opt UpdateOptions) (UpdateResult, error) {
 			// 利用者が編集している。braindex.json・.gitignore は無い節・行を足し、それ以外は現物を残して今の版を隣に置く
 			merged, changed, merr := mergeExisting(f.Path, cur, res.Features)
 			if merr != nil {
-				return res, fmt.Errorf("%s: %w", f.Path, merr)
+				return res, merr // BuildConfig がパスを添える。ここで包むと "braindex.json: braindex.json: ..." になる
 			}
 			if changed {
 				res.Merged = append(res.Merged, f.Path)
