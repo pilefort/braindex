@@ -13,7 +13,7 @@ import (
 func init() {
 	register(&command{
 		name:    "init",
-		summary: "hub の骨格を展開する(既定は索引の設定だけ。-add <機能> で規約・review・retro・news・schedule を足す。-repo は各リポの骨格)。既存ファイルは上書きしない",
+		summary: "hub の骨格を展開する(既定は利用者の置き場を変えない索引・retro・news・schedule。-add conventions / review で規約と週次レビューを足す。-repo は各リポの骨格)。既存ファイルは上書きしない",
 		run:     runInit,
 	})
 }
@@ -144,7 +144,7 @@ func printNextSteps(w io.Writer, feats []template.Feature) {
 
 // printFeatureList は -list の出力。機能ごとに 1 行の説明と、配るファイル・設定の節・依存。
 func printFeatureList(w io.Writer) {
-	fmt.Fprintln(w, "braindex init -add <機能> で足せる機能(段の順)。「既定」は -add を付けない init で入る:")
+	fmt.Fprintln(w, "braindex init -add <機能> で足せる機能。「既定」は -add を付けない init で入る:")
 	for _, f := range template.FeatureList() {
 		summary, files, sections, deps, _ := template.FeatureInfo(f)
 		mark := ""

@@ -78,14 +78,14 @@ func TestRetroCheck_ConfigThresholdOutOfRange(t *testing.T) {
 	}
 }
 
-// 窓に発話が無ければ超えない(率 0)。
+// 窓に発話が無ければ超えない(率 0)。「訂正率 -」でなく発話が無いことを言う(初めての利用者が最初に見る文言)。
 func TestRetroCheck_NoUtterances(t *testing.T) {
 	fixUTC(t)
 	code, so, _ := execRetroCheck(t, "-sessions", retroTestdata, "-date", "2026-09-01", "-window-days", "1")
 	if code != 2 {
 		t.Fatalf("exit=%d want 2\n%s", code, so)
 	}
-	if want := "braindex retro check: 直近 1 日の訂正率 -(発話 0・訂正 0)は閾値 8.0% 以下\n"; so != want {
+	if want := "braindex retro check: 直近 1 日に発話が無い(読んだセッションログ 3 件)。閾値 8.0% の判定は発話が入ってから\n"; so != want {
 		t.Errorf("stdout:\n want=%q\n  got=%q", want, so)
 	}
 }
