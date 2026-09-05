@@ -97,14 +97,25 @@ Go 1.26 以降。依存は標準ライブラリのみ。clone してあるなら
 
 ```sh
 mkdir hub && cd hub
-braindex init                                  # hub の骨格を展開(既存ファイルは上書きしない)
+braindex init                                  # 段 0: README・CLAUDE.md・braindex.json(索引の設定だけ)
 git init && git add . && git commit -m "hub"   # 索引の diff を「前回からの差分」にするため git 管理下に置く
 braindex                                       # 索引 index/catalog.md を生成
-braindex review                                # 週に 1 回: レビューの下書き work/review/<今日>.md
 ```
 
-`braindex init` は設定 `braindex.json`（`"root": ".."`）・フォルダ規約のテンプレ・スキルを展開する。
-設定の雛形はこれが正本で、braindex のリポジトリに別置きの雛形は置いていない。
+これで段 0（索引だけ）が動く。機能は `braindex init -add <機能>` で 1 つずつ足す（一覧は `braindex init -list`。
+既存ファイルは上書きせず、`braindex.json` には無い節だけ足すので、何度実行しても安全）:
+
+```sh
+braindex init -add conventions   # 段 1: docs/・work/ の規約とスキル record-lint・contradiction-scan・research-distill
+braindex init -add review        # 段 2: 週次レビュー(スキル braindex-review・work/review/・設定 review 節)。conventions を自動で足す
+braindex review                  #        週に 1 回: レビューの下書き work/review/<今日>.md
+braindex init -add retro         # 段 3: 振り返り(スキル retro・設定 retro 節)
+braindex init -add news          # 段 4: ニュース(news/feeds.example.json・設定 news 節・.gitignore の行)
+braindex init -add schedule      #        定期実行(設定 schedule 節。jobs は足してある review・retro の分)
+braindex init -add all           # 全部を一度に(従来の一括セットアップ)
+```
+
+`braindex init` が置く `braindex.json`（`"root": ".."`）が設定の雛形の正本で、braindex のリポジトリに別置きの雛形は置いていない。
 手で `braindex.json` を書くなら、キーの一覧は「braindex — 索引の生成」の設定の表を見る。
 
 **索引はコミットする。** hub が git 管理下にないと `braindex review` は索引の増減を常に 0 件と報告し、終了コード 2 で終わる。
@@ -116,7 +127,8 @@ braindex init -repo ../alpha   # docs/notes/{common,project}/・docs/decisions.m
 ```
 
 hub 側・リポ側とも既存ファイルは上書きしないので、再実行しても安全。
-hub には判断を埋めるスキルも入る（`.claude/skills/` の `braindex-review`・`retro`・`record-lint`・`contradiction-scan`・`research-distill`）。
+hub の判断を埋めるスキルは機能ごとに入る（`.claude/skills/` の `record-lint`・`contradiction-scan`・`research-distill` は
+`-add conventions`、`braindex-review` は `-add review`、`retro` は `-add retro`）。
 
 ### 4. エージェントに横断検索させる
 
@@ -131,8 +143,8 @@ hub の `CLAUDE.md` には「索引を grep → 実ファイルを読む」の�
 
 ### 5. 定期実行
 
-判断は人が行うので、自動化するのは下書きの作成だけ。設定の `schedule` 節に書いたジョブを、hub で `braindex schedule install`
-と打つと OS のスケジューラ（Windows は schtasks、macOS・Linux は crontab）に登録できる。
+判断は人が行うので、自動化するのは下書きの作成だけ。設定の `schedule` 節（`braindex init -add schedule` が足す。ジョブは足してある
+review・retro の分）に書いたジョブを、hub で `braindex schedule install` と打つと OS のスケジューラ（Windows は schtasks、macOS・Linux は crontab）に登録できる。
 
 ```sh
 braindex schedule print      # 登録に使うコマンドを出すだけ（何も変えない）
@@ -152,22 +164,22 @@ braindex schedule uninstall  # この hub の登録を消す
 
 | 段 | 入れるもの | 要るもの | 得られること |
 |---|---|---|---|
-| 0. 索引だけ | `braindex.json`（`root` と、今の置き場を指す `notes_dirs`／`extra`） | 既存のノート。規約の乗り換えは不要 | `index/catalog.md`。別のリポで済ませたことを grep で引ける |
-| 1. 規約と hub | `braindex init` の `docs/`・`work/`・skill `braindex-review` | 新しくノートを書く場所を規約に寄せる意思 | 決定 3 段・ISSUE・TODO の形が揃い、`lint` と `review` が使える |
-| 2. 週次レビュー | `braindex review`（＋`schedule`） | 段 1 と hub の git 管理 | 前回からの差分・放置 TODO・アーカイブ候補の下書き |
-| 3. 振り返り | `braindex retro`（設定 `retro` 節は任意） | Claude Code のセッションログ（既定の置き場） | 訂正率の常時計測と、閾値超えのレトロスペクティブ |
-| 4. ニュース | `braindex news`（`news/feeds.json`。`news suggest` と束で始められる） | フィードの URL | 関心で選んだダイジェストと、残す／不要の選別 |
-| 5. 学習の提案 | `braindex learn` | 段 0・3・4 の材料（索引・セッション・keep） | いま学ぶと良さそうなことの候補 |
+| 0. 索引だけ | `braindex init` → `braindex.json`（`root` と、今の置き場を指す `notes_dirs`／`extra`） | 既存のノート。規約の乗り換えは不要 | `index/catalog.md`。別のリポで済ませたことを grep で引ける |
+| 1. 規約と hub | `braindex init -add conventions` → `docs/`・`work/`・skill 3 本 | 新しくノートを書く場所を規約に寄せる意思 | 決定 3 段・ISSUE・TODO の形が揃い、`lint` が使える |
+| 2. 週次レビュー | `braindex init -add review`（＋`-add schedule`）→ `braindex review` | 段 1 と hub の git 管理 | 前回からの差分・放置 TODO・アーカイブ候補の下書き |
+| 3. 振り返り | `braindex init -add retro` → `braindex retro` | Claude Code のセッションログ（既定の置き場） | 訂正率の常時計測と、閾値超えのレトロスペクティブ |
+| 4. ニュース | `braindex init -add news` → `braindex news`（`news/feeds.json`。`news suggest` と束で始められる） | フィードの URL | 関心で選んだダイジェストと、残す／不要の選別 |
+| 5. 学習の提案 | `braindex learn`（配布物は無いので `-add` は要らない） | 段 0・3・4 の材料（索引・セッション・keep） | いま学ぶと良さそうなことの候補 |
 
-現状（2026-09-05）の穴: `braindex init` は段 1〜5 の設定と skill 5 本を一括で配るので、段 0 から始める人は `braindex.json` を手で書く。
-段ごとに足す形（`init` を最小にし、機能ごとに足す）への変更は `work/ISSUE-adoption.md` で検討中。
+各段は `braindex init -add <機能>` の 1 手で、前の段の設定を捨てずに足せる（`braindex.json` は無い節だけ足す）。
+`braindex update` は足した機能の分だけ追従する。
 
 ## コマンド
 
 | コマンド | 入力 | 出力 |
 |---|---|---|
 | `braindex` | `<root>/*/docs/notes/**/*.md`・`<root>/*/docs/decisions.md` | `index/catalog.md` |
-| `braindex init` | 埋め込みのテンプレ | hub の骨格（`-repo` で各リポの骨格） |
+| `braindex init` | 埋め込みのテンプレ | hub の骨格（既定は段 0。`-add <機能>` で足す・`-repo` で各リポの骨格） |
 | `braindex update` | 埋め込みのテンプレ・台帳 `.braindex/template.json` | 追いついた雛形（編集済みは `<名前>.new`）と `index/catalog.md` |
 | `braindex review` | 索引の前回コミット・各リポの `git log`・`work/TODO.md` | `work/review/<今日>.md` |
 | `braindex lint` | `<root>/*/work/ISSUE-*.md` | 指摘（stdout）と終了コード |
@@ -235,8 +247,23 @@ braindex schedule uninstall  # この hub の登録を消す
 
 ### braindex init — 骨格の展開
 
-hub リポ（引数なし）か各プロジェクトのリポ（`-repo <dir>`）に、フォルダ規約の骨格を展開する。
-既存ファイルは上書きしない。展開されるものは「セットアップ」の節。
+hub リポ（引数なし）か各プロジェクトのリポ（`-repo <dir>`）に骨格を展開する。既存ファイルは上書きしない。
+
+hub の既定は段 0（`README.md`・`CLAUDE.md`・`.gitattributes`・`braindex.json` の `root`／`notes_dirs`／`extra`）で、
+機能は `-add <機能>[,<機能>...]` で足す。機能と配布物の対応は `braindex init -list` が出す:
+
+| 機能 | 配るもの | `braindex.json` に足す節 | 依存 |
+|---|---|---|---|
+| `conventions` | `docs/`（overview・glossary・decisions・conventions・notes/）・`work/`（APPROVALS・TODO）・skill `record-lint`・`contradiction-scan`・`research-distill` | `approvals` | — |
+| `review` | skill `braindex-review`・`work/review/` | `review` | `conventions`（自動で足し、その旨を出す） |
+| `retro` | skill `retro` | `retro` | — |
+| `news` | `news/feeds.example.json`・`.gitignore` の news の行 | `news` | — |
+| `schedule` | — | `schedule`（`jobs` は足してある review・retro の分。無ければ空） | — |
+| `all` | 上の全部 | 全部 | — |
+
+同じ機能を 2 回足しても安全: ファイルは既存を残し、`braindex.json` は無い節だけを固定のキー順で足す（既にある値は触らない）。
+`.gitignore` も無い行だけを末尾に足す。足した機能は台帳 `.braindex/template.json` の `features` に記録され、`update` の追従範囲になる。
+未知の機能名は候補を出して終了コード 1。`-repo` と `-add` は併用できない。
 
 ### braindex update — 追いつかせる
 
@@ -253,11 +280,15 @@ hub（引数なし）か各プロジェクトのリポ（`-repo <dir>`）の雛�
 | 配った版のまま（台帳のハッシュと一致） | 今の版にする |
 | 既に今の版と同じ | 何もしない |
 | 利用者が編集した | **現物を残し、隣に `<名前>.new` を置く** |
+| 利用者が編集した `braindex.json`・`.gitignore` | 無い節・行だけ足す（「追記」）。`braindex.json` は加えて `.new` も置く（節の中の新しいキーは足さないため）。`.gitignore` は `.new` を置かない |
 
-台帳を持たない hub（`init` にこの仕組みが入る前からある hub）は、既存ファイルの素性が分からないので
-「編集済み」の側に倒す。ただし現物が今の版と同じなら「そのまま」になるので、`.new` が置かれるのは
-現物と今の版が食い違うファイルだけになる。`.new` の中身を見て、要るところだけ自分のファイルに写す。
-`-dry-run` は何も書かずに変更点だけを出し、`-force` は編集済みも上書きする。
+追従するのは台帳の `features`（`init -add` で足した機能）の分だけで、足していない機能のファイルは作らない。
+`features` の記録が無い hub（機能の仕組みが入る前の `init` で作ったもの）は、存在するファイルと `braindex.json` の節から
+足してある機能を推定して台帳に書き、その旨を 1 行出す。
+
+台帳を持たない hub は、既存ファイルの素性が分からないので「編集済み」の側に倒す。ただし現物が今の版と同じなら
+「そのまま」になるので、`.new` が置かれるのは現物と今の版が食い違うファイルだけになる。`.new` の中身を見て、
+要るところだけ自分のファイルに写す。`-dry-run` は何も書かずに変更点だけを出し、`-force` は編集済みも上書きする。
 
 取り込みは 2 手になる。**バイナリの更新は `update` の担当ではない**——実行ファイルの入れ替えは Go のツールチェーンが受け持ち、`update` は hub の中身だけを見る。
 
@@ -388,7 +419,7 @@ braindex retro extract [-since YYYY-MM-DD | -window-days N] [-out DIR]          
 定期実行なら週 1 回。cron: `0 9 * * 1 braindex retro check; [ $? -eq 3 ] && <通知コマンド>`。Windows のタスクスケジューラなら、
 `braindex retro check` を回して終了コード 3 のときだけ通知する `.cmd` を登録する。`braindex` が定期実行の環境の PATH に無ければフルパスで書く。
 
-閾値超えの後は、hub のスキル `retro`（`braindex init` が展開する `.claude/skills/retro/SKILL.md`）の手順で `braindex retro extract` のダイジェストを読み、
+閾値超えの後は、hub のスキル `retro`（`braindex init -add retro` が展開する `.claude/skills/retro/SKILL.md`）の手順で `braindex retro extract` のダイジェストを読み、
 所見（訂正の型・繰り返し指示・うまくいった協働）と規約への反映案を hub の `docs/notes/retro-YYYY-MM-DD.md` に残す。規約の書き換えは承認の後。
 
 なぜ: 原型（作者の 2026-07〜08 のログ 530 セッション）を人手と LLM で分類したら、訂正の多くは「規約が無い」のではなく「規約があるのに出力時に効いていない」型だった。
@@ -404,7 +435,7 @@ keep は次のプロファイルの出典になるので、**選別がそのま�
 外へ出る通信はフィードの GET だけで、セッション内容もノート本文も送らない。HTML は外部の JS・CSS を参照しない。
 フィードのリンクは `http(s)` のものだけを載せる（それ以外は題名だけを出し、選別 JSON にも `news/keep/` にも入れない）。
 
-フィード一覧 `news/feeds.json` は自分で作る。`braindex init` は隣に `news/feeds.example.json`（公開フィード 3 件の見本）を置くので、
+フィード一覧 `news/feeds.json` は自分で作る。`braindex init -add news` は隣に `news/feeds.example.json`（公開フィード 3 件の見本）を置くので、
 コピーして書き換える。`name` と `url` を持つオブジェクトの配列:
 
 ```json
@@ -433,7 +464,7 @@ keep は次のプロファイルの出典になるので、**選別がそのま�
 終了コード: 0 成功／1 失敗（**同じ日の出力先が既にある**・全フィードの取得失敗。何も書かない）／2 警告つきで完了（一部のフィードが取れなかった・採点の出典が無かった・選別や統計を取り込めなかった・LLM 補助が呼べなかった）。
 同じ日に 2 回動かすと、既にあるダイジェストは上書きせず終了コード 1 で止まる（`braindex review` と同じ。読み直すだけなら `-out` で別名に、捨ててよければ `-stdout` に出す）。
 
-**設定例**（`braindex init` の雛形と同じ。全部省略可で、値は既定）:
+**設定例**（`braindex init -add news` が足す節と同じ。全部省略可で、値は既定）:
 
 ```json
 "news": { "dir": "news", "feeds": "news/feeds.json", "seen_days": 90, "profile_days": 14,
@@ -443,7 +474,7 @@ keep は次のプロファイルの出典になるので、**選別がそのま�
 
 **置き場 `news/`**: `feeds.json`（自分で書く）・`keep/YYYY-MM.md`（残した見出し。蓄積側なので版管理に残す）・`interests.md`（任意の補助）が利用者のもの。
 `digest_*`・`.seen.json`（既読）・`.stats.json`（選別の統計）・`.llm_cache.json`・`.ingested/`（取り込み済みの選別 JSON）は作業ファイルで、
-`braindex init` が配る hub の `.gitignore` が除外する。
+`braindex init -add news` が hub の `.gitignore` に足す行が除外する。
 
 **補助ファイル `news/interests.md` の書き方**: 1 行 1 語。空行と `#` 始まりは読まない。行は記事側と同じ語の抽出規則（ラテン文字 3 字以上・カタカナ 2 字以上・漢字 2〜6 字。
 大文字小文字は畳む）を通してから語にするので、**規則で語にならない書き方（`ai`・`go` のような 2 字のラテン文字、記号だけ、長い漢字の複合語）は記事側でも語にならず、
