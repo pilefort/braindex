@@ -69,6 +69,8 @@ parent/                            ← braindex.json の root（既定 ".."＝hu
   3 段（結論 → 理由 → 根拠）で追記する。受け口は 127.0.0.1 だけで、外へは出さない。
 - **示す**: 読み返す価値のある回答は Markdown で書き、自己完結の HTML にして既定ブラウザで開く（チャットは流れる）。
 - **裏を取る**: ノートに書いた GitHub リポ・arXiv 論文・URL・逐語引用が実在するかを、一次ソースへの GET で照合する。
+- **調べる**: 外の事実（最近の動向・論文・数字）の調査は、hub に入るスキル `research-distill` の手順で行う。サブエージェントに一次ソースで
+  裏を取らせ、親が `braindex verify` で独立に再照合し、結果を `braindex answer` で HTML にする。末尾に確度 3 層（独立確認／サブエージェント確認／主張どまり）の検証メモを付ける。
 
 中核は「引く」と「回す」で、これが索引 CLI。ほかは索引の周りで動く周辺機能で、いずれも main に入っている。
 
@@ -445,13 +447,14 @@ braindex approvals apply          # 受けた回答を反映する（聞くの�
 リンクの `href` に出すのは `http(s)` と、スキームを持たないもの（相対パス・`#見出し`）だけ。`javascript:` などは文字として残す。
 
 ```sh
-braindex answer note.md            # HTML にして開く
-braindex answer -no-open note.md   # 書くだけ
-braindex answer -dir               # 一時置き場の場所を表示して終わる
-braindex answer -purge             # 一時置き場の中を今すぐ全部消す
+braindex answer note.md                  # HTML にして開く
+braindex answer -no-open note.md         # 書くだけ
+braindex answer -out out.html note.md    # 出力先を指定する
+braindex answer -dir                     # 一時置き場の場所を表示して終わる
+braindex answer -purge                   # 一時置き場の中を今すぐ全部消す
 ```
 
-フラグ: `-out` `-no-open` `-dir` `-purge` `-ttl-days`（0 で消さない）。終了コード: 0 成功／1 失敗。
+フラグ: `-out` `-no-open` `-dir` `-purge` `-ttl-days`（0 で消さない）。フラグは `<md>` より前に置く。終了コード: 0 成功／1 失敗。
 
 ### braindex verify — 実在の照合
 
@@ -461,12 +464,14 @@ braindex answer -purge             # 一時置き場の中を今すぐ全部消�
 braindex verify github pilefort/braindex
 braindex verify arxiv 2608.26263
 braindex verify url https://go.dev/blog/
-braindex verify quote https://example.com/a "引用したい文をそのまま書く"
+braindex verify quote https://example.com/a "引用したい文を二十四字以上そのまま書く"
+braindex verify -json github pilefort/braindex   # フラグは種別より前に置く
 ```
 
-出力は 1 件 1 行（種別・対象・判定・実測のタブ区切り。`-json` で配列）。`quote` は空白の揺れだけ許し、24 字未満は照合しない。
-`GITHUB_TOKEN` があれば GitHub API の認証に使う（任意・レート制限対策）。
-終了コード: 0 全件 FOUND／2 NOT FOUND あり／1 失敗。
+出力は 1 件 1 行（種別・対象・判定・実測のタブ区切り。判定は `FOUND`／`NOT FOUND`／`ERROR`。`-json` で配列）。
+`github` は実在・スター数・作成日、`arxiv` は ID の実在（実測の列にタイトル）、`url` は HTTP 200 か、`quote` は本文（タグ除去・空白正規化）に引用が実在するか。
+`quote` は空白の揺れだけ許し、24 字未満の引用は ERROR になる。`GITHUB_TOKEN` があれば GitHub API の認証に使う（任意・レート制限対策）。
+終了コード: 0 全件 FOUND／2 NOT FOUND あり／1 失敗（ERROR あり・引数の誤り）。
 
 ### braindex scope — 矛盾検査の走査対象
 
@@ -551,6 +556,7 @@ Karpathy の LLM wiki 型（2026-04・`raw/` の素材から LLM が `wiki/` の
 | `index.md`（LLM が更新する目次） | hub リポの `index/catalog.md` | CLI が決定的に再生成する。LLM は触らない |
 | `log.md`（追記式の履歴） | `git log` と `catalog.md` の diff | 専用ファイルを持たない |
 | lint（矛盾・陳腐化の検出） | 週次レビュー（`braindex review` が索引の増減・差分ファイル・放置 TODO・アーカイブ候補を集計し、スキル `braindex-review` が判断を埋める） | 集計は CLI、判断は人 |
+| （外の事実の取り込みは raw への投入） | 調査（スキル `research-distill` がサブエージェントに一次ソースで裏を取らせ、`braindex verify` で実在を再照合し、`braindex answer` で HTML にする） | 照合は CLI（GET のみ）、真偽の判断は人かエージェント。結果は出典つきで `docs/notes/` に置く |
 
 ## 開発
 
