@@ -85,8 +85,9 @@ const js = `(function(){var t=document.getElementById('t');` +
 	`try{localStorage.setItem(key,cb.checked?'1':'0');}catch(e){}});})(cbs[i]);}})();`
 
 // threadJS はスレッド HTML(ThreadPage)だけに足す分。
-//  1. 既読の管理: 見たエントリを localStorage に記録し、次に開いたときは畳んで「新着」を外す。
-//     既読の条件は「画面に 3 秒以上入った」か「自分で畳んだ」(設計 2026-09-05)。
+//  1. 開閉の記憶: 畳んだ・開いたという操作を localStorage に覚え、次に開いたときその状態に戻す。
+//     既読を自動で判定しない(2026-09-06 に「画面に 3 秒以上入ったら既読」を撤回。自己リロードと噛み合って
+//     読んでいる最中にエントリが畳まれたため)。「新着」は一度も開閉していないエントリの印。
 //  2. 全部開く / 全部畳む のボタン。
 //  3. 自己リロード: 常駐サーバを置かない代わりに 12 秒ごとに自分を読み直す(決定 2026-09-05)。
 //     隠れているタブ・文字を選択中は止め、スクロール位置は復元する。ボタンで止められる。
@@ -96,17 +97,14 @@ const threadJS = `
 var es=document.querySelectorAll('details.ent');
 if(!es.length)return;
 var ns=(location.pathname.split('/').pop()||'thread');
-function seen(id){try{return localStorage.getItem('ans-seen:'+ns+':'+id)==='1';}catch(e){return false;}}
-function mark(id){try{localStorage.setItem('ans-seen:'+ns+':'+id,'1');}catch(e){}}
+function get(id){try{return localStorage.getItem('ans-open:'+ns+':'+id);}catch(e){return null;}}
+function put(id,v){try{localStorage.setItem('ans-open:'+ns+':'+id,v?'1':'0');}catch(e){}}
+function unbadge(d){var n=d.querySelector('.ent-n');if(n)n.parentNode.removeChild(n);}
 for(var i=0;i<es.length;i++){(function(d){
-if(seen(d.id)){d.open=false;var n=d.querySelector('.ent-n');if(n)n.parentNode.removeChild(n);}
-d.addEventListener('toggle',function(){if(!d.open)mark(d.id);});
+var s=get(d.id);
+if(s!==null){d.open=(s==='1');unbadge(d);}
+d.addEventListener('toggle',function(){put(d.id,d.open);unbadge(d);});
 })(es[i]);}
-if(window.IntersectionObserver){var tm={};
-var io=new IntersectionObserver(function(rs){for(var i=0;i<rs.length;i++){(function(r){var id=r.target.id;
-if(r.isIntersecting){if(!tm[id])tm[id]=setTimeout(function(){mark(id);},3000);}
-else{clearTimeout(tm[id]);tm[id]=0;}})(rs[i]);}},{threshold:0.15});
-for(var j=0;j<es.length;j++)io.observe(es[j]);}
 var o=document.getElementById('thr-open'),c=document.getElementById('thr-close');
 function all(v){for(var i=0;i<es.length;i++)es[i].open=v;}
 if(o)o.addEventListener('click',function(){all(true);});
