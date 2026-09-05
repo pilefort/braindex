@@ -29,7 +29,7 @@ func TestFiles_Hub(t *testing.T) {
 		"work/APPROVALS.md", "work/TODO.md", "work/review/.gitkeep",
 		".claude/skills/braindex-review/SKILL.md", ".claude/skills/retro/SKILL.md",
 		".claude/skills/record-lint/SKILL.md", ".claude/skills/contradiction-scan/SKILL.md",
-		".claude/skills/research-distill/SKILL.md", ".claude/skills/ja-tensaku/SKILL.md",
+		".claude/skills/research-distill/SKILL.md",
 	} {
 		if !got[want] {
 			t.Errorf("雛形に無い: %s", want)

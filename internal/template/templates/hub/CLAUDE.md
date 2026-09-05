@@ -7,6 +7,7 @@
 3. 何も当たらなければ、そう言う。ノートや決定をでっち上げない。
 4. 外の事実（最近の動向・論文・数字・固有名詞）を調べるときはスキル `research-distill` の手順で。裏取りは `braindex verify`、
    結果は `docs/notes/` に書いてから `braindex answer` で HTML にして開く。
+5. 日本語の推敲スキル（例: ja-tensaku）は braindex が同梱しない。要れば自分の `.claude/skills/` に置き、まとまった日本語を送る前に通す。
 
 ## 書く
 

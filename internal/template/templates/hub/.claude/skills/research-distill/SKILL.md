@@ -91,7 +91,8 @@ braindex verify quote <出典 URL> "<逐語引用>" ["<逐語引用>" ...]
 または調べた対象が属するリポの `docs/notes/`。書き方は `docs/conventions.md`）。一時置き場（`braindex answer -dir` が返すディレクトリ）に
 書いてよいのは、その場限りの説明や進捗報告だけ。迷ったら `docs/notes/` に書く（余計なノートを消すのは簡単で、失った調査は戻らない）。
 
-HTML にする前に、スキル `ja-tensaku` の手順で本文を自己添削する（翻訳調・カタカナ語・体言止め・長すぎる一文を直す）。
+日本語の推敲スキル（例: ja-tensaku）が入っていれば、HTML にする前に本文を通して自己添削する（翻訳調・カタカナ語・体言止め・長すぎる一文を直す）。
+braindex は推敲スキルを同梱しない。要れば自分の `.claude/skills/` に置く。
 
 ```
 braindex answer <その.md>
