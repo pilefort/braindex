@@ -193,3 +193,34 @@ func TestInstallFeatures_KeepsInferredOnOldLedger(t *testing.T) {
 		t.Errorf("features=%s", got)
 	}
 }
+
+// 台帳の features に今の版が知らない名前(新しい版の braindex が書いたもの)があっても、update は落とさず残す。
+// 追従の対象は知っている機能だけ。
+func TestUpdate_KeepsUnknownFeatureNamesInLedger(t *testing.T) {
+	dst := t.TempDir()
+	if _, err := InstallFeatures(dst, []Feature{FeatureRetro}); err != nil {
+		t.Fatal(err)
+	}
+	led, _, err := LoadLedger(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	led.Features = []string{"future-feature", "retro"}
+	if err := SaveLedger(dst, led); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Update(dst, KindHub, UpdateOptions{})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if got := strings.Join(FeatureNames(res.Features), ","); got != "retro" {
+		t.Errorf("features=%s want retro", got)
+	}
+	led, _, err = LoadLedger(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(led.Features, ","); got != "future-feature,retro" {
+		t.Errorf("台帳の features=%s want future-feature,retro(未知の名前を落とした)", got)
+	}
+}

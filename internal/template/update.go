@@ -62,7 +62,9 @@ func Update(dst string, kind Kind, opt UpdateOptions) (UpdateResult, error) {
 			return UpdateResult{}, err
 		}
 		res.Features, res.Inferred = feats, inferred
-		led.Features = FeatureNames(feats)
+		// 台帳に足すだけで、書いてあった名前は消さない。今の版が知らない機能(新しい版の braindex が
+		// 記録したもの)は追従の対象にならないが、記録を落とすと新しい版に戻したときに消えたままになる
+		led.Features = mergeNames(led.Features, FeatureNames(feats))
 		if files, err = FeatureFiles(feats); err != nil {
 			return UpdateResult{}, err
 		}
