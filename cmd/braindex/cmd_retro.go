@@ -454,26 +454,38 @@ func loadRetroEnv(cfgPath, sessionsFlag string) (retroEnv, error) {
 		env.sessionsDir = d
 	}
 
-	if s.Dictionary != "" {
-		d, err := retro.Load(retro.ResolvePath(s.Dictionary, baseDir, env.home))
-		if err != nil {
-			return env, fmt.Errorf("設定 retro.dictionary: %w", err)
-		}
-		env.dicts = append(env.dicts, d)
-	} else {
-		env.dicts = append(env.dicts, retro.Corrections())
+	dicts, err := loadRetroDictionaries(s, baseDir, env.home)
+	if err != nil {
+		return env, err
 	}
-	if s.DictionaryExtra != "" {
-		d, err := retro.Load(retro.ResolvePath(s.DictionaryExtra, baseDir, env.home))
-		if err != nil {
-			return env, fmt.Errorf("設定 retro.dictionary_extra: %w", err)
-		}
-		env.dicts = append(env.dicts, d)
-	}
+	env.dicts = dicts
 	bins, err := retro.ParseBins(s.PositionBins)
 	if err != nil {
 		return env, fmt.Errorf("設定 retro.position_bins: %w", err)
 	}
 	env.bins = bins
 	return env, nil
+}
+
+// loadRetroDictionaries は訂正辞書を読む: 設定 retro.dictionary があればそれ(無ければ既定の辞書)、retro.dictionary_extra があれば足す。
+// 相対パスは baseDir 基準、~ は home に展開する。retro と learn が共有する(辞書の解決規則を 1 か所に置く)。
+func loadRetroDictionaries(s retro.Settings, baseDir, home string) ([]*retro.Dictionary, error) {
+	var out []*retro.Dictionary
+	if s.Dictionary != "" {
+		d, err := retro.Load(retro.ResolvePath(s.Dictionary, baseDir, home))
+		if err != nil {
+			return nil, fmt.Errorf("設定 retro.dictionary: %w", err)
+		}
+		out = append(out, d)
+	} else {
+		out = append(out, retro.Corrections())
+	}
+	if s.DictionaryExtra != "" {
+		d, err := retro.Load(retro.ResolvePath(s.DictionaryExtra, baseDir, home))
+		if err != nil {
+			return nil, fmt.Errorf("設定 retro.dictionary_extra: %w", err)
+		}
+		out = append(out, d)
+	}
+	return out, nil
 }
