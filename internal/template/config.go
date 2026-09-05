@@ -34,8 +34,9 @@ func configSections() (map[string]json.RawMessage, error) {
 // 既にあるキーは値を変えない(利用者の編集を守る)。足すのは無いキーだけで、書き戻しは固定のキー順・
 // インデント 2・末尾改行 1 つ。同じ入力なら常に同じバイト列になる。changed は 1 つでも節を足したか。
 // existing が既に全部の節を持てば、内容は同じでも整形だけは揃えて返す(changed=false)。
-// schedule の jobs は review・retro のうち設定に節があるもの(今回足す分と、以前に足した分)だけにする
-// (無い機能の定期実行を配らないため)。
+// schedule の jobs は、設定に節のある機能(review・retro・news)の分だけ持つ。job を足すのは「その機能の節を今回足した」
+// ときと「schedule 節を今回足した」ときだけで、既にある job は触らず、利用者が消した job を足し直すこともない
+// (入口の設計 2026-09-05「review は足したら加える」)。
 // feats は Resolve で core と依存を足してから使う(all もここで展開される)。
 func BuildConfig(existing []byte, feats []Feature) (out []byte, changed bool, err error) {
 	if err := checkFeatures(feats); err != nil {
@@ -55,6 +56,7 @@ func BuildConfig(existing []byte, feats []Feature) (out []byte, changed bool, er
 	if err != nil {
 		return nil, false, err
 	}
+	added := map[string]bool{} // 今回足した節
 	for _, f := range feats {
 		for _, key := range features[f].Sections {
 			if _, ok := cur[key]; ok {
@@ -65,55 +67,99 @@ func BuildConfig(existing []byte, feats []Feature) (out []byte, changed bool, er
 				return nil, false, fmt.Errorf("雛形の %s に節 %q が無い", ConfigPath, key)
 			}
 			if key == "schedule" {
-				// review・retro の節はこのループで schedule より先に入る(featureOrder の順)ので、
-				// 今回足す分も、以前に足してあった分も cur を見れば分かる
-				if v, err = filterScheduleJobs(v, cur); err != nil {
-					return nil, false, err
-				}
+				v = []byte(`{"jobs": []}`) // job は下で、節のある機能の分だけ足す
 			}
 			cur[key] = v
-			changed = true
+			added[key] = true
 		}
+	}
+	if len(added) > 0 {
+		changed = true
+	}
+	if _, ok := cur["schedule"]; ok {
+		jobsAdded, err := addScheduleJobs(cur, tmpl, added)
+		if err != nil {
+			return nil, false, err
+		}
+		changed = changed || jobsAdded
 	}
 	out, err = renderConfig(cur)
 	return out, changed, err
 }
 
-// filterScheduleJobs は schedule 節の jobs を、設定に節のある機能のものだけに絞る
-// (name が review なら review 節、retro なら retro 節が要る)。他の名前の job は残す。
-func filterScheduleJobs(raw json.RawMessage, cur map[string]json.RawMessage) (json.RawMessage, error) {
-	var sec struct {
-		Jobs []json.RawMessage `json:"jobs"`
+// scheduleJobFeatures は雛形の job 名と、その job が要る設定の節。
+var scheduleJobFeatures = map[string]string{"review": "review", "retro": "retro", "news": "news"}
+
+// addScheduleJobs は cur の schedule.jobs に、雛形の job のうち「対応する節が cur にあり、同名の job がまだ無く、
+// その節か schedule 節を今回足した」ものを末尾に足す。既にある job は触らない。
+func addScheduleJobs(cur, tmpl map[string]json.RawMessage, added map[string]bool) (bool, error) {
+	var sec map[string]json.RawMessage
+	if err := json.Unmarshal(cur["schedule"], &sec); err != nil {
+		return false, fmt.Errorf("schedule 節: %w", err)
 	}
-	if err := json.Unmarshal(raw, &sec); err != nil {
-		return nil, fmt.Errorf("雛形の schedule 節: %w", err)
+	if sec == nil {
+		return false, fmt.Errorf("schedule 節がオブジェクトでない")
 	}
-	kept := []json.RawMessage{}
-	for _, j := range sec.Jobs {
+	var jobs []json.RawMessage
+	if raw, ok := sec["jobs"]; ok && len(bytes.TrimSpace(raw)) > 0 && string(bytes.TrimSpace(raw)) != "null" {
+		if err := json.Unmarshal(raw, &jobs); err != nil {
+			return false, fmt.Errorf("schedule.jobs: %w", err)
+		}
+	}
+	have := map[string]bool{}
+	for _, j := range jobs {
 		var job struct {
 			Name string `json:"name"`
 		}
 		if err := json.Unmarshal(j, &job); err != nil {
-			return nil, fmt.Errorf("雛形の schedule.jobs: %w", err)
+			return false, fmt.Errorf("schedule.jobs: %w", err)
 		}
-		if job.Name == "review" || job.Name == "retro" {
-			if _, ok := cur[job.Name]; !ok {
-				continue
-			}
+		have[job.Name] = true
+	}
+	var tsec struct {
+		Jobs []json.RawMessage `json:"jobs"`
+	}
+	if err := json.Unmarshal(tmpl["schedule"], &tsec); err != nil {
+		return false, fmt.Errorf("雛形の schedule 節: %w", err)
+	}
+	changed := false
+	for _, j := range tsec.Jobs {
+		var job struct {
+			Name string `json:"name"`
 		}
-		kept = append(kept, j)
+		if err := json.Unmarshal(j, &job); err != nil {
+			return false, fmt.Errorf("雛形の schedule.jobs: %w", err)
+		}
+		key, known := scheduleJobFeatures[job.Name]
+		if !known || have[job.Name] {
+			continue
+		}
+		if _, ok := cur[key]; !ok {
+			continue
+		}
+		if !added[key] && !added["schedule"] {
+			continue // 以前からある機能の job は、利用者が消したかもしれないので足し直さない
+		}
+		jobs = append(jobs, j)
+		changed = true
 	}
-	// 節の他のキーは触らない(いまは jobs だけだが、増えても落とさない)
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return nil, err
+	if !changed {
+		return false, nil
 	}
-	jobs, err := json.Marshal(kept)
+	if jobs == nil {
+		jobs = []json.RawMessage{}
+	}
+	b, err := json.Marshal(jobs)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
-	m["jobs"] = jobs
-	return json.Marshal(m) // map のキーは昇順に出る(いまは jobs だけ)
+	sec["jobs"] = b
+	out, err := json.Marshal(sec) // map のキーは昇順に出る(いまは jobs だけ)
+	if err != nil {
+		return false, err
+	}
+	cur["schedule"] = out
+	return true, nil
 }
 
 // renderConfig は最上位キーを固定順に並べて書き出す。値は json.Indent で整形するだけで、

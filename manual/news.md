@@ -61,13 +61,13 @@ keep は次のプロファイルの出典になるので、**選別がそのま�
 ノート本文は渡さない。結果は `news/.llm_cache.json` に記事 ID で覚え、同じ記事を 2 回聞かない。`llm_model` で `--model` を指定できる（空なら CLI の既定）。
 CLI が無い・`llm_timeout_sec` を超えた・応答が JSON でないときは警告（終了コード 2）にして、その記事は語の点のまま出す。`-no-llm`（と `-no-score`）で止まる。
 
-**定期実行**: 設定の `schedule.jobs` に足して `braindex schedule install`（登録の仕組みは [`braindex schedule`](#braindex-schedule--定期実行の登録)）:
+**定期実行**: `braindex init` が `schedule.jobs` に次の job を入れる（時刻は `braindex.json` で直す）。登録は `braindex schedule install`（仕組みは [schedule.md](schedule.md)）:
 
 ```json
 { "name": "news", "args": ["news", "fetch", "-layer", "daily", "-no-open"], "when": "daily:07:30" }
 ```
 
-`-no-open` にしておき、朝に `news/digest_<日付>_daily.html` を自分で開く（cron・schtasks から起動したプロセスはログイン中のデスクトップにウィンドウを出せない）。
+`-no-open` なのは、cron・schtasks から起動したプロセスがログイン中のデスクトップにウィンドウを出せないため。朝に `news/digest_<日付>_daily.html` を自分で開く。
 選別を書き出した JSON は次回の `fetch` か `braindex news apply` が拾う。
 
 **取材先の候補（`braindex news suggest`）**: 何を `feeds.json` に書けばよいか分からないとき、直近の会話で使っている技術から取材先を探す。

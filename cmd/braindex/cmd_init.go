@@ -20,21 +20,23 @@ func init() {
 
 // runInit は braindex init [-add 機能,...] [-list] [-repo] [dir] を実行する。dir 省略時はカレントディレクトリ。
 //
-// 既定は段 0(README・CLAUDE.md・.gitattributes・braindex.json の索引の設定だけ)。機能は -add で 1 つずつ足す
-// (決定 2026-09-05「init は段 0 だけ配り、機能は init -add <機能> で足す」)。-add all は従来の一括展開。
+// 既定は「利用者の置き場を変えない」機能(core＋retro・news・schedule = template.DefaultFeatures)。規約への乗り換えを
+// 迫る conventions と、それに依存する review は -add で選ぶ(入口の設計 2026-09-05。同日の「段 0 だけ」を上書き)。
+// -add all は従来の一括展開。
 // -repo は hub でなく各プロジェクトのリポ側の骨格(docs/notes・docs/decisions.md・work/)を置く。
 // 既存ファイルは残すので再実行しても安全。braindex.json と .gitignore は既にあっても無い節・行だけ足す。
 func runInit(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("braindex init", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	repo := fs.Bool("repo", false, "hub でなく各プロジェクトのリポ側の骨格(docs/notes/{common,project}・docs/decisions.md・work/)を置く")
-	add := fs.String("add", "", "足す機能(カンマ区切り)。conventions / review / retro / news / schedule / all。依存は自動で足す")
+	add := fs.String("add", "", "足す機能(カンマ区切り)。conventions / review / retro / news / schedule / all。省略時は core・retro・news・schedule。依存は自動で足す")
 	list := fs.Bool("list", false, "機能と配布物の一覧を出して終わる")
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方: braindex init [-add 機能,...] [-list] [-repo] [dir]")
-		fmt.Fprintln(stderr, "  dir(既定: カレントディレクトリ)に hub の骨格を展開する。既定は段 0: README・CLAUDE.md・.gitattributes・")
-		fmt.Fprintln(stderr, "  braindex.json(索引の設定だけ)。規約や週次レビューなどの機能は -add で足す(例: -add conventions,review)。")
-		fmt.Fprintln(stderr, "  -add all で全部(従来の init と同じ)。一覧は -list。既存ファイルは残すので、再実行しても安全。")
+		fmt.Fprintln(stderr, "  dir(既定: カレントディレクトリ)に hub の骨格を展開する。既定は、利用者の置き場を変えない機能:")
+		fmt.Fprintln(stderr, "  索引(README・CLAUDE.md・.gitattributes・braindex.json)と retro・news・schedule の設定・skill。")
+		fmt.Fprintln(stderr, "  規約(docs/・work/)と週次レビューは -add conventions / -add review で足す。-add all で全部。")
+		fmt.Fprintln(stderr, "  一覧は -list。既存ファイルは残すので、再実行しても安全。")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
 		fs.PrintDefaults()
@@ -74,7 +76,7 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	case *repo:
 		res, err = template.Install(dir, template.KindRepo)
 	default:
-		var req []template.Feature
+		req := template.DefaultFeatures
 		if *add != "" {
 			if req, err = template.ParseFeatures(*add); err != nil {
 				fmt.Fprintln(stderr, "braindex init:", err)
@@ -135,17 +137,21 @@ func printNextSteps(w io.Writer, feats []template.Feature) {
 	if has[template.FeatureConventions] || has[template.FeatureReview] || has[template.FeatureRetro] {
 		fmt.Fprintln(w, "  日本語の推敲スキル(例: ja-tensaku)は同梱しない。要れば自分の .claude/skills/ に置く")
 	}
-	if len(feats) <= 1 { // core だけ
-		fmt.Fprintln(w, "  機能を足すときは `braindex init -list` で一覧を見て、`braindex init -add conventions` から")
+	if !has[template.FeatureConventions] {
+		fmt.Fprintln(w, "  ノートの規約(docs/・work/)と週次レビューを使うなら `braindex init -add conventions` / `-add review`(一覧は `braindex init -list`)")
 	}
 }
 
 // printFeatureList は -list の出力。機能ごとに 1 行の説明と、配るファイル・設定の節・依存。
 func printFeatureList(w io.Writer) {
-	fmt.Fprintln(w, "braindex init -add <機能> で足せる機能(段の順):")
+	fmt.Fprintln(w, "braindex init -add <機能> で足せる機能(段の順)。「既定」は -add を付けない init で入る:")
 	for _, f := range template.FeatureList() {
 		summary, files, sections, deps, _ := template.FeatureInfo(f)
-		fmt.Fprintf(w, "\n%s: %s\n", f, summary)
+		mark := ""
+		if template.IsDefault(f) {
+			mark = "(既定)"
+		}
+		fmt.Fprintf(w, "\n%s%s: %s\n", f, mark, summary)
 		if len(files) > 0 {
 			fmt.Fprintf(w, "  ファイル: %s\n", strings.Join(files, ", "))
 		}

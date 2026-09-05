@@ -2,8 +2,8 @@
 
 [← README](../README.md) ／ [手引きの目次](README.md)
 
-判断は人が行うので、自動化するのは下書きの作成だけ。設定の `schedule` 節（`braindex init -add schedule` が足す。ジョブは足してある
-review・retro の分）に書いたジョブを、hub で `braindex schedule install` と打つと OS のスケジューラ（Windows は schtasks、macOS・Linux は crontab）に登録できる。
+判断は人が行うので、自動化するのは下書きの作成だけ。設定の `schedule` 節（`braindex init` が既定で足す。ジョブは足してある
+review・retro・news の分）に書いたジョブを、hub で `braindex schedule install` と打つと OS のスケジューラ（Windows は schtasks、macOS・Linux は crontab）に登録できる。
 
 ```sh
 braindex schedule print      # 登録に使うコマンドを出すだけ（何も変えない）
@@ -12,7 +12,8 @@ braindex schedule list       # 設定のジョブと、OS 側に登録されて�
 braindex schedule uninstall  # この hub の登録を消す
 ```
 
-節を省略すると、週次レビュー（月 09:00）と訂正率の確認（月 09:05）の 2 本になる。hub と braindex 自身の絶対パスを埋め込むので、
+`braindex init` が置く節は、訂正率の確認（月 09:05）・ニュースの取得（毎日 07:30・`-layer daily -no-open`）と、review を足していれば週次レビュー（月 09:00）。
+節を省略すると、週次レビューと訂正率の確認の 2 本になる。hub と braindex 自身の絶対パスを埋め込むので、
 定期実行の環境の PATH には依存しない（どちらかを移したら登録し直す）。
 自分で cron や schtasks に書きたいときは `braindex schedule print` の出力をそのまま使える。
 同じ日に 2 回動いても、既にある下書きは上書きしない。

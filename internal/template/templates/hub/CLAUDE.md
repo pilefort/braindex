@@ -9,7 +9,7 @@
    結果は `docs/notes/` に書いてから `braindex answer` で HTML にして開く。
 5. 日本語の推敲スキル（例: ja-tensaku）は braindex が同梱しない。要れば自分の `.claude/skills/` に置き、まとまった日本語を送る前に通す。
 6. ここに書いてあるスキルや置き場が無ければ、その機能はまだ足していない。使うなら `braindex init -add <機能>`
-   （`conventions`・`review`・`retro`・`news`・`schedule`）で足す。無いものを手で作らない。
+   （規約は `conventions`、週次レビューは `review`。`retro`・`news`・`schedule` は既定で入る）で足す。無いものを手で作らない。
 
 ## 書く
 

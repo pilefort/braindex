@@ -6,20 +6,25 @@
 
 hub リポ（引数なし）か各プロジェクトのリポ（`-repo <dir>`）に骨格を展開する。既存ファイルは上書きしない。
 
-hub の既定は段 0（`README.md`・`CLAUDE.md`・`.gitattributes`・`braindex.json` の `root`／`notes_dirs`／`extra`）で、
-機能は `-add <機能>[,<機能>...]` で足す。機能と配布物の対応は `braindex init -list` が出す:
+hub の既定は「利用者の置き場と書き方を変えない」機能: `core`（`README.md`・`CLAUDE.md`・`.gitattributes`・`braindex.json` の
+`root`／`notes_dirs`／`extra`）と `retro`・`news`・`schedule`。規約への乗り換えを迫る `conventions` と、それに依存する `review` は
+`-add <機能>[,<機能>...]` で足す（2026-09-05 の入口の設計。同日の「既定は段 0」を上書き）。`-add core` なら索引の設定だけになる。
+機能と配布物の対応は `braindex init -list` が出す:
 
-| 機能 | 配るもの | `braindex.json` に足す節 | 依存 |
-|---|---|---|---|
-| `conventions` | `docs/`（overview・glossary・decisions・conventions・notes/）・`work/`（APPROVALS・TODO）・skill `record-lint`・`contradiction-scan`・`research-distill` | `approvals` | — |
-| `review` | skill `braindex-review`・`work/review/` | `review` | `conventions`（自動で足し、その旨を出す） |
-| `retro` | skill `retro` | `retro` | — |
-| `news` | `news/feeds.example.json`・`.gitignore` の news の行 | `news` | — |
-| `schedule` | — | `schedule`（`jobs` は足してある review・retro の分。無ければ空。後から足した分は `braindex update` が足す） | — |
-| `all` | 上の全部 | 全部 | — |
+| 機能 | 既定 | 配るもの | `braindex.json` に足す節 | 依存 |
+|---|---|---|---|---|
+| `core` | ○ | `README.md`・`CLAUDE.md`・`.gitattributes`・`braindex.json` | `root`・`notes_dirs`・`extra` | — |
+| `conventions` | | `docs/`（overview・glossary・decisions・conventions・notes/）・`work/`（APPROVALS・TODO）・skill `record-lint`・`contradiction-scan`・`research-distill` | `approvals` | — |
+| `review` | | skill `braindex-review`・`work/review/` | `review` | `conventions`（自動で含め、その旨を出す） |
+| `retro` | ○ | skill `retro` | `retro` | — |
+| `news` | ○ | `news/feeds.example.json`・`.gitignore` の news の行 | `news` | — |
+| `schedule` | ○ | — | `schedule`（`jobs` は足してある review・retro・news の分） | — |
+| `all` | | 上の全部 | 全部 | — |
 
 同じ機能を 2 回足しても安全: ファイルは既存を残し、`braindex.json` は無い節だけを固定のキー順で足す（既にある値は触らない）。
-`.gitignore` も無い行だけを末尾に足す。足した機能は台帳 `.braindex/template.json` の `features` に記録され、`update` の追従範囲になる。
+`schedule.jobs` には、機能を足したときにその機能の job（`review`／`retro check`／`news fetch`）を末尾に足す。既にある job は触らず、
+以前から入っている機能の job を利用者が消していても足し直さない。`.gitignore` も無い行だけを末尾に足す。
+足した機能は台帳 `.braindex/template.json` の `features` に記録され、`update` の追従範囲になる。
 未知の機能名は候補を出して終了コード 1。`-repo` と `-add` は併用できない。
 
 `braindex init` が置く `braindex.json`（`"root": ".."`）が設定の雛形の正本で、braindex のリポジトリに別置きの雛形は置いていない。
