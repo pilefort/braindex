@@ -2,6 +2,8 @@
 
 複数リポを横断する索引（`index/catalog.md`）と、どのリポにも属さない知識を置くリポジトリ。
 `braindex init` で展開した。ここにあるファイルは自由に書き換えてよい（`braindex init` は既存ファイルを上書きしない）。
+この README は全機能の説明を持つ。まだ足していない機能（`docs/`・`work/`・スキル・`braindex.json` の節が無いもの）は
+`braindex init -add <機能>` で足す（一覧は `braindex init -list`。`conventions`・`review`・`retro`・`news`・`schedule`・`all`）。
 
 ## 日々の使い方
 
@@ -21,8 +23,9 @@
 閾値は `braindex.json` の `review` 節。
 
 下書きの作成だけなら定期実行に任せられる（判断は人）。このディレクトリで `braindex schedule install` と打つと、
-`braindex.json` の `schedule` 節に書いたジョブが OS のスケジューラ（Windows は schtasks、macOS・Linux は crontab）に登録される。
-既定は週次レビュー（月 09:00）と訂正率の確認（月 09:05）の 2 本。既にある下書きは上書きしない。
+`braindex.json` の `schedule` 節（`braindex init -add schedule` が足す）に書いたジョブが OS のスケジューラ（Windows は schtasks、macOS・Linux は crontab）に登録される。
+ジョブは足してある機能の分だけ入る: `review` があれば週次レビュー（月 09:00）、`retro` があれば訂正率の確認（月 09:05）。
+`schedule` の後に足した機能のジョブは `braindex update` が足す。既にある下書きは上書きしない。
 
 ```sh
 braindex schedule print      # 登録に使うコマンドを出すだけ（何も変えない）
@@ -42,14 +45,14 @@ hub と `braindex` 自身の絶対パスを埋め込むので、定期実行の�
 所見と規約への反映案を `docs/notes/retro-YYYY-MM-DD.md` に残す。数値は `braindex retro stats -window-days 14 -by project,week,position` の表を貼る（窓を付けないと全期間の集計になる）。
 
 組み込みは 2 通り。Claude Code の hook（`SessionStart`）に `braindex retro check -quiet || true` を置けば、超えたときだけ 1 行がセッションに入る。
-定期実行なら `braindex schedule install`（既定の `retro` ジョブが週 1 回 `braindex retro check` を回す）。窓・閾値・辞書は `braindex.json` の `retro` 節。
+定期実行なら `braindex schedule install`（`-add schedule` が足す `retro` ジョブが週 1 回 `braindex retro check` を回す）。窓・閾値・辞書は `braindex.json` の `retro` 節。
 
 ## 地図
 
 | 場所 | 何が入るか |
 |---|---|
 | `index/catalog.md` | 索引。`braindex` が生成する。手で編集しない |
-| `braindex.json` | 走査の設定: `root`・`notes_dirs`・`extra`。週次レビューの設定（記録の置き場と閾値）: `review`。振り返りの設定（窓・閾値・辞書）: `retro`。定期実行のジョブ（名前・引数・時刻）: `schedule` |
-| `docs/` | 蓄積するもの: `overview.md`・`glossary.md`・`decisions.md`・`notes/`・`conventions.md` |
-| `work/` | 揮発するもの: `APPROVALS.md`（判断待ち）・`TODO.md`・`review/`（週次レビューの記録） |
-| `.claude/skills/` | Claude Code のスキル: `braindex-review`（週次レビューの判断）・`retro`（振り返り）・`record-lint`（ノート保存前の曖昧さ検査）・`contradiction-scan`（横断の矛盾検査）・`research-distill`（検証優先の調査。`braindex verify` で裏取り、`braindex answer` で HTML 化） |
+| `braindex.json` | 走査の設定: `root`・`notes_dirs`・`extra`（段 0）。週次レビューの設定（記録の置き場と閾値）: `review`。振り返りの設定（窓・閾値・辞書）: `retro`。判断待ちフォームの置き場: `approvals`（`-add conventions`）。ニュース: `news`。定期実行のジョブ（名前・引数・時刻）: `schedule`。節は `braindex init -add` が足す |
+| `docs/` | 蓄積するもの: `overview.md`・`glossary.md`・`decisions.md`・`notes/`・`conventions.md`（`-add conventions`） |
+| `work/` | 揮発するもの: `APPROVALS.md`（判断待ち）・`TODO.md`（`-add conventions`）・`review/`（週次レビューの記録。`-add review`） |
+| `.claude/skills/` | Claude Code のスキル: `record-lint`（ノート保存前の曖昧さ検査）・`contradiction-scan`（横断の矛盾検査）・`research-distill`（検証優先の調査。`braindex verify` で裏取り、`braindex answer` で HTML 化）は `-add conventions`。`braindex-review`（週次レビューの判断）は `-add review`。`retro`（振り返り）は `-add retro` |
