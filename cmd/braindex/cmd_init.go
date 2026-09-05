@@ -97,8 +97,9 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "braindex init:", err)
 		return 1
 	}
+	// 「足した」でなく「含めた」: 依存の配布物が既にある hub(再実行・先に conventions を入れた hub)では何も足さない
 	if len(added) > 0 {
-		fmt.Fprintf(stdout, "依存として足した機能: %s\n", joinFeatures(added))
+		fmt.Fprintf(stdout, "依存として含めた機能: %s\n", joinFeatures(added))
 	}
 	fmt.Fprintf(stdout, "braindex init: 作成 %d・追記 %d・保持 %d(%s)\n", len(res.Created), len(res.Merged), len(res.Skipped), dir)
 	if *repo || len(res.Created)+len(res.Merged) == 0 {

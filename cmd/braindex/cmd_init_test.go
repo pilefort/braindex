@@ -263,7 +263,7 @@ func TestInit_AddStepwise(t *testing.T) {
 		t.Fatalf("-add review exit=%d\n%s", code, se.String())
 	}
 	out := so.String()
-	for _, want := range []string{"依存として足した機能: conventions", "追記(無い節・行を足した): braindex.json", "作成: docs/conventions.md", "作成: .claude/skills/braindex-review/SKILL.md", "保持(既存): README.md", "`braindex review`", "`braindex lint`"} {
+	for _, want := range []string{"依存として含めた機能: conventions", "追記(無い節・行を足した): braindex.json", "作成: docs/conventions.md", "作成: .claude/skills/braindex-review/SKILL.md", "保持(既存): README.md", "`braindex review`", "`braindex lint`"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("-add review の stdout に %q が無い:\n%s", want, out)
 		}
@@ -298,13 +298,16 @@ func TestInit_AddStepwise(t *testing.T) {
 			t.Errorf("一括の %s が雛形と違う", f.Path)
 		}
 	}
-	// 2 回目は何も変わらない
+	// 2 回目は何も変わらない。依存(conventions)は既にあるので「足した」とは言わず「含めた」と出す
 	so.Reset()
 	if code := dispatch([]string{"init", "-add", "review", step}, &so, &se); code != 0 {
 		t.Fatalf("2 回目 exit=%d\n%s", code, se.String())
 	}
 	if strings.Contains(so.String(), "作成: ") || strings.Contains(so.String(), "追記") && !strings.Contains(so.String(), "追記 0") {
 		t.Errorf("2 回目に変更がある:\n%s", so.String())
+	}
+	if !strings.Contains(so.String(), "依存として含めた機能: conventions") || strings.Contains(so.String(), "足した機能") {
+		t.Errorf("2 回目の依存の文言が不正(既にある機能を「足した」と言っている):\n%s", so.String())
 	}
 	if strings.Contains(so.String(), "次:") {
 		t.Errorf("何も変えていないのに案内が出ている:\n%s", so.String())
