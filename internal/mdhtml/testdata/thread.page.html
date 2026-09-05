@@ -1,15 +1,10 @@
-package mdhtml
-
-import (
-	"regexp"
-	"strings"
-)
-
-// urlRE は本文中の裸の URL(原型 answer_html.py の _URL_RE と同じ)。
-var urlRE = regexp.MustCompile(`https?://[^\s<>"'|)]+`)
-
-// css は回答 HTML に埋め込むスタイル。外部読み込み無し。data-theme="dark" で配色が切り替わる。
-const css = `
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>索引の設計</title>
+<style>
 :root{--bg:#f6f7f9;--panel:#fff;--ink:#1c2230;--sub:#5a6472;--mut:#8a93a3;--line:#e5e8ee;--line2:#eef1f5;
   --accent:#1c7ed6;--accent-soft:#e7f1fb;--code:#f0f2f6;
   --jp:"Hiragino Kaku Gothic ProN","Yu Gothic Medium","Yu Gothic",Meiryo,"Noto Sans JP",system-ui,sans-serif}
@@ -61,37 +56,24 @@ body{background:var(--bg);color:var(--ink);font-family:var(--jp);line-height:1.8
 .ent-b{padding:2px 16px 10px}
 .ent-b>:first-child{margin-top:.6em}
 .ent-b h2{font-size:17px}
-`
-
-// js は配色の切り替え(localStorage に保存・初期値は OS の設定)と、チェックリストの消し込み
-// (項目テキストをキーに localStorage へ保存。再生成しても同じテキストなら状態が残る)。
-// 原型にあった常駐サーバ向けの自動リロード(SSE)は持ち込まない(設計判断 2026-09-03)。
-const js = `(function(){var t=document.getElementById('t');` +
-	`function ap(v){if(v==='dark')document.documentElement.setAttribute('data-theme','dark');` +
-	`else document.documentElement.removeAttribute('data-theme');}` +
-	`try{var s=localStorage.getItem('ans-theme');if(s)ap(s);` +
-	`else if(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)ap('dark');}catch(e){}` +
-	`if(t)t.addEventListener('click',function(){var d=document.documentElement.getAttribute('data-theme')==='dark';` +
-	`ap(d?'light':'dark');try{localStorage.setItem('ans-theme',d?'light':'dark');}catch(e){}});})();` +
-	`(function(){var seen={};var cbs=document.querySelectorAll('li.task>input[type=checkbox]');` +
-	`for(var i=0;i<cbs.length;i++){(function(cb){var li=cb.parentElement;` +
-	`var txt=(li.textContent||'').replace(/\s+/g,' ').trim().slice(0,120);` +
-	`var n=seen[txt]=(seen[txt]||0)+1;` +
-	`var key='ans-task:'+document.title+':'+txt+(n>1?'#'+n:'');` +
-	`function sync(){li.classList.toggle('done',cb.checked);}` +
-	`try{var s=localStorage.getItem(key);if(s!==null)cb.checked=(s==='1');}catch(e){}` +
-	`sync();` +
-	`cb.addEventListener('change',function(){sync();` +
-	`try{localStorage.setItem(key,cb.checked?'1':'0');}catch(e){}});})(cbs[i]);}})();`
-
-// threadJS はスレッド HTML(ThreadPage)だけに足す分。
-//  1. 既読の管理: 見たエントリを localStorage に記録し、次に開いたときは畳んで「新着」を外す。
-//     既読の条件は「画面に 3 秒以上入った」か「自分で畳んだ」(設計 2026-09-05)。
-//  2. 全部開く / 全部畳む のボタン。
-//  3. 自己リロード: 常駐サーバを置かない代わりに 12 秒ごとに自分を読み直す(決定 2026-09-05)。
-//     隠れているタブ・文字を選択中は止め、スクロール位置は復元する。ボタンで止められる。
-//     入力欄を持つ HTML(approvals)には入れない。
-const threadJS = `
+</style>
+</head>
+<body>
+<main class="doc"><h1>索引の設計</h1>
+<div class="thr-bar"><button class="thr-b" id="thr-open">全部開く</button><button class="thr-b" id="thr-close">全部畳む</button><button class="thr-b" id="thr-auto">自動更新</button></div>
+<details class="ent" id="e-20260906T032000" open>
+<summary><span class="ent-w">2026-09-06 03:20</span><span class="ent-q">走査の順番は決まってる？</span><span class="ent-n">新着</span></summary>
+<div class="ent-b"><p>名前順です。</p>
+<h2>内訳</h2>
+<ul><li>置き場ごとに名前順</li></ul></div>
+</details>
+<details class="ent" id="e-20260905T200000" open>
+<summary><span class="ent-w">2026-09-05 20:00</span><span class="ent-q">索引って何を見てる？</span><span class="ent-n">新着</span></summary>
+<div class="ent-b"><p>ノートの見出しです。</p></div>
+</details>
+</main>
+<button id="t" class="tgl">◐ 表示</button>
+<script>(function(){var t=document.getElementById('t');function ap(v){if(v==='dark')document.documentElement.setAttribute('data-theme','dark');else document.documentElement.removeAttribute('data-theme');}try{var s=localStorage.getItem('ans-theme');if(s)ap(s);else if(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)ap('dark');}catch(e){}if(t)t.addEventListener('click',function(){var d=document.documentElement.getAttribute('data-theme')==='dark';ap(d?'light':'dark');try{localStorage.setItem('ans-theme',d?'light':'dark');}catch(e){}});})();(function(){var seen={};var cbs=document.querySelectorAll('li.task>input[type=checkbox]');for(var i=0;i<cbs.length;i++){(function(cb){var li=cb.parentElement;var txt=(li.textContent||'').replace(/\s+/g,' ').trim().slice(0,120);var n=seen[txt]=(seen[txt]||0)+1;var key='ans-task:'+document.title+':'+txt+(n>1?'#'+n:'');function sync(){li.classList.toggle('done',cb.checked);}try{var s=localStorage.getItem(key);if(s!==null)cb.checked=(s==='1');}catch(e){}sync();cb.addEventListener('change',function(){sync();try{localStorage.setItem(key,cb.checked?'1':'0');}catch(e){}});})(cbs[i]);}})();
 (function(){
 var es=document.querySelectorAll('details.ent');
 if(!es.length)return;
@@ -130,74 +112,6 @@ var s=window.getSelection&&window.getSelection().toString();
 if(s&&s.trim())return;
 location.reload();
 },12000);
-})();`
-
-// Linkify は HTML 本文中の裸の URL を <a> にする。タグの中(属性値)と、既存の <a>・<code>・<pre> の中は触らない。
-// 原型は本文全体に正規表現をかけていたため、Markdown リンクの href の中まで再リンクして HTML を壊していた
-// (2026-09-03 に確認)。移植でその穴を塞いだ。
-func Linkify(h string) string {
-	var b strings.Builder
-	i := 0
-	for i < len(h) {
-		j := strings.IndexByte(h[i:], '<')
-		if j < 0 {
-			b.WriteString(linkText(h[i:]))
-			break
-		}
-		b.WriteString(linkText(h[i : i+j]))
-		i += j
-		rest := h[i:]
-		skipTo := ""
-		switch {
-		case strings.HasPrefix(rest, "<a "), strings.HasPrefix(rest, "<a>"):
-			skipTo = "</a>"
-		case strings.HasPrefix(rest, "<code"):
-			skipTo = "</code>"
-		case strings.HasPrefix(rest, "<pre"):
-			skipTo = "</pre>"
-		}
-		if skipTo != "" {
-			if k := strings.Index(rest, skipTo); k >= 0 {
-				b.WriteString(rest[:k+len(skipTo)])
-				i += k + len(skipTo)
-				continue
-			}
-		}
-		k := strings.IndexByte(rest, '>')
-		if k < 0 {
-			b.WriteString(rest)
-			break
-		}
-		b.WriteString(rest[:k+1])
-		i += k + 1
-	}
-	return b.String()
-}
-
-func linkText(s string) string {
-	return urlRE.ReplaceAllStringFunc(s, func(u string) string {
-		return `<a href="` + u + `" target="_blank" rel="noopener">` + u + `</a>`
-	})
-}
-
-// Page は Markdown を自己完結の HTML 文書にする(CSS・JS 埋め込み・外部読み込み無し)。
-// チェックボックスは表示専用(disabled)でなくクリック可能にし、消し込みを JS が localStorage に残す。
-func Page(md, title string) string {
-	return shell(title, renderBody(md), "")
-}
-
-// renderBody は Markdown を本文の HTML にする(裸の URL のリンク化と、チェックボックスの有効化まで)。
-func renderBody(md string) string {
-	body := Linkify(Body(md))
-	body = strings.ReplaceAll(body, `<input type="checkbox" disabled checked>`, `<input type="checkbox" checked>`)
-	return strings.ReplaceAll(body, `<input type="checkbox" disabled>`, `<input type="checkbox">`)
-}
-
-// shell は本文の HTML を 1 枚の文書に包む。extraJS は共通の js の後ろに足す追加分(スレッド用)。
-func shell(title, main, extraJS string) string {
-	return "<!doctype html>\n<html lang=\"ja\">\n<head>\n<meta charset=\"utf-8\">\n" +
-		"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n" +
-		"<title>" + escapeAttr(title) + "</title>\n<style>" + css + "</style>\n</head>\n<body>\n" +
-		`<main class="doc">` + main + "</main>\n" + `<button id="t" class="tgl">◐ 表示</button>` + "\n" +
-		"<script>" + js + extraJS + "</script>\n</body>\n</html>\n"
-}
+})();</script>
+</body>
+</html>
