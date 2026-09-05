@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -277,10 +276,13 @@ func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 		Nonce:       nonce,
 		GeneratedAt: now.Format("2006-01-02 15:04"),
 	})
+	// 回答の書き込みは Serve に任せる(応答を返す前に書く)。ここで受け取ってから書くと、
+	// 書けなかったときにブラウザ側は完了表示のままになる。
 	rep, err := approvals.Serve(context.Background(), approvals.ServeOptions{
-		HTML:    html,
-		Nonce:   nonce,
-		Timeout: timeout,
+		HTML:      html,
+		Nonce:     nonce,
+		Timeout:   timeout,
+		ReplyPath: p.Reply,
 		OnReady: func(url string) {
 			fmt.Fprintf(stdout, "form: %s (%d 件・id=%s)\n", url, len(d.Items), p.ID)
 			if approvalsOnReady != nil {
@@ -298,9 +300,6 @@ func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "braindex approvals serve: %g 秒待っても回答なし(終了コード 3)\n", timeoutSec)
 			return 3
 		}
-		return fail(err)
-	}
-	if err := writeReply(p.Reply, rep); err != nil {
 		return fail(err)
 	}
 	fmt.Fprintf(stdout, "reply: %s\n", p.Reply)
@@ -324,18 +323,6 @@ func serveTimeout(sec float64) (time.Duration, error) {
 		return 0, fmt.Errorf("-timeout が大きすぎる(%v 秒)。無期限にするなら 0", sec)
 	}
 	return time.Duration(sec * float64(time.Second)), nil
-}
-
-// writeReply は回答を JSON で書く(置き場が無ければ作る)。
-func writeReply(path string, rep approvals.Reply) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	b, err := json.MarshalIndent(rep, "", " ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, append(b, '\n'), 0o644)
 }
 
 // summarizeReply は回答を 1 項目 1 行にする。

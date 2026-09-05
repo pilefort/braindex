@@ -8,6 +8,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,11 +18,17 @@ import (
 // startServe は Serve を裏で起動し、URL と結果チャネルを返す。
 func startServe(t *testing.T, o ServeOptions) (url string, done <-chan serveResult) {
 	t.Helper()
+	return startServeCtx(t, context.Background(), o)
+}
+
+// startServeCtx は ctx つきで同じことをする。回答を受けずに終わらせたいテストで使う。
+func startServeCtx(t *testing.T, ctx context.Context, o ServeOptions) (url string, done <-chan serveResult) {
+	t.Helper()
 	ready := make(chan string, 1)
 	o.OnReady = func(u string) { ready <- u }
 	ch := make(chan serveResult, 1)
 	go func() {
-		r, err := Serve(context.Background(), o)
+		r, err := Serve(ctx, o)
 		ch <- serveResult{r, err}
 	}()
 	select {
@@ -182,5 +190,75 @@ func TestNewNonce(t *testing.T) {
 	// フォームの JS とテストが [0-9a-f]{32} で拾うので、16 進以外を返してはいけない
 	if _, err := hex.DecodeString(a); err != nil {
 		t.Errorf("16 進でない: %q", a)
+	}
+}
+
+// 回答は「応答を返す前に」ディスクへ書く。後から呼び出し側が書く形だと、書けなかったときに
+// ブラウザは成功表示のまま回答だけ消える(ISSUE-approvals-sent-state・2026-09-05)。
+func TestServe_SavesReplyBeforeResponding(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sub", "approvals-x.reply.json")
+	url, done := startServe(t, ServeOptions{HTML: []byte("x"), Nonce: "n1", Timeout: 5 * time.Second, ReplyPath: path})
+
+	code, body := post(t, url, strings.TrimSuffix(url, "/"), `{"nonce":"n1","items":[{"n":1,"title":"題","choice":"A","comment":"c"}]}`)
+	if code != 200 {
+		t.Fatalf("正しい POST = %d %s", code, body)
+	}
+	// 応答が返った時点で(Serve の終了を待たずに)置き場にある
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("応答後に回答が書かれていない: %v", err)
+	}
+	var saved Reply
+	if err := json.Unmarshal(b, &saved); err != nil {
+		t.Fatalf("回答 JSON を読めない: %v (%s)", err, b)
+	}
+	if len(saved.Items) != 1 || saved.Items[0].Choice != "A" || saved.Nonce != "n1" || saved.ReceivedAt == "" {
+		t.Errorf("保存された回答 = %+v", saved)
+	}
+	var res struct {
+		OK    bool   `json:"ok"`
+		Saved string `json:"saved"`
+	}
+	if err := json.Unmarshal([]byte(body), &res); err != nil {
+		t.Fatalf("応答 JSON を読めない: %v (%s)", err, body)
+	}
+	if !res.OK || res.Saved != path {
+		t.Errorf(`応答 = %s, want {"ok":true,"saved":%q}`, body, path)
+	}
+	select {
+	case r := <-done:
+		if r.err != nil || len(r.reply.Items) != 1 {
+			t.Errorf("Serve の戻り値 = %+v %v", r.reply, r.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("回答後に Serve が終わらない")
+	}
+}
+
+// 書けなかったら 200 を返さない。ブラウザ側は既存の失敗表示(JSON を貼り付ける)に落ちる。
+func TestServe_SaveFailure(t *testing.T) {
+	notDir := filepath.Join(t.TempDir(), "notadir")
+	if err := os.WriteFile(notDir, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	url, done := startServeCtx(t, ctx, ServeOptions{HTML: []byte("x"), Nonce: "n1", ReplyPath: filepath.Join(notDir, "r.json")})
+
+	code, body := post(t, url, strings.TrimSuffix(url, "/"), `{"nonce":"n1","items":[{"n":1,"choice":"A"}]}`)
+	if code != 500 || !strings.Contains(body, "error") {
+		t.Fatalf("書き込み失敗 = %d %s, want 500", code, body)
+	}
+	// 受け取ったことにせず待ち続ける(押し直せる)
+	select {
+	case r := <-done:
+		t.Fatalf("書き込み失敗で Serve が終わった: %+v %v", r.reply, r.err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancel で終わらない")
 	}
 }
