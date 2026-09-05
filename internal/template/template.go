@@ -111,7 +111,17 @@ func install(dst string, kind Kind, files []File, feats []Feature) (Result, erro
 		return Result{}, err
 	}
 	led.Kind = string(kind)
-	led.Features = mergeNames(led.Features, FeatureNames(feats))
+	if kind == KindHub {
+		if led.Features == nil {
+			// 機能の記録を持たない旧版の台帳(または台帳なし)。既にある機能を推定して落とさない
+			inferred, err := InferFeatures(dst)
+			if err != nil {
+				return Result{}, err
+			}
+			led.Features = FeatureNames(inferred)
+		}
+		led.Features = mergeNames(led.Features, FeatureNames(feats))
+	}
 
 	var res Result
 	for _, f := range files {

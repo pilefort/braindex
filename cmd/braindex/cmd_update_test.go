@@ -161,3 +161,86 @@ func TestUpdate_TooManyArgs(t *testing.T) {
 		t.Errorf("exit=%d want 1", code)
 	}
 }
+
+// 段 0 の hub を update しても、足していない機能のファイルは作らない。追従した機能を 1 行出す。
+func TestUpdate_FollowsFeaturesOfHub(t *testing.T) {
+	hub := filepath.Join(t.TempDir(), "hub")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"init", "-add", "retro", hub}, &so, &se); code != 0 {
+		t.Fatalf("init exit=%d\n%s", code, se.String())
+	}
+	if err := os.Remove(filepath.Join(hub, ".claude", "skills", "retro", "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	so.Reset()
+	se.Reset()
+	if code := dispatch([]string{"update", hub}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d want 0\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	out := so.String()
+	for _, want := range []string{"作成: .claude/skills/retro/SKILL.md", "追従した機能: retro(台帳の記録)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout に %q が無い:\n%s", want, out)
+		}
+	}
+	for _, p := range []string{"docs", "work", "news"} {
+		if _, err := os.Stat(filepath.Join(hub, p)); err == nil {
+			t.Errorf("足していない機能の %s を作った", p)
+		}
+	}
+}
+
+// 台帳に機能の記録が無い hub(旧版の init で作ったもの)は、存在するファイルから推定し、その旨を出す。
+func TestUpdate_InfersFeaturesAndSays(t *testing.T) {
+	hub := filepath.Join(t.TempDir(), "hub")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"init", "-add", "all", hub}, &so, &se); code != 0 {
+		t.Fatalf("init exit=%d\n%s", code, se.String())
+	}
+	if err := os.RemoveAll(filepath.Join(hub, ".braindex")); err != nil { // 台帳ごと消す(旧 hub の再現)
+		t.Fatal(err)
+	}
+	so.Reset()
+	se.Reset()
+	code := dispatch([]string{"update", hub}, &so, &se)
+	if code == 1 {
+		t.Fatalf("exit=1\nstderr=%s", se.String())
+	}
+	out := so.String()
+	if !strings.Contains(out, "追従した機能: conventions, news, retro, review, schedule(台帳に記録が無いので") {
+		t.Errorf("推定の 1 行が無い:\n%s", out)
+	}
+	if !strings.Contains(out, "追記 0") {
+		t.Errorf("設定に足すものは無いはず:\n%s", out)
+	}
+}
+
+// 編集済みの braindex.json に無い節を足したときは、「保持」でなく足した旨を添えた行にする
+// (追記した直後に「保持(編集済み)」と出ると、書き換えていないように読める)。
+func TestUpdate_MergedConfigLineSaysAdded(t *testing.T) {
+	hub := filepath.Join(t.TempDir(), "hub")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"init", "-add", "retro", hub}, &so, &se); code != 0 {
+		t.Fatalf("init exit=%d\n%s", code, se.String())
+	}
+	// 利用者が root を直し、retro 節を消した(段 0 の形に戻した)
+	edited := "{\n  \"root\": \"..\",\n  \"notes_dirs\": [\"docs/notes\"],\n  \"extra\": []\n}\n"
+	if err := os.WriteFile(filepath.Join(hub, "braindex.json"), []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	so.Reset()
+	se.Reset()
+	if code := dispatch([]string{"update", "-dry-run", hub}, &so, &se); code != 2 {
+		t.Fatalf("exit=%d want 2\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	out := so.String()
+	if !strings.Contains(out, "追記(無い節・行を足した): braindex.json") {
+		t.Errorf("追記の行が無い:\n%s", out)
+	}
+	if strings.Contains(out, "保持(編集済み): braindex.json") {
+		t.Errorf("節を足したのに「保持(編集済み)」と出ている:\n%s", out)
+	}
+	if !strings.Contains(out, "保持(編集済み・無い節は足した): braindex.json → braindex.json.new") {
+		t.Errorf("足した旨を添えた行が無い:\n%s", out)
+	}
+}

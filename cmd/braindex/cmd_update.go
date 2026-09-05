@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/pilefort/braindex/internal/template"
 )
@@ -26,6 +28,8 @@ func init() {
 //
 // 判定は台帳(.braindex/template.json)のハッシュで行う。配った版のままなら黙って今の版にし、利用者が
 // 編集していれば現物を残して隣に .new を置く。台帳が無い hub は、既存ファイルを全部「編集済み」として扱う。
+// 追従するのは台帳に記録された機能(init -add で足したもの)の分だけ。記録の無い hub は存在するファイルから
+// 機能を推定し、その旨を 1 行出す(決定 2026-09-05)。
 //
 // 終了コード: 0 要対応なし / 1 失敗 / 2 要対応あり(.new を置いた・索引生成が警告を出した)。
 func runUpdate(args []string, stdout, stderr io.Writer) int {
@@ -85,15 +89,34 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 	for _, p := range res.Updated {
 		fmt.Fprintln(stdout, "更新:", p)
 	}
+	for _, p := range res.Merged {
+		fmt.Fprintln(stdout, "追記(無い節・行を足した):", p)
+	}
 	for _, c := range res.Conflicts {
-		fmt.Fprintf(stdout, "保持(編集済み): %s → %s に今の版を置いた\n", c.Path, c.New)
+		label := "保持(編集済み)"
+		if slices.Contains(res.Merged, c.Path) {
+			label = "保持(編集済み・無い節は足した)" // 節を足したうえで .new も置く(節の中の新しいキーは足さないため)
+		}
+		fmt.Fprintf(stdout, "%s: %s → %s に今の版を置いた\n", label, c.Path, c.New)
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "braindex update:", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "braindex update: 作成 %d・更新 %d・そのまま %d・編集済み %d(%s)\n",
-		len(res.Created), len(res.Updated), len(res.Unchanged), len(res.Conflicts), dir)
+	if kind == template.KindHub {
+		names := template.FeatureNames(res.Features)
+		label := "台帳の記録"
+		if res.Inferred {
+			label = "台帳に記録が無いので、存在するファイルと設定の節から推定"
+		}
+		if len(names) == 0 {
+			fmt.Fprintf(stdout, "追従した機能: core だけ(%s)。機能を足すなら braindex init -add\n", label)
+		} else {
+			fmt.Fprintf(stdout, "追従した機能: %s(%s)\n", strings.Join(names, ", "), label)
+		}
+	}
+	fmt.Fprintf(stdout, "braindex update: 作成 %d・更新 %d・追記 %d・そのまま %d・編集済み %d(%s)\n",
+		len(res.Created), len(res.Updated), len(res.Merged), len(res.Unchanged), len(res.Conflicts), dir)
 	if *dry {
 		fmt.Fprintln(stdout, "  -dry-run のため何も書いていない")
 	}
@@ -134,6 +157,11 @@ func touchesConfig(res template.UpdateResult) bool {
 		}
 	}
 	for _, p := range res.Updated {
+		if p == cfg {
+			return true
+		}
+	}
+	for _, p := range res.Merged {
 		if p == cfg {
 			return true
 		}
