@@ -255,3 +255,52 @@ func TestUpdate_BrokenConfigErrorHasPathOnce(t *testing.T) {
 		t.Errorf("エラーにパスが %d 回: %v", n, err)
 	}
 }
+
+// -force でも braindex.json と .gitignore は節・行を足すだけで、利用者の root と行は消えない(決定 2026-09-05)。
+func TestUpdate_ForceKeepsUserConfigAndGitignoreLines(t *testing.T) {
+	dst := t.TempDir()
+	if _, err := InstallFeatures(dst, []Feature{FeatureNews}); err != nil {
+		t.Fatal(err)
+	}
+	writeAt(t, dst, GitignorePath, []byte("*.tmp\n"))
+	cfg := bytes.Replace(readAt(t, dst, ConfigPath), []byte(`"root": ".."`), []byte(`"root": "/mine"`), 1)
+	writeAt(t, dst, ConfigPath, cfg)
+	res, err := Update(dst, KindHub, UpdateOptions{Force: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if has(res.Updated, GitignorePath) || has(res.Updated, ConfigPath) {
+		t.Errorf("-force で上書きした: updated=%v", res.Updated)
+	}
+	gi := string(readAt(t, dst, GitignorePath))
+	if !strings.HasPrefix(gi, "*.tmp\n") || !strings.Contains(gi, "news/.ingested/") {
+		t.Errorf(".gitignore:\n%s", gi)
+	}
+	if !bytes.Contains(readAt(t, dst, ConfigPath), []byte(`"root": "/mine"`)) {
+		t.Error("root が消えた")
+	}
+	if !has(res.Unchanged, ConfigPath) || len(res.Conflicts) != 0 {
+		t.Errorf("節が揃った設定は「そのまま」: unchanged=%v conflicts=%v", res.Unchanged, res.Conflicts)
+	}
+}
+
+// MissingConfigKeys: 節の中で雛形にあって無いキーを「節.キー」で返す。節そのものの有無と配列の中は見ない。
+func TestMissingConfigKeys(t *testing.T) {
+	got, err := MissingConfigKeys([]byte(`{"root": "x", "retro": {"threshold": 0.1}, "schedule": {"jobs": []}}`), []Feature{FeatureRetro, FeatureNews, FeatureSchedule})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := strings.Join(got, ","); s != "retro.position_bins,retro.window_days" {
+		t.Errorf("missing=%s", s)
+	}
+	full, _, err := BuildConfig(nil, []Feature{FeatureAll})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := MissingConfigKeys(full, []Feature{FeatureAll}); len(got) != 0 {
+		t.Errorf("全部入りで欠けがある: %v", got)
+	}
+	if _, err := MissingConfigKeys([]byte(`{"root": `), nil); err == nil {
+		t.Error("壊れた JSON でエラーにならない")
+	}
+}

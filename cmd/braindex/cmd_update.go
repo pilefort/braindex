@@ -92,12 +92,20 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 	for _, p := range res.Merged {
 		fmt.Fprintln(stdout, "追記(無い節・行を足した):", p)
 	}
+	if len(res.Unknown) > 0 {
+		fmt.Fprintf(stderr, "braindex update: 警告: 台帳 %s に今の版が知らない機能 %s がある(新しい版の braindex が足したもの)。"+
+			"その機能は追従していない。先に `go install` で braindex を更新すること\n", template.LedgerPath, strings.Join(res.Unknown, ", "))
+	}
 	for _, c := range res.Conflicts {
 		label := "保持(編集済み)"
 		if slices.Contains(res.Merged, c.Path) {
 			label = "保持(編集済み・無い節は足した)" // 節を足したうえで .new も置く(節の中の新しいキーは足さないため)
 		}
-		fmt.Fprintf(stdout, "%s: %s → %s に今の版を置いた\n", label, c.Path, c.New)
+		note := ""
+		if len(c.Missing) > 0 {
+			note = "(雛形にあって無いキー: " + strings.Join(c.Missing, ", ") + ")"
+		}
+		fmt.Fprintf(stdout, "%s: %s → %s に今の版を置いた%s\n", label, c.Path, c.New, note)
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "braindex update:", err)

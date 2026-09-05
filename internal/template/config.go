@@ -162,6 +162,48 @@ func addScheduleJobs(cur, tmpl map[string]json.RawMessage, added map[string]bool
 	return true, nil
 }
 
+// MissingConfigKeys は cfg(節を足したあとの braindex.json)に対し、feats の節のうち雛形の節の中にあって cfg に無いキーを
+// 「節.キー」の形で返す(昇順)。節そのものが無いものは含めない(BuildConfig が足す)。配列(schedule.jobs)の中は見ない。
+// update が「.new を置く必要があるか」を決めるのに使う(決定 2026-09-05)。
+func MissingConfigKeys(cfg []byte, feats []Feature) ([]string, error) {
+	feats, _ = Resolve(feats)
+	var cur map[string]json.RawMessage
+	if err := json.Unmarshal(cfg, &cur); err != nil {
+		return nil, fmt.Errorf("%s: %w", ConfigPath, err)
+	}
+	tmpl, err := configSections()
+	if err != nil {
+		return nil, err
+	}
+	var missing []string
+	for _, f := range feats {
+		for _, key := range features[f].Sections {
+			tv, ok := tmpl[key]
+			if !ok {
+				continue
+			}
+			cv, ok := cur[key]
+			if !ok {
+				continue
+			}
+			var tm, cm map[string]json.RawMessage
+			if json.Unmarshal(tv, &tm) != nil || tm == nil {
+				continue // 節がオブジェクトでない(root など)
+			}
+			if json.Unmarshal(cv, &cm) != nil || cm == nil {
+				continue // 利用者の値がオブジェクトでないなら比べようがない
+			}
+			for k := range tm {
+				if _, ok := cm[k]; !ok {
+					missing = append(missing, key+"."+k)
+				}
+			}
+		}
+	}
+	sort.Strings(missing)
+	return missing, nil
+}
+
 // renderConfig は最上位キーを固定順に並べて書き出す。値は json.Indent で整形するだけで、
 // 中身(数値の表記・入れ子のキー順)は入力のまま。
 func renderConfig(m map[string]json.RawMessage) ([]byte, error) {

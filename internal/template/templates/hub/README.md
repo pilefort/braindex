@@ -23,9 +23,9 @@
 閾値は `braindex.json` の `review` 節。
 
 下書きの作成だけなら定期実行に任せられる（判断は人）。このディレクトリで `braindex schedule install` と打つと、
-`braindex.json` の `schedule` 節（`braindex init -add schedule` が足す）に書いたジョブが OS のスケジューラ（Windows は schtasks、macOS・Linux は crontab）に登録される。
-ジョブは足してある機能の分だけ入る: `review` があれば週次レビュー（月 09:00）、`retro` があれば訂正率の確認（月 09:05）。
-`schedule` の後に足した機能のジョブは `braindex update` が足す。既にある下書きは上書きしない。
+`braindex.json` の `schedule` 節（`braindex init` が既定で足す）に書いたジョブが OS のスケジューラ（Windows は schtasks、macOS・Linux は crontab）に登録される。
+ジョブは足してある機能の分だけ入る: `retro` なら訂正率の確認（月 09:05）、`news` ならニュースの取得（毎日 07:30）、`review` を足せば週次レビュー（月 09:00）。
+機能を足したときにそのジョブが末尾に付く（既にあるジョブは触らない）。既にある下書きは上書きしない。
 
 ```sh
 braindex schedule print      # 登録に使うコマンドを出すだけ（何も変えない）
@@ -45,7 +45,22 @@ hub と `braindex` 自身の絶対パスを埋め込むので、定期実行の�
 所見と規約への反映案を `docs/notes/retro-YYYY-MM-DD.md` に残す。数値は `braindex retro stats -window-days 14 -by project,week,position` の表を貼る（窓を付けないと全期間の集計になる）。
 
 組み込みは 2 通り。Claude Code の hook（`SessionStart`）に `braindex retro check -quiet || true` を置けば、超えたときだけ 1 行がセッションに入る。
-定期実行なら `braindex schedule install`（`-add schedule` が足す `retro` ジョブが週 1 回 `braindex retro check` を回す）。窓・閾値・辞書は `braindex.json` の `retro` 節。
+定期実行なら `braindex schedule install`（`schedule` 節の `retro` ジョブが週 1 回 `braindex retro check` を回す）。窓・閾値・辞書は `braindex.json` の `retro` 節。
+
+## ニュース
+
+`news/feeds.example.json` を写して `news/feeds.json` を作り（`name` と `url` の配列。取材先の候補は `braindex news suggest` が直近の会話から出す）、
+このディレクトリで `braindex news fetch` を実行する。`news/digest_<日付>_<層>.md` と、選別 UI の同名 `.html` が既定ブラウザで開く。
+記事は関心プロファイル（索引の直近差分・直近のセッション内容・`news/keep/`）で採点され、「残す」を書き出すと次回の `fetch`（か `braindex news apply`）が
+`news/keep/YYYY-MM.md` に追記する。keep は次の採点の出典になるので、選別がそのまま関心の推定に戻る。
+外へ出る通信はフィードの GET だけで、セッション内容もノート本文も送らない。
+定期実行は `schedule` 節の `news` ジョブ（毎日 07:30・`-no-open`）。朝に `news/digest_<日付>_daily.html` を自分で開く。
+`digest_*`・`.seen.json` などの作業ファイルは `.gitignore` の行が除外し、`keep/` は蓄積側なので版管理に残す。設定は `braindex.json` の `news` 節。
+
+## 学習の提案
+
+`braindex learn` が、索引・セッションログ・`news/keep` から「触れているがノートに無い」「訂正の文脈に繰り返し出る」「残した記事にあるがノートに無い」語を
+理由つきで出す。配布物は無く、材料が揃えばそのまま動く（索引が無い hub では先に `braindex` で索引を作る）。
 
 ## 地図
 
@@ -55,4 +70,5 @@ hub と `braindex` 自身の絶対パスを埋め込むので、定期実行の�
 | `braindex.json` | 走査の設定: `root`・`notes_dirs`・`extra`（段 0）。週次レビューの設定（記録の置き場と閾値）: `review`。振り返りの設定（窓・閾値・辞書）: `retro`。判断待ちフォームの置き場: `approvals`（`-add conventions`）。ニュース: `news`。定期実行のジョブ（名前・引数・時刻）: `schedule`。節は `braindex init -add` が足す |
 | `docs/` | 蓄積するもの: `overview.md`・`glossary.md`・`decisions.md`・`notes/`・`conventions.md`（`-add conventions`） |
 | `work/` | 揮発するもの: `APPROVALS.md`（判断待ち）・`TODO.md`（`-add conventions`）・`review/`（週次レビューの記録。`-add review`） |
+| `news/` | ニュース: `feeds.json`（自分で書く）・`keep/YYYY-MM.md`（残した見出し。版管理に残す）・`digest_*` と `.seen.json` などの作業ファイル（`.gitignore` が除外） |
 | `.claude/skills/` | Claude Code のスキル: `record-lint`（ノート保存前の曖昧さ検査）・`contradiction-scan`（横断の矛盾検査）・`research-distill`（検証優先の調査。`braindex verify` で裏取り、`braindex answer` で HTML 化）は `-add conventions`。`braindex-review`（週次レビューの判断）は `-add review`。`retro`（振り返り）は `-add retro` |

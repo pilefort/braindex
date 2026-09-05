@@ -220,11 +220,11 @@ func TestUpdate_InfersFeaturesAndSays(t *testing.T) {
 func TestUpdate_MergedConfigLineSaysAdded(t *testing.T) {
 	hub := filepath.Join(t.TempDir(), "hub")
 	var so, se bytes.Buffer
-	if code := dispatch([]string{"init", "-add", "retro", hub}, &so, &se); code != 0 {
+	if code := dispatch([]string{"init", "-add", "retro,news", hub}, &so, &se); code != 0 {
 		t.Fatalf("init exit=%d\n%s", code, se.String())
 	}
-	// 利用者が root を直し、retro 節を消した(段 0 の形に戻した)
-	edited := "{\n  \"root\": \"..\",\n  \"notes_dirs\": [\"docs/notes\"],\n  \"extra\": []\n}\n"
+	// 利用者が root を直し、retro 節をキー 1 つだけにし、news 節を消した
+	edited := "{\n  \"root\": \"../mine\",\n  \"notes_dirs\": [\"docs/notes\"],\n  \"retro\": {\"threshold\": 0.1}\n}\n"
 	if err := os.WriteFile(filepath.Join(hub, "braindex.json"), []byte(edited), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,66 @@ func TestUpdate_MergedConfigLineSaysAdded(t *testing.T) {
 	if strings.Contains(out, "保持(編集済み): braindex.json") {
 		t.Errorf("節を足したのに「保持(編集済み)」と出ている:\n%s", out)
 	}
-	if !strings.Contains(out, "保持(編集済み・無い節は足した): braindex.json → braindex.json.new") {
-		t.Errorf("足した旨を添えた行が無い:\n%s", out)
+	if !strings.Contains(out, "保持(編集済み・無い節は足した): braindex.json → braindex.json.new に今の版を置いた(雛形にあって無いキー: retro.position_bins, retro.window_days)") {
+		t.Errorf("足した旨と欠けたキーを添えた行が無い:\n%s", out)
+	}
+}
+
+// root を直しただけ(節も中のキーも揃っている)の hub は、update しても .new を置かず exit 0(決定 2026-09-05)。
+// -force でも root は消えない。
+func TestUpdate_EditedRootOnlyIsQuiet(t *testing.T) {
+	hub := filepath.Join(t.TempDir(), "hub")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"init", "-add", "retro", hub}, &so, &se); code != 0 {
+		t.Fatalf("init exit=%d\n%s", code, se.String())
+	}
+	cfg := filepath.Join(hub, "braindex.json")
+	edited := strings.Replace(read(t, cfg), `"root": ".."`, `"root": "../mine"`, 1)
+	if err := os.WriteFile(cfg, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(filepath.Dir(hub), "mine"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"update", hub}, {"update", "-force", hub}} {
+		so.Reset()
+		se.Reset()
+		if code := dispatch(args, &so, &se); code != 0 {
+			t.Fatalf("%v: exit=%d want 0\nstdout=%s\nstderr=%s", args, code, so.String(), se.String())
+		}
+		if _, err := os.Stat(cfg + ".new"); err == nil {
+			t.Errorf("%v: 節が揃っているのに .new を置いた", args)
+		}
+		if got := read(t, cfg); !strings.Contains(got, `"root": "../mine"`) {
+			t.Errorf("%v: root が消えた:\n%s", args, got)
+		}
+		if strings.Contains(so.String(), "braindex.json.new") || strings.Contains(se.String(), "braindex.json が変わる") {
+			t.Errorf("%v: .new や設定変更の警告が出ている:\nstdout=%s\nstderr=%s", args, so.String(), se.String())
+		}
+	}
+}
+
+// 台帳に今の版が知らない機能名があると、stderr に警告して先に go install を促す(終了コードは変えない)。
+func TestUpdate_WarnsUnknownFeature(t *testing.T) {
+	hub := filepath.Join(t.TempDir(), "hub")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"init", "-add", "retro", hub}, &so, &se); code != 0 {
+		t.Fatalf("init exit=%d\n%s", code, se.String())
+	}
+	led := filepath.Join(hub, ".braindex", "template.json")
+	b := strings.Replace(read(t, led), `"features": [`, `"features": ["future-feature", `, 1)
+	if err := os.WriteFile(led, []byte(b), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	so.Reset()
+	se.Reset()
+	if code := dispatch([]string{"update", hub}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d want 0\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	if !strings.Contains(se.String(), "知らない機能 future-feature") || !strings.Contains(se.String(), "go install") {
+		t.Errorf("未知の機能の警告が無い: %s", se.String())
+	}
+	if !strings.Contains(read(t, led), "future-feature") {
+		t.Error("未知の機能名が台帳から消えた")
 	}
 }
