@@ -120,6 +120,20 @@ func runNewsProfile(args []string, stdout, stderr io.Writer) int {
 // days <= 0 なら設定 news.profile_days。sessionsDir が空なら news.sessions_dir → retro.sessions_dir → ~/.claude/projects。
 // 索引やセッションの置き場が無ければ警告にして飛ばす(エラーにしない)。
 func loadProfile(fc config.Config, hubDir, today string, days int, sessionsDir string) (interest.Profile, []string, error) {
+	in, warnings, err := loadProfileInput(fc, hubDir, today, days, sessionsDir)
+	if err != nil {
+		return interest.Profile{}, nil, err
+	}
+	p, err := interest.Build(in)
+	if err != nil {
+		return interest.Profile{}, nil, err
+	}
+	return p, warnings, nil
+}
+
+// loadProfileInput は関心プロファイルの材料(索引・セッション・keep・補助)を読む。プロファイルにせず材料のまま返すので、
+// 同じ材料をほかの目的(braindex learn の訂正の文脈)にも使える。警告の扱いは loadProfile と同じ。
+func loadProfileInput(fc config.Config, hubDir, today string, days int, sessionsDir string) (interest.Input, []string, error) {
 	var warnings []string
 	warn := func(format string, a ...any) { warnings = append(warnings, fmt.Sprintf(format, a...)) }
 	s := fc.News.WithDefaults()
@@ -134,12 +148,12 @@ func loadProfile(fc config.Config, hubDir, today string, days int, sessionsDir s
 	if b, err := os.ReadFile(catalogPath); err == nil {
 		in.Catalog, err = review.ParseCatalog(b)
 		if err != nil {
-			return interest.Profile{}, nil, fmt.Errorf("%s: %w", catalogPath, err)
+			return interest.Input{}, nil, fmt.Errorf("%s: %w", catalogPath, err)
 		}
 	} else if errors.Is(err, iofs.ErrNotExist) {
 		warn("索引 %s が無いので飛ばした(braindex で生成する)", catalogPath)
 	} else {
-		return interest.Profile{}, nil, err
+		return interest.Input{}, nil, err
 	}
 
 	// 出典 2: セッション
@@ -153,21 +167,21 @@ func loadProfile(fc config.Config, hubDir, today string, days int, sessionsDir s
 	if sessDir == "" {
 		var err error
 		if sessDir, err = sessions.DefaultDir(); err != nil {
-			return interest.Profile{}, nil, err
+			return interest.Input{}, nil, err
 		}
 	}
 	since, err := profileSince(today, days)
 	if err != nil {
-		return interest.Profile{}, nil, err
+		return interest.Input{}, nil, err
 	}
 	if _, err := os.Stat(sessDir); errors.Is(err, iofs.ErrNotExist) {
 		warn("セッションログの置き場 %s が無いので飛ばした", sessDir)
 	} else if err != nil {
-		return interest.Profile{}, nil, err
+		return interest.Input{}, nil, err
 	} else {
 		ss, ws, err := sessions.Dir{Path: sessDir}.Sessions(sessions.Options{Since: since})
 		if err != nil {
-			return interest.Profile{}, nil, err
+			return interest.Input{}, nil, err
 		}
 		warnings = append(warnings, ws...)
 		in.Sessions = ss
@@ -175,21 +189,17 @@ func loadProfile(fc config.Config, hubDir, today string, days int, sessionsDir s
 
 	// 出典 3: keep 履歴
 	if in.Keeps, err = readKeeps(newsDir); err != nil {
-		return interest.Profile{}, nil, err
+		return interest.Input{}, nil, err
 	}
 
 	// 出典 4: 補助ファイル
 	if b, err := os.ReadFile(filepath.Join(newsDir, news.InterestsFile)); err == nil {
 		in.Extra = strings.Split(string(b), "\n")
 	} else if !errors.Is(err, iofs.ErrNotExist) {
-		return interest.Profile{}, nil, err
+		return interest.Input{}, nil, err
 	}
 
-	p, err := interest.Build(in)
-	if err != nil {
-		return interest.Profile{}, nil, err
-	}
-	return p, warnings, nil
+	return in, warnings, nil
 }
 
 // profileSince は関心プロファイルが見る窓の起点(today の days 日前)を返す。
