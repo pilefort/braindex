@@ -116,11 +116,15 @@ func RenderHTML(results []Result, o DigestOptions) []byte {
 			"<br><small>救済 = 関心外と判定されたのに残した件数（採点の見逃し）。増えるフィードは news/interests.md に関心語を足す。"+
 			"間引きは news/feeds.json から該当行を消す。</small>")
 	}
-	scoring := "採点なし（全件を主要表示）"
+	scoring, determinism := "採点なし（全件を主要表示）", "取得・既読・採点は決定論"
 	if o.Ranking != nil {
 		scoring = fmt.Sprintf("関心度は語の一致（braindex news profile）。%d 以上を主要表示", o.MinScore)
+		if n := LLMScored(results, o.Ranking); n > 0 {
+			scoring = fmt.Sprintf("関心度は語の一致（braindex news profile）に LLM 補助（news.llm・%d 件・バッジの説明に LLM と出る）を重ねたもの。%d 以上を主要表示", n, o.MinScore)
+			determinism = "取得・既読は決定論、採点に LLM 補助あり"
+		}
 	}
-	foot = append(foot, fmt.Sprintf("生成: %s / braindex news fetch（取得・既読・採点は決定論。%s）", esc(o.Today), scoring))
+	foot = append(foot, fmt.Sprintf("生成: %s / braindex news fetch（%s。%s）", esc(o.Today), determinism, scoring))
 
 	title := fmt.Sprintf("ニュースダイジェスト %s（%s 層・新着 %d 件・主要 %d 件）", o.Today, o.Layer, totalNew, totalMain)
 	out := strings.NewReplacer(
@@ -161,8 +165,7 @@ func itemHTML(e feed.Entry, r Result, o DigestOptions, low bool) string {
 		cls, lowFlag = "item low", "1"
 	}
 	score, badge := "", ""
-	if o.Ranking != nil {
-		s := o.Ranking[e.ID]
+	if s, ok := o.Ranking[e.ID]; ok { // 無い＝未採点(バッジを付けない)
 		score = fmt.Sprint(s.Value)
 		tip := "関心度"
 		if len(s.Matched) > 0 {
@@ -177,6 +180,14 @@ func itemHTML(e feed.Entry, r Result, o DigestOptions, low bool) string {
 	sum := ""
 	if e.Summary != "" {
 		sum = "<div class=\"sum\">" + esc(e.Summary) + "</div>"
+	}
+	// LLM 補助の訳(見出し・概要)。原文の下に添える(原文は残す。訳の誤りを見比べられるように)
+	if a, ok := o.Annotations[e.ID]; ok && a.Title != "" {
+		tr := "訳: " + esc(a.Title)
+		if a.Summary != "" {
+			tr += " — " + esc(a.Summary)
+		}
+		sum = "<div class=\"sum\">" + tr + "</div>" + sum
 	}
 	// フィード由来のリンクは信用しない。http(s) でなければ表示にも選別 JSON(data-link)にも載せず、
 	// 題名だけを出す(決定 2026-09-03「生成物のリンクは http(s) 以外を落とす」)。

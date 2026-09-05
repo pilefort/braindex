@@ -90,39 +90,47 @@ func Rank(results []Result, p interest.Profile) Ranking {
 		return nil
 	}
 	rk := Ranking{}
+	rater := interest.NewRater(p) // 重み表は 1 回だけ作る(記事ごとに作り直さない)
 	for _, r := range results {
 		for _, e := range r.New {
-			rk[e.ID] = interest.Rate(p, e.Title+" "+e.Summary)
+			rk[e.ID] = rater.Rate(e.Title + " " + e.Summary)
 		}
 	}
 	return rk
 }
 
 // Split は新着を 主要(関心度 minScore 以上・降順・同点は記載順)と 関心外(未満・記載順)に分ける。
-// rk が nil なら全件が主要(記載順)。
+// rk が nil なら全件が主要(記載順)。rk に無い記事は未採点として主要に入れ、並べ替えでは minScore と同じ扱い(原型と同じ)。
 func Split(entries []feed.Entry, rk Ranking, minScore int) (main, low []feed.Entry) {
 	if rk == nil {
 		return entries, nil
 	}
+	value := func(e feed.Entry) int {
+		if s, ok := rk[e.ID]; ok {
+			return s.Value
+		}
+		return minScore
+	}
 	for _, e := range entries {
-		if rk[e.ID].Value >= minScore {
+		if value(e) >= minScore {
 			main = append(main, e)
 		} else {
 			low = append(low, e)
 		}
 	}
-	sort.SliceStable(main, func(i, j int) bool { return rk[main[i].ID].Value > rk[main[j].ID].Value })
+	sort.SliceStable(main, func(i, j int) bool { return value(main[i]) > value(main[j]) })
 	return main, low
 }
 
 // DigestOptions はダイジェストの体裁。
 type DigestOptions struct {
-	Layer    string               // 層の名前(見出し)
-	Today    string               // 日付(見出し)
-	Cap      int                  // 1 フィードあたりの表示上限(主要・関心外それぞれ)
-	Ranking  Ranking              // 採点。nil なら一段(全件を主要)
-	MinScore int                  // 主要に入れる最低の関心度(Ranking が nil なら使わない)
-	Totals   map[string]FeedStats // 選別の累積(フィード別)。HTML の脚注に出す。nil なら出さない
+	Layer       string               // 層の名前(見出し)
+	Today       string               // 日付(見出し)
+	Cap         int                  // 1 フィードあたりの表示上限(主要・関心外それぞれ)
+	Ranking     Ranking              // 採点。nil なら一段(全件を主要)
+	MinScore    int                  // 主要に入れる最低の関心度(Ranking が nil なら使わない)
+	Totals      map[string]FeedStats // 選別の累積(フィード別)。HTML の脚注に出す。nil なら出さない
+	Annotations Annotations          // LLM 補助の注釈(訳)。nil なら訳を出さない
 }
 
 // Digest は新着のダイジェスト(Markdown・LF)を組む。
@@ -187,12 +195,14 @@ func writeTier(sb *strings.Builder, entries []feed.Entry, o DigestOptions, inden
 			fmt.Fprintf(sb, "%s ", e.Published)
 		}
 		fmt.Fprintf(sb, "[%s](%s)", escapeTitle(e.Title), e.Link)
-		if o.Ranking != nil {
-			s := o.Ranking[e.ID]
+		if s, ok := o.Ranking[e.ID]; ok { // 無い＝未採点(★ を付けない)
 			fmt.Fprintf(sb, " ★%d", s.Value)
 			if len(s.Matched) > 0 {
 				fmt.Fprintf(sb, "（%s）", strings.Join(s.Matched, "・"))
 			}
+		}
+		if tr := o.Annotations.translation(e.ID); tr != "" {
+			fmt.Fprintf(sb, "／訳: %s", escapeTitle(tr))
 		}
 		sb.WriteString("\n")
 	}
