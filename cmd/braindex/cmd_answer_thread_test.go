@@ -156,6 +156,37 @@ func TestAnswer_Append_フラグの誤り(t *testing.T) {
 	}
 }
 
+// スレッドの .md をそのまま渡すと、エントリを足さずにスレッドとして描き直す。
+// 表示だけ作り直したいとき(埋め込み JS を直したときなど)に使う。
+func TestAnswer_スレッドを描き直す(t *testing.T) {
+	dir, _ := stubAnswer(t)
+	stubNow(t, "2026-09-06T03:20:00+09:00")
+	src := filepath.Join(t.TempDir(), "ans.md")
+	writeFile(t, src, "# 題名\n\n回答\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"answer", "-no-open", "-append", "話題", "-q", "質問", src}, &so, &se); code != 0 {
+		t.Fatalf("積むのに失敗 exit=%d\n%s", code, se.String())
+	}
+	thread := filepath.Join(dir, "話題.md")
+	before := readString(t, thread)
+
+	so.Reset()
+	se.Reset()
+	if code := dispatch([]string{"answer", "-no-open", thread}, &so, &se); code != 0 {
+		t.Fatalf("描き直しに失敗 exit=%d\n%s", code, se.String())
+	}
+	if got := readString(t, thread); got != before {
+		t.Errorf("スレッドの .md が書き換わった:\n%s", got)
+	}
+	h := readString(t, filepath.Join(dir, "話題.html"))
+	if !strings.Contains(h, `<details class="ent"`) || !strings.Contains(h, "質問") {
+		t.Errorf("スレッドとして描かれていない:\n%s", h)
+	}
+	if strings.Contains(h, "braindex:entry") {
+		t.Errorf("マーカーが本文に出ている:\n%s", h)
+	}
+}
+
 // -out を付ければスレッドの HTML も好きな場所に書ける(スレッドの .md は一時置き場のまま)。
 func TestAnswer_Append_Out(t *testing.T) {
 	dir, _ := stubAnswer(t)

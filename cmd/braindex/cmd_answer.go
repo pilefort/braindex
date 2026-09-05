@@ -119,6 +119,12 @@ func runAnswer(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "braindex answer: 足した %s\n", threadPath)
 		md, base, page = thread, name, mdhtml.ThreadPage
 		title, _ = mdhtml.ParseThread(thread)
+	} else if mdhtml.IsThread(md) {
+		// スレッドの .md をそのまま渡されたら、エントリを足さずに描き直す(表示だけ作り直したいとき)。
+		page = mdhtml.ThreadPage
+		if t, _ := mdhtml.ParseThread(md); t != "" {
+			title = t
+		}
 	}
 	if out == "" {
 		out = filepath.Join(dir, base+".html")

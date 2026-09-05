@@ -109,6 +109,17 @@ func ThreadPage(md, title string) string {
 	return shell(title, b.String(), threadJS)
 }
 
+// IsThread は .md がスレッド(エントリのマーカーを持つ)かどうかを返す。
+// スレッドの .md をそのまま渡されたときに、1 枚ものでなくスレッドとして描き直すための判定。
+func IsThread(md string) bool {
+	for _, ln := range strings.Split(strings.ReplaceAll(md, "\r\n", "\n"), "\n") {
+		if _, _, ok := parseEntryLine(ln); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // SplitH1 は先頭(最初の空行でない行)が `# 見出し` ならタイトルとして切り出し、残りの本文と共に返す。
 // スレッドに足すエントリの本文からタイトル行を落とすのに使う(エントリごとに h1 が並ばないように)。
 func SplitH1(md string) (string, string) {

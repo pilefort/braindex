@@ -125,6 +125,19 @@ func TestThreadPage_日時不明(t *testing.T) {
 	}
 }
 
+func TestIsThread(t *testing.T) {
+	if !IsThread(threadSample) {
+		t.Error("スレッドを 1 枚ものと判定した")
+	}
+	if IsThread("# 題名\n\n本文です。\n") {
+		t.Error("1 枚ものをスレッドと判定した")
+	}
+	// マーカーに見えるだけの行(コードブロックの中の説明など)は属性が無いので数えない。
+	if IsThread("```\n<!--braindex:entry-->\n```\n") {
+		t.Error("属性の無い行をマーカーと判定した")
+	}
+}
+
 func TestThreadPage_外部読み込みなし(t *testing.T) {
 	h := ThreadPage(threadSample, "索引の設計")
 	for _, bad := range []string{"<link", "src=", "@import", "http://", "https://cdn"} {
