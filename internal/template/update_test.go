@@ -52,10 +52,11 @@ func has(ss []string, s string) bool {
 	return false
 }
 
-// 空の hub では、雛形のファイルを全部作る。
+// 空の hub(台帳なし・ファイルなし)では、推定できる機能が無いので段 0(core)のファイルだけ作る
+// (足していない機能のファイルは作らない・決定 2026-09-05)。
 func TestUpdate_CreatesMissing(t *testing.T) {
 	dst := t.TempDir()
-	files, err := Files(KindHub)
+	files, err := FeatureFiles(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,8 +68,15 @@ func TestUpdate_CreatesMissing(t *testing.T) {
 		t.Errorf("created=%d updated=%d conflicts=%d want %d/0/0",
 			len(res.Created), len(res.Updated), len(res.Conflicts), len(files))
 	}
-	if _, found, _ := LoadLedger(dst); !found {
+	if !res.Inferred || len(res.Features) != 1 || res.Features[0] != FeatureCore {
+		t.Errorf("inferred=%v features=%v want true/[core]", res.Inferred, res.Features)
+	}
+	led, found, _ := LoadLedger(dst)
+	if !found {
 		t.Error("台帳が書かれていない")
+	}
+	if led.Features == nil || len(led.Features) != 0 {
+		t.Errorf("台帳の features=%v want []", led.Features)
 	}
 }
 

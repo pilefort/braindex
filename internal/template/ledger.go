@@ -22,11 +22,12 @@ const (
 
 // Ledger は展開した雛形の記録。Files は雛形からの相対パス("/" 区切り)から内容のハッシュへ。
 // Features は init -add で足した機能(core を除く・名前の昇順)。update はこの分だけ追従する(決定 2026-09-05)。
-// repo の台帳には無い(機能は hub だけの概念)。
+// hub では空でも "features": [] と書く。キーごと無い(nil)のは機能の記録を持たない旧版の台帳で、
+// update はそのとき存在するファイルから機能を推定する(段 0 の hub の [] とは区別する)。
 type Ledger struct {
 	Version  int               `json:"version"`
 	Kind     string            `json:"kind"`
-	Features []string          `json:"features,omitempty"`
+	Features []string          `json:"features,omitzero"`
 	Files    map[string]string `json:"files"`
 }
 
@@ -62,6 +63,9 @@ func LoadLedger(dst string) (Ledger, bool, error) {
 func SaveLedger(dst string, l Ledger) error {
 	if l.Files == nil {
 		l.Files = map[string]string{}
+	}
+	if l.Kind == string(KindHub) && l.Features == nil {
+		l.Features = []string{} // omitzero で消えないよう空配列にする(nil は「記録なし」の意味)
 	}
 	l.Version = LedgerVersion
 	b, err := json.MarshalIndent(l, "", "  ")
