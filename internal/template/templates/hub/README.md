@@ -23,8 +23,9 @@
 閾値は `braindex.json` の `review` 節。
 
 下書きの作成だけなら定期実行に任せられる（判断は人）。このディレクトリで `braindex schedule install` と打つと、
-`braindex.json` の `schedule` 節に書いたジョブが OS のスケジューラ（Windows は schtasks、macOS・Linux は crontab）に登録される。
-既定は週次レビュー（月 09:00）と訂正率の確認（月 09:05）の 2 本。既にある下書きは上書きしない。
+`braindex.json` の `schedule` 節（`braindex init -add schedule` が足す）に書いたジョブが OS のスケジューラ（Windows は schtasks、macOS・Linux は crontab）に登録される。
+ジョブは足してある機能の分だけ入る: `review` があれば週次レビュー（月 09:00）、`retro` があれば訂正率の確認（月 09:05）。
+`schedule` の後に足した機能のジョブは `braindex update` が足す。既にある下書きは上書きしない。
 
 ```sh
 braindex schedule print      # 登録に使うコマンドを出すだけ（何も変えない）
@@ -44,7 +45,7 @@ hub と `braindex` 自身の絶対パスを埋め込むので、定期実行の�
 所見と規約への反映案を `docs/notes/retro-YYYY-MM-DD.md` に残す。数値は `braindex retro stats -window-days 14 -by project,week,position` の表を貼る（窓を付けないと全期間の集計になる）。
 
 組み込みは 2 通り。Claude Code の hook（`SessionStart`）に `braindex retro check -quiet || true` を置けば、超えたときだけ 1 行がセッションに入る。
-定期実行なら `braindex schedule install`（既定の `retro` ジョブが週 1 回 `braindex retro check` を回す）。窓・閾値・辞書は `braindex.json` の `retro` 節。
+定期実行なら `braindex schedule install`（`-add schedule` が足す `retro` ジョブが週 1 回 `braindex retro check` を回す）。窓・閾値・辞書は `braindex.json` の `retro` 節。
 
 ## 地図
 

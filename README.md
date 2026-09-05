@@ -258,7 +258,7 @@ hub の既定は段 0（`README.md`・`CLAUDE.md`・`.gitattributes`・`braindex
 | `review` | skill `braindex-review`・`work/review/` | `review` | `conventions`（自動で足し、その旨を出す） |
 | `retro` | skill `retro` | `retro` | — |
 | `news` | `news/feeds.example.json`・`.gitignore` の news の行 | `news` | — |
-| `schedule` | — | `schedule`（`jobs` は足してある review・retro の分。無ければ空） | — |
+| `schedule` | — | `schedule`（`jobs` は足してある review・retro の分。無ければ空。後から足した分は `braindex update` が足す） | — |
 | `all` | 上の全部 | 全部 | — |
 
 同じ機能を 2 回足しても安全: ファイルは既存を残し、`braindex.json` は無い節だけを固定のキー順で足す（既にある値は触らない）。
