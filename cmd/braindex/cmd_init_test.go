@@ -349,4 +349,12 @@ func TestInit_List(t *testing.T) {
 	if _, err := os.Stat(dir); err == nil {
 		t.Errorf("-list なのに %s が作られた", dir)
 	}
+	// 引数の誤り(ディレクトリ 2 つ・-repo との併用)は -list でも 1。一覧は出さない
+	for _, args := range [][]string{{"init", "-list", dir, "other"}, {"init", "-list", "-repo", "-add", "retro", dir}} {
+		so.Reset()
+		se.Reset()
+		if code := dispatch(args, &so, &se); code != 1 || so.Len() != 0 {
+			t.Errorf("%v: exit=%d want 1・stdout=%q want 空\nstderr=%s", args[1:], code, so.String(), se.String())
+		}
+	}
 }

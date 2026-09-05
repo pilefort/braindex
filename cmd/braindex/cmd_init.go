@@ -45,10 +45,7 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		}
 		return 1
 	}
-	if *list {
-		printFeatureList(stdout)
-		return 0
-	}
+	// 引数の検証は -list より先(誤った呼び方を一覧の表示で隠さない)
 	dir := "."
 	switch fs.NArg() {
 	case 0:
@@ -61,6 +58,10 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	if *repo && *add != "" {
 		fmt.Fprintln(stderr, "braindex init: -repo と -add は併用できない(機能は hub にだけ足す)")
 		return 1
+	}
+	if *list {
+		printFeatureList(stdout)
+		return 0
 	}
 
 	var (
