@@ -212,7 +212,7 @@ func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 	var noOpen, apply bool
 	var decisionsPath string
 	f.bind(fs)
-	fs.Float64Var(&timeoutSec, "timeout", 0, "回答を待つ秒数(0 で無期限)。過ぎたら終了コード 2")
+	fs.Float64Var(&timeoutSec, "timeout", 0, "回答を待つ秒数(0 で無期限)。過ぎたら終了コード 3")
 	fs.BoolVar(&noOpen, "no-open", false, "ブラウザを開かず URL を表示するだけ")
 	fs.BoolVar(&apply, "apply", false, "回答を受けたら続けて反映する(braindex approvals apply と同じ)。聞く→反映を 1 コマンドで済ませる")
 	fs.StringVar(&decisionsPath, "decisions", "", "-apply のとき決定を追記するファイル(既定: <hub>/docs/decisions.md)")
