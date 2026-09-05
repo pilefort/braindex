@@ -13,7 +13,7 @@ func initHub(t *testing.T) string {
 	t.Helper()
 	hub := filepath.Join(t.TempDir(), "hub")
 	var so, se bytes.Buffer
-	if code := dispatch([]string{"init", hub}, &so, &se); code != 0 {
+	if code := dispatch([]string{"init", "-add", "all", hub}, &so, &se); code != 0 {
 		t.Fatalf("init exit=%d\n%s", code, se.String())
 	}
 	return hub

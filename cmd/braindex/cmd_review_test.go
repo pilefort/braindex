@@ -16,7 +16,7 @@ func hubWithRepo(t *testing.T) (parent, hub string) {
 	hub = filepath.Join(parent, "hub")
 	writeFile(t, filepath.Join(parent, "repo-a", "docs", "notes", "a.md"), "# A\n\n結論: a\n記録日: 2026-01-02\n")
 	var so, se bytes.Buffer
-	if code := dispatch([]string{"init", hub}, &so, &se); code != 0 {
+	if code := dispatch([]string{"init", "-add", "all", hub}, &so, &se); code != 0 {
 		t.Fatalf("init exit=%d\n%s", code, se.String())
 	}
 	return parent, hub

@@ -6,13 +6,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pilefort/braindex/internal/template"
 )
 
-// braindex init <dir> は hub の雛形を展開し、作成したファイルを stdout に列挙する。
+// braindex init -add all <dir> は hub の雛形を全部展開し、作成したファイルを stdout に列挙する。
 func TestInit_Hub(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "hub")
 	var so, se bytes.Buffer
-	if code := dispatch([]string{"init", dir}, &so, &se); code != 0 {
+	if code := dispatch([]string{"init", "-add", "all", dir}, &so, &se); code != 0 {
 		t.Fatalf("exit=%d want 0\nstderr=%s", code, se.String())
 	}
 	for _, p := range []string{"README.md", "braindex.json", ".gitignore", "news/feeds.example.json", "docs/conventions.md", "work/review/.gitkeep", ".claude/skills/braindex-review/SKILL.md", ".claude/skills/retro/SKILL.md", ".claude/skills/record-lint/SKILL.md", ".claude/skills/contradiction-scan/SKILL.md", ".claude/skills/research-distill/SKILL.md"} {
@@ -74,12 +76,12 @@ func TestInit_ThenGenerate(t *testing.T) {
 }
 
 // 展開が途中で失敗しても、そこまでに作ったファイルは stdout に列挙する(無言で作らない)。
-// docs を通常ファイルにしておくと、docs/ より前の 5 ファイルを作った後で失敗する。
+// docs を通常ファイルにしておくと、docs/ より前のファイル(スキル・README・braindex.json)を作った後で失敗する。
 func TestInit_PartialFailureListsCreated(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "hub")
 	writeFile(t, filepath.Join(dir, "docs"), "x")
 	var so, se bytes.Buffer
-	if code := dispatch([]string{"init", dir}, &so, &se); code != 1 {
+	if code := dispatch([]string{"init", "-add", "conventions", dir}, &so, &se); code != 1 {
 		t.Fatalf("exit=%d want 1\nstderr=%s", code, se.String())
 	}
 	if !strings.Contains(se.String(), "braindex init:") {
@@ -166,7 +168,7 @@ func TestInit_ThenRetroCheck(t *testing.T) {
 	fixUTC(t)
 	hub := filepath.Join(t.TempDir(), "hub")
 	var so, se bytes.Buffer
-	if code := dispatch([]string{"init", hub}, &so, &se); code != 0 {
+	if code := dispatch([]string{"init", "-add", "retro", hub}, &so, &se); code != 0 {
 		t.Fatalf("init exit=%d\n%s", code, se.String())
 	}
 	code, out, errs := execRetroCheck(t, "-config", filepath.Join(hub, "braindex.json"), "-sessions", retroTestdata, "-date", "2026-09-01")
@@ -179,11 +181,11 @@ func TestInit_ThenRetroCheck(t *testing.T) {
 }
 
 // 展開した hub の braindex.json(schedule 節)で、そのまま braindex schedule print が動く
-// (設定の検証を通り、テンプレの 2 本が登録コマンドになる)。OS へは登録しない。
+// (設定の検証を通り、review・retro を足してあればテンプレの 2 本が登録コマンドになる)。OS へは登録しない。
 func TestInit_ThenSchedulePrint(t *testing.T) {
 	hub := filepath.Join(t.TempDir(), "hub")
 	var so, se bytes.Buffer
-	if code := dispatch([]string{"init", hub}, &so, &se); code != 0 {
+	if code := dispatch([]string{"init", "-add", "review,retro,schedule", hub}, &so, &se); code != 0 {
 		t.Fatalf("init exit=%d\n%s", code, se.String())
 	}
 	if !strings.Contains(so.String(), "braindex schedule install") {
@@ -197,5 +199,151 @@ func TestInit_ThenSchedulePrint(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("print の出力に %q が無い:\n%s", want, out)
 		}
+	}
+}
+
+// 既定の braindex init は段 0: README・CLAUDE.md・.gitattributes・braindex.json(索引の設定だけ)。
+// docs/・work/・スキル・news は配らず、案内に -list と -add の入口を出す。
+func TestInit_DefaultIsCoreOnly(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "hub")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"init", dir}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d want 0\nstderr=%s", code, se.String())
+	}
+	for _, p := range []string{"README.md", "CLAUDE.md", ".gitattributes", "braindex.json"} {
+		if _, err := os.Stat(filepath.Join(dir, p)); err != nil {
+			t.Errorf("作られていない: %s", p)
+		}
+	}
+	for _, p := range []string{"docs", "work", ".claude", "news", ".gitignore"} {
+		if _, err := os.Stat(filepath.Join(dir, p)); err == nil {
+			t.Errorf("段 0 なのに %s がある", p)
+		}
+	}
+	cfg, _ := os.ReadFile(filepath.Join(dir, "braindex.json"))
+	for _, bad := range []string{`"review"`, `"retro"`, `"news"`, `"schedule"`, `"approvals"`} {
+		if strings.Contains(string(cfg), bad) {
+			t.Errorf("段 0 の braindex.json に %s がある:\n%s", bad, cfg)
+		}
+	}
+	out := so.String()
+	for _, want := range []string{"作成: braindex.json", "braindex init: 作成 4・追記 0・保持 0", "次: braindex.json の root", "braindex init -list", "braindex init -add conventions"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout に %q が無い:\n%s", want, out)
+		}
+	}
+	for _, bad := range []string{"schedule install", "braindex review", "ja-tensaku"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("段 0 の案内に %q がある(足していない機能の案内):\n%s", bad, out)
+		}
+	}
+	// 段 0 のままで索引が作れる
+	writeFile(t, filepath.Join(filepath.Dir(dir), "repo-a", "docs", "notes", "a.md"), "# A\n\n結論: a\n記録日: 2026-01-02\n")
+	so.Reset()
+	se.Reset()
+	if code := dispatch([]string{"-config", filepath.Join(dir, "braindex.json"), "-date", "2026-01-03"}, &so, &se); code != 0 {
+		t.Fatalf("generate exit=%d\n%s", code, se.String())
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "index", "catalog.md")); !strings.Contains(string(b), "repo-a/docs/notes/a.md") {
+		t.Errorf("段 0 の設定で索引が作られていない:\n%s", b)
+	}
+}
+
+// 段 0 の hub に 1 機能ずつ足す: review は conventions を連れてきてその旨を出し、braindex.json は「追記」になる。
+// 全部足し終えると -add all で一括展開した hub とファイルが一致する。同じ機能を 2 回足しても何も変わらない。
+func TestInit_AddStepwise(t *testing.T) {
+	step := filepath.Join(t.TempDir(), "step")
+	once := filepath.Join(t.TempDir(), "once")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"init", step}, &so, &se); code != 0 {
+		t.Fatalf("init exit=%d\n%s", code, se.String())
+	}
+	so.Reset()
+	if code := dispatch([]string{"init", "-add", "review", step}, &so, &se); code != 0 {
+		t.Fatalf("-add review exit=%d\n%s", code, se.String())
+	}
+	out := so.String()
+	for _, want := range []string{"依存として足した機能: conventions", "追記(無い節・行を足した): braindex.json", "作成: docs/conventions.md", "作成: .claude/skills/braindex-review/SKILL.md", "保持(既存): README.md", "`braindex review`", "`braindex lint`"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("-add review の stdout に %q が無い:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "retro check") || strings.Contains(out, "feeds.json") {
+		t.Errorf("足していない機能の案内が出ている:\n%s", out)
+	}
+	for _, add := range []string{"retro", "news", "schedule"} {
+		so.Reset()
+		if code := dispatch([]string{"init", "-add", add, step}, &so, &se); code != 0 {
+			t.Fatalf("-add %s exit=%d\n%s", add, code, se.String())
+		}
+	}
+	if code := dispatch([]string{"init", "-add", "all", once}, &so, &se); code != 0 {
+		t.Fatalf("-add all exit=%d\n%s", code, se.String())
+	}
+	files, err := template.Files(template.KindHub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		a, err := os.ReadFile(filepath.Join(step, filepath.FromSlash(f.Path)))
+		if err != nil {
+			t.Errorf("段階的な hub に %s が無い", f.Path)
+			continue
+		}
+		b, _ := os.ReadFile(filepath.Join(once, filepath.FromSlash(f.Path)))
+		if !bytes.Equal(a, b) {
+			t.Errorf("%s が段階的と一括で違う:\n--- 段階的\n%s\n--- 一括\n%s", f.Path, a, b)
+		}
+		if !bytes.Equal(b, f.Content) {
+			t.Errorf("一括の %s が雛形と違う", f.Path)
+		}
+	}
+	// 2 回目は何も変わらない
+	so.Reset()
+	if code := dispatch([]string{"init", "-add", "review", step}, &so, &se); code != 0 {
+		t.Fatalf("2 回目 exit=%d\n%s", code, se.String())
+	}
+	if strings.Contains(so.String(), "作成: ") || strings.Contains(so.String(), "追記") && !strings.Contains(so.String(), "追記 0") {
+		t.Errorf("2 回目に変更がある:\n%s", so.String())
+	}
+	if strings.Contains(so.String(), "次:") {
+		t.Errorf("何も変えていないのに案内が出ている:\n%s", so.String())
+	}
+}
+
+// 引数の誤り: 未知の機能は候補を出して 1・-repo と -add の併用は 1。どちらも何も書かない。
+func TestInit_AddBadArgs(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "hub")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"init", "-add", "review,nope", dir}, &so, &se); code != 1 {
+		t.Errorf("未知の機能: exit=%d want 1", code)
+	}
+	if !strings.Contains(se.String(), `"nope"`) || !strings.Contains(se.String(), "conventions") || !strings.Contains(se.String(), "all") {
+		t.Errorf("未知の機能のエラーに候補が無い: %s", se.String())
+	}
+	se.Reset()
+	if code := dispatch([]string{"init", "-repo", "-add", "retro", dir}, &so, &se); code != 1 || !strings.Contains(se.String(), "併用") {
+		t.Errorf("-repo と -add: exit=%d stderr=%s", code, se.String())
+	}
+	if _, err := os.Stat(dir); err == nil {
+		t.Errorf("引数の誤りなのに %s が作られた", dir)
+	}
+}
+
+// -list は機能と配布物の一覧を出して終わる(何も書かない)。
+func TestInit_List(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "hub")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"init", "-list", dir}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d\n%s", code, se.String())
+	}
+	out := so.String()
+	for _, want := range []string{"core:", "conventions:", "review:", "retro:", "news:", "schedule:", "all:", "依存: conventions", "設定の節: review", "ファイル: .gitattributes, CLAUDE.md, README.md, braindex.json", "news/feeds.example.json"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("-list に %q が無い:\n%s", want, out)
+		}
+	}
+	if _, err := os.Stat(dir); err == nil {
+		t.Errorf("-list なのに %s が作られた", dir)
 	}
 }
