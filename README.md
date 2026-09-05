@@ -401,6 +401,7 @@ keep は次のプロファイルの出典になるので、**選別がそのま�
 | `news fetch` | フィードを取得し、新着のダイジェスト（Markdown）と選別 UI（HTML）を書く。冒頭で `apply` と同じ取り込みも動く |
 | `news profile` | 関心プロファイル（語 → 重み・出典）を表示する。出典は索引の直近差分・直近のセッション内容・`news/keep/`・`news/interests.md` |
 | `news apply` | 選別 JSON を `<news.dir>/inbox` と `-inbox`（既定 `~/Downloads`）から取り込む |
+| `news suggest` | 直近の会話・索引・keep から作った関心プロファイルに当たる取材先（RSS）を、同梱の取材先目録（17 ジャンル・98 本）から候補として出す。`feeds.json` に登録済みのものは除く。`-top N`（既定 10）・`-json` |
 
 重みは出典ごとに最大を 1 に正規化した値の和で、決定論。既定では LLM を使わない。窓の起点は `retro` と同じローカルの 0 時。
 主なフラグ: `-config` `-date YYYY-MM-DD` `-layer` `-out` `-stdout` `-no-open` `-no-score`（採点せず全件を主要表示）`-no-llm`
@@ -438,6 +439,12 @@ CLI が無い・`llm_timeout_sec` を超えた・応答が JSON でないとき�
 
 `-no-open` にしておき、朝に `news/digest_<日付>_daily.html` を自分で開く（cron・schtasks から起動したプロセスはログイン中のデスクトップにウィンドウを出せない）。
 選別を書き出した JSON は次回の `fetch` か `braindex news apply` が拾う。
+
+**取材先の候補（`braindex news suggest`）**: 何を `feeds.json` に書けばよいか分からないとき、直近の会話で使っている技術から取材先を探す。
+同梱の目録の各取材先が持つ照合語（例: Docker Blog → `docker` `dockerfile` `compose` `コンテナ`）と関心プロファイルの語を手元で突き合わせ、
+当たった語の重みの和が大きい順に出す。照合は手元だけで、通信も LLM もしない。出力は当たった語と数だけで発話の本文は載せない。
+候補を採るときは、出力の URL を `feeds.json` に `{"name": "…", "url": "…"}` として書く（選別 HTML からの登録は次の版）。
+照合語は作者が付けた分類で、当たり方が外れることがある。`braindex news profile` で自分の語を見て、`interests.md` に語を足せば当たりを寄せられる。
 
 ### braindex approvals — 判断待ちのフォーム
 

@@ -1,0 +1,1500 @@
+[
+ {
+  "genre": "総合",
+  "name": "Hacker News",
+  "url": "https://news.ycombinator.com/rss",
+  "tags": [
+   "スタートアップ",
+   "技術",
+   "OSS"
+  ],
+  "keywords": [
+   "hackernews",
+   "ハッカーニュース",
+   "スタートアップ"
+  ]
+ },
+ {
+  "genre": "総合",
+  "name": "Hacker News Best",
+  "url": "https://hnrss.org/best",
+  "tags": [
+   "スタートアップ",
+   "技術",
+   "OSS"
+  ],
+  "keywords": [
+   "hackernews",
+   "ハッカーニュース",
+   "スタートアップ"
+  ]
+ },
+ {
+  "genre": "総合",
+  "name": "Lobsters",
+  "url": "https://lobste.rs/rss",
+  "tags": [
+   "技術",
+   "OSS",
+   "言語"
+  ],
+  "keywords": [
+   "lobsters",
+   "programming",
+   "プログラミング"
+  ]
+ },
+ {
+  "genre": "総合",
+  "name": "Ars Technica",
+  "url": "https://feeds.arstechnica.com/arstechnica/index",
+  "tags": [
+   "技術",
+   "ニュース"
+  ],
+  "keywords": [
+   "arstechnica",
+   "テクノロジ",
+   "ガジェット"
+  ]
+ },
+ {
+  "genre": "総合",
+  "name": "The Verge",
+  "url": "https://www.theverge.com/rss/index.xml",
+  "tags": [
+   "技術",
+   "プロダクト"
+  ],
+  "keywords": [
+   "theverge",
+   "ガジェット",
+   "スマホ",
+   "iphone",
+   "android"
+  ]
+ },
+ {
+  "genre": "総合",
+  "name": "TechCrunch",
+  "url": "https://techcrunch.com/feed/",
+  "tags": [
+   "スタートアップ",
+   "プロダクト"
+  ],
+  "keywords": [
+   "techcrunch",
+   "startup",
+   "スタートアップ",
+   "資金調達"
+  ]
+ },
+ {
+  "genre": "OSS",
+  "name": "GitHub Trending（日次・全言語）",
+  "url": "https://mshibanami.github.io/GitHubTrendingRSS/daily/all.xml",
+  "tags": [
+   "OSS",
+   "GitHub"
+  ],
+  "keywords": [
+   "trending",
+   "トレンド",
+   "oss",
+   "リポジトリ",
+   "repository"
+  ]
+ },
+ {
+  "genre": "OSS",
+  "name": "GitHub Blog",
+  "url": "https://github.blog/feed/",
+  "tags": [
+   "GitHub",
+   "OSS",
+   "ツール"
+  ],
+  "keywords": [
+   "copilot",
+   "actions",
+   "oss",
+   "リポジトリ"
+  ]
+ },
+ {
+  "genre": "OSS",
+  "name": "GitHub Changelog",
+  "url": "https://github.blog/changelog/feed/",
+  "tags": [
+   "GitHub",
+   "ツール"
+  ],
+  "keywords": [
+   "copilot",
+   "actions",
+   "codespaces",
+   "dependabot"
+  ]
+ },
+ {
+  "genre": "OSS",
+  "name": "Changelog（ポッドキャスト・ニュース）",
+  "url": "https://changelog.com/feed",
+  "tags": [
+   "OSS",
+   "開発"
+  ],
+  "keywords": [
+   "oss",
+   "opensource",
+   "podcast",
+   "ポッドキャスト"
+  ]
+ },
+ {
+  "genre": "開発コミュニティ",
+  "name": "dev.to",
+  "url": "https://dev.to/feed",
+  "tags": [
+   "開発",
+   "Web"
+  ],
+  "keywords": [
+   "frontend",
+   "backend",
+   "フロントエンド",
+   "バックエンド",
+   "tutorial"
+  ]
+ },
+ {
+  "genre": "開発コミュニティ",
+  "name": "Stack Overflow Blog",
+  "url": "https://stackoverflow.blog/feed/",
+  "tags": [
+   "開発"
+  ],
+  "keywords": [
+   "stackoverflow",
+   "developer",
+   "開発者"
+  ]
+ },
+ {
+  "genre": "日本語",
+  "name": "Zenn",
+  "url": "https://zenn.dev/feed",
+  "tags": [
+   "開発",
+   "日本語"
+  ],
+  "keywords": [
+   "zenn",
+   "技術記事",
+   "フロントエンド",
+   "バックエンド"
+  ]
+ },
+ {
+  "genre": "日本語",
+  "name": "Qiita 人気",
+  "url": "https://qiita.com/popular-items/feed",
+  "tags": [
+   "開発",
+   "日本語"
+  ],
+  "keywords": [
+   "qiita",
+   "技術記事"
+  ]
+ },
+ {
+  "genre": "日本語",
+  "name": "はてなブックマーク テクノロジー",
+  "url": "https://b.hatena.ne.jp/hotentry/it.rss",
+  "tags": [
+   "技術",
+   "日本語"
+  ],
+  "keywords": [
+   "hatena",
+   "技術記事",
+   "ブックマーク"
+  ]
+ },
+ {
+  "genre": "日本語",
+  "name": "Publickey",
+  "url": "https://www.publickey1.jp/atom.xml",
+  "tags": [
+   "クラウド",
+   "開発",
+   "日本語"
+  ],
+  "keywords": [
+   "publickey",
+   "クラウド",
+   "cloud",
+   "devops",
+   "serverless",
+   "サーバレス"
+  ]
+ },
+ {
+  "genre": "日本語",
+  "name": "クラスメソッド DevelopersIO",
+  "url": "https://dev.classmethod.jp/feed/",
+  "tags": [
+   "クラウド",
+   "AWS",
+   "日本語"
+  ],
+  "keywords": [
+   "aws",
+   "lambda",
+   "classmethod",
+   "クラスメソッド",
+   "cloudformation",
+   "cdk"
+  ]
+ },
+ {
+  "genre": "日本語",
+  "name": "メルカリ エンジニアリング",
+  "url": "https://engineering.mercari.com/blog/feed.xml",
+  "tags": [
+   "開発",
+   "日本語"
+  ],
+  "keywords": [
+   "mercari",
+   "メルカリ",
+   "マイクロサービス",
+   "microservices"
+  ]
+ },
+ {
+  "genre": "日本語",
+  "name": "CyberAgent Developers",
+  "url": "https://developers.cyberagent.co.jp/blog/feed/",
+  "tags": [
+   "開発",
+   "日本語"
+  ],
+  "keywords": [
+   "cyberagent",
+   "サイバーエージェント",
+   "abema"
+  ]
+ },
+ {
+  "genre": "AI",
+  "name": "arXiv cs.AI",
+  "url": "https://rss.arxiv.org/rss/cs.AI",
+  "tags": [
+   "研究",
+   "AI"
+  ],
+  "keywords": [
+   "arxiv",
+   "論文",
+   "llm",
+   "機械学習",
+   "強化学習",
+   "transformer"
+  ]
+ },
+ {
+  "genre": "AI",
+  "name": "arXiv cs.CL",
+  "url": "https://rss.arxiv.org/rss/cs.CL",
+  "tags": [
+   "研究",
+   "AI",
+   "NLP"
+  ],
+  "keywords": [
+   "arxiv",
+   "nlp",
+   "自然言語処理",
+   "llm",
+   "tokenizer",
+   "embedding",
+   "rag"
+  ]
+ },
+ {
+  "genre": "AI",
+  "name": "arXiv cs.SE",
+  "url": "https://rss.arxiv.org/rss/cs.SE",
+  "tags": [
+   "研究",
+   "ソフトウェア工学"
+  ],
+  "keywords": [
+   "arxiv",
+   "工学",
+   "ソフトウェア",
+   "論文",
+   "静的解析"
+  ]
+ },
+ {
+  "genre": "AI",
+  "name": "Hugging Face Blog",
+  "url": "https://huggingface.co/blog/feed.xml",
+  "tags": [
+   "AI",
+   "OSS"
+  ],
+  "keywords": [
+   "huggingface",
+   "transformers",
+   "diffusers",
+   "llm",
+   "lora",
+   "ファインチューニング"
+  ]
+ },
+ {
+  "genre": "AI",
+  "name": "OpenAI News",
+  "url": "https://openai.com/news/rss.xml",
+  "tags": [
+   "AI"
+  ],
+  "keywords": [
+   "openai",
+   "chatgpt",
+   "gpt",
+   "llm",
+   "codex"
+  ]
+ },
+ {
+  "genre": "AI",
+  "name": "Google AI Blog",
+  "url": "https://blog.google/technology/ai/rss/",
+  "tags": [
+   "AI"
+  ],
+  "keywords": [
+   "gemini",
+   "deepmind",
+   "llm",
+   "vertex"
+  ]
+ },
+ {
+  "genre": "言語",
+  "name": "Go Blog",
+  "url": "https://go.dev/blog/feed.atom",
+  "tags": [
+   "Go",
+   "言語"
+  ],
+  "keywords": [
+   "golang",
+   "goroutine",
+   "gopls",
+   "gofmt",
+   "ゴルーチン",
+   "generics"
+  ]
+ },
+ {
+  "genre": "言語",
+  "name": "Rust Blog",
+  "url": "https://blog.rust-lang.org/feed.xml",
+  "tags": [
+   "Rust",
+   "言語"
+  ],
+  "keywords": [
+   "rust",
+   "cargo",
+   "rustc",
+   "crate",
+   "crates",
+   "tokio"
+  ]
+ },
+ {
+  "genre": "言語",
+  "name": "Python Insider",
+  "url": "https://blog.python.org/feeds/posts/default",
+  "tags": [
+   "Python",
+   "言語"
+  ],
+  "keywords": [
+   "pytest",
+   "pyproject",
+   "django",
+   "flask",
+   "fastapi",
+   "numpy",
+   "pandas",
+   "パイソン"
+  ]
+ },
+ {
+  "genre": "言語",
+  "name": "Node.js Blog",
+  "url": "https://nodejs.org/en/feed/blog.xml",
+  "tags": [
+   "JavaScript",
+   "言語"
+  ],
+  "keywords": [
+   "nodejs",
+   "javascript",
+   "express",
+   "pnpm",
+   "yarn",
+   "deno",
+   "bun"
+  ]
+ },
+ {
+  "genre": "言語",
+  "name": "TypeScript Blog",
+  "url": "https://devblogs.microsoft.com/typescript/feed/",
+  "tags": [
+   "TypeScript",
+   "言語"
+  ],
+  "keywords": [
+   "typescript",
+   "tsc",
+   "tsconfig",
+   "tsx",
+   "zod"
+  ]
+ },
+ {
+  "genre": "言語",
+  "name": "Kotlin Blog",
+  "url": "https://blog.jetbrains.com/kotlin/feed/",
+  "tags": [
+   "Kotlin",
+   "言語"
+  ],
+  "keywords": [
+   "kotlin",
+   "android",
+   "jetpack",
+   "coroutine",
+   "coroutines",
+   "ktor"
+  ]
+ },
+ {
+  "genre": "言語",
+  "name": "Swift.org Blog",
+  "url": "https://www.swift.org/atom.xml",
+  "tags": [
+   "Swift",
+   "言語"
+  ],
+  "keywords": [
+   "swift",
+   "swiftui",
+   "xcode",
+   "ios",
+   "macos"
+  ]
+ },
+ {
+  "genre": "Web",
+  "name": "W3C News",
+  "url": "https://www.w3.org/blog/news/feed",
+  "tags": [
+   "標準",
+   "Web"
+  ],
+  "keywords": [
+   "w3c",
+   "whatwg",
+   "標準化",
+   "accessibility",
+   "アクセシビリティ"
+  ]
+ },
+ {
+  "genre": "Web",
+  "name": "web.dev Blog",
+  "url": "https://web.dev/static/blog/feed.xml",
+  "tags": [
+   "Web",
+   "ブラウザ"
+  ],
+  "keywords": [
+   "webdev",
+   "lighthouse",
+   "pwa",
+   "パフォーマンス"
+  ]
+ },
+ {
+  "genre": "Web",
+  "name": "Chrome for Developers",
+  "url": "https://developer.chrome.com/static/blog/feed.xml",
+  "tags": [
+   "Web",
+   "ブラウザ"
+  ],
+  "keywords": [
+   "chrome",
+   "chromium",
+   "devtools",
+   "extension",
+   "拡張機能",
+   "manifest"
+  ]
+ },
+ {
+  "genre": "Web",
+  "name": "Mozilla Hacks",
+  "url": "https://hacks.mozilla.org/feed/",
+  "tags": [
+   "Web",
+   "ブラウザ"
+  ],
+  "keywords": [
+   "firefox",
+   "mozilla",
+   "webassembly",
+   "wasm"
+  ]
+ },
+ {
+  "genre": "Web",
+  "name": "WebKit Blog",
+  "url": "https://webkit.org/feed/",
+  "tags": [
+   "Web",
+   "ブラウザ"
+  ],
+  "keywords": [
+   "webkit",
+   "safari"
+  ]
+ },
+ {
+  "genre": "Web",
+  "name": "CSS-Tricks",
+  "url": "https://css-tricks.com/feed/",
+  "tags": [
+   "Web",
+   "CSS"
+  ],
+  "keywords": [
+   "flexbox",
+   "tailwind",
+   "sass",
+   "styling",
+   "animation",
+   "アニメーション"
+  ]
+ },
+ {
+  "genre": "Web",
+  "name": "Smashing Magazine",
+  "url": "https://www.smashingmagazine.com/feed/",
+  "tags": [
+   "Web",
+   "デザイン"
+  ],
+  "keywords": [
+   "デザイン",
+   "accessibility",
+   "アクセシビリティ",
+   "figma"
+  ]
+ },
+ {
+  "genre": "クラウド",
+  "name": "AWS What's New",
+  "url": "https://aws.amazon.com/about-aws/whats-new/recent/feed/",
+  "tags": [
+   "AWS",
+   "クラウド"
+  ],
+  "keywords": [
+   "aws",
+   "lambda",
+   "ec2",
+   "dynamodb",
+   "cloudformation",
+   "cloudwatch",
+   "iam"
+  ]
+ },
+ {
+  "genre": "クラウド",
+  "name": "Google Cloud Blog",
+  "url": "https://cloudblog.withgoogle.com/rss/",
+  "tags": [
+   "GCP",
+   "クラウド"
+  ],
+  "keywords": [
+   "gcp",
+   "bigquery",
+   "gke",
+   "firebase",
+   "vertex",
+   "gcloud"
+  ]
+ },
+ {
+  "genre": "クラウド",
+  "name": "Azure Updates",
+  "url": "https://www.microsoft.com/releasecommunications/api/v2/azure/rss",
+  "tags": [
+   "Azure",
+   "クラウド"
+  ],
+  "keywords": [
+   "azure",
+   "entra",
+   "cosmosdb",
+   "aks",
+   "bicep"
+  ]
+ },
+ {
+  "genre": "クラウド",
+  "name": "Cloudflare Blog",
+  "url": "https://blog.cloudflare.com/rss/",
+  "tags": [
+   "インフラ",
+   "ネットワーク"
+  ],
+  "keywords": [
+   "cloudflare",
+   "cdn",
+   "dns",
+   "waf"
+  ]
+ },
+ {
+  "genre": "クラウド",
+  "name": "Kubernetes Blog",
+  "url": "https://kubernetes.io/feed.xml",
+  "tags": [
+   "Kubernetes",
+   "インフラ"
+  ],
+  "keywords": [
+   "kubernetes",
+   "k8s",
+   "kubectl",
+   "helm",
+   "pod",
+   "argocd"
+  ]
+ },
+ {
+  "genre": "クラウド",
+  "name": "CNCF",
+  "url": "https://www.cncf.io/feed/",
+  "tags": [
+   "クラウドネイティブ",
+   "OSS"
+  ],
+  "keywords": [
+   "cncf",
+   "prometheus",
+   "envoy",
+   "istio",
+   "opentelemetry",
+   "grafana"
+  ]
+ },
+ {
+  "genre": "クラウド",
+  "name": "HashiCorp Blog",
+  "url": "https://www.hashicorp.com/blog/feed.xml",
+  "tags": [
+   "インフラ",
+   "IaC"
+  ],
+  "keywords": [
+   "terraform",
+   "vault",
+   "consul",
+   "nomad",
+   "packer",
+   "hashicorp",
+   "iac",
+   "opentofu"
+  ]
+ },
+ {
+  "genre": "セキュリティ",
+  "name": "Krebs on Security",
+  "url": "https://krebsonsecurity.com/feed/",
+  "tags": [
+   "セキュリティ"
+  ],
+  "keywords": [
+   "セキュリティ",
+   "security",
+   "breach",
+   "ransomware",
+   "ランサムウェア",
+   "phishing",
+   "フィッシング"
+  ]
+ },
+ {
+  "genre": "セキュリティ",
+  "name": "Schneier on Security",
+  "url": "https://www.schneier.com/feed/atom/",
+  "tags": [
+   "セキュリティ"
+  ],
+  "keywords": [
+   "セキュリティ",
+   "security",
+   "暗号",
+   "cryptography",
+   "privacy",
+   "プライバシ"
+  ]
+ },
+ {
+  "genre": "セキュリティ",
+  "name": "The Hacker News",
+  "url": "https://feeds.feedburner.com/TheHackersNews",
+  "tags": [
+   "セキュリティ"
+  ],
+  "keywords": [
+   "セキュリティ",
+   "security",
+   "malware",
+   "マルウェア",
+   "vulnerability",
+   "脆弱性",
+   "cve",
+   "exploit"
+  ]
+ },
+ {
+  "genre": "セキュリティ",
+  "name": "JPCERT/CC",
+  "url": "https://www.jpcert.or.jp/rss/jpcert.rdf",
+  "tags": [
+   "セキュリティ",
+   "日本語"
+  ],
+  "keywords": [
+   "セキュリティ",
+   "脆弱性",
+   "jpcert",
+   "cve",
+   "注意喚起"
+  ]
+ },
+ {
+  "genre": "セキュリティ",
+  "name": "CISA Advisories",
+  "url": "https://www.cisa.gov/cybersecurity-advisories/all.xml",
+  "tags": [
+   "セキュリティ"
+  ],
+  "keywords": [
+   "セキュリティ",
+   "脆弱性",
+   "cve",
+   "cisa",
+   "advisory"
+  ]
+ },
+ {
+  "genre": "ツール",
+  "name": "Docker Blog",
+  "url": "https://www.docker.com/blog/feed/",
+  "tags": [
+   "コンテナ",
+   "ツール"
+  ],
+  "keywords": [
+   "docker",
+   "dockerfile",
+   "compose",
+   "コンテナ",
+   "container",
+   "containers",
+   "podman"
+  ]
+ },
+ {
+  "genre": "ツール",
+  "name": "JetBrains Blog",
+  "url": "https://blog.jetbrains.com/feed/",
+  "tags": [
+   "IDE",
+   "ツール"
+  ],
+  "keywords": [
+   "jetbrains",
+   "intellij",
+   "goland",
+   "pycharm",
+   "webstorm",
+   "rider",
+   "ide"
+  ]
+ },
+ {
+  "genre": "ツール",
+  "name": "VS Code Updates",
+  "url": "https://code.visualstudio.com/feed.xml",
+  "tags": [
+   "IDE",
+   "ツール"
+  ],
+  "keywords": [
+   "vscode",
+   "copilot",
+   "extension",
+   "拡張機能",
+   "ide"
+  ]
+ },
+ {
+  "genre": "企業技術ブログ",
+  "name": "Netflix TechBlog",
+  "url": "https://netflixtechblog.com/feed",
+  "tags": [
+   "アーキテクチャ",
+   "大規模"
+  ],
+  "keywords": [
+   "netflix",
+   "マイクロサービス",
+   "microservices",
+   "distributed",
+   "アーキテクチャ",
+   "architecture"
+  ]
+ },
+ {
+  "genre": "企業技術ブログ",
+  "name": "Meta Engineering",
+  "url": "https://engineering.fb.com/feed/",
+  "tags": [
+   "アーキテクチャ",
+   "大規模"
+  ],
+  "keywords": [
+   "facebook",
+   "react",
+   "pytorch",
+   "llama",
+   "アーキテクチャ"
+  ]
+ },
+ {
+  "genre": "企業技術ブログ",
+  "name": "Shopify Engineering",
+  "url": "https://shopify.engineering/blog.atom",
+  "tags": [
+   "Web",
+   "大規模"
+  ],
+  "keywords": [
+   "shopify",
+   "rails",
+   "ruby",
+   "graphql",
+   "ecommerce"
+  ]
+ },
+ {
+  "genre": "企業技術ブログ",
+  "name": "Spotify Engineering",
+  "url": "https://engineering.atspotify.com/feed",
+  "tags": [
+   "アーキテクチャ",
+   "データ"
+  ],
+  "keywords": [
+   "spotify",
+   "backstage",
+   "パイプライン",
+   "基盤",
+   "データエンジニアリング"
+  ]
+ },
+ {
+  "genre": "企業技術ブログ",
+  "name": "Slack Engineering",
+  "url": "https://slack.engineering/feed/",
+  "tags": [
+   "アーキテクチャ"
+  ],
+  "keywords": [
+   "slack",
+   "アーキテクチャ",
+   "architecture",
+   "websocket"
+  ]
+ },
+ {
+  "genre": "企業技術ブログ",
+  "name": "Dropbox Tech",
+  "url": "https://dropbox.tech/feed",
+  "tags": [
+   "アーキテクチャ"
+  ],
+  "keywords": [
+   "dropbox",
+   "ストレージ",
+   "アーキテクチャ"
+  ]
+ },
+ {
+  "genre": "企業技術ブログ",
+  "name": "Google Developers Blog",
+  "url": "https://developers.googleblog.com/feeds/posts/default",
+  "tags": [
+   "開発",
+   "Google"
+  ],
+  "keywords": [
+   "android",
+   "firebase",
+   "flutter",
+   "gemini"
+  ]
+ },
+ {
+  "genre": "スタートアップ",
+  "name": "Y Combinator Blog",
+  "url": "https://www.ycombinator.com/blog/rss",
+  "tags": [
+   "スタートアップ"
+  ],
+  "keywords": [
+   "ycombinator",
+   "startup",
+   "スタートアップ",
+   "起業",
+   "founder"
+  ]
+ },
+ {
+  "genre": "スタートアップ",
+  "name": "Product Hunt",
+  "url": "https://www.producthunt.com/feed",
+  "tags": [
+   "プロダクト",
+   "スタートアップ"
+  ],
+  "keywords": [
+   "producthunt",
+   "プロダクト",
+   "ローンチ"
+  ]
+ },
+ {
+  "genre": "一般ニュース（日本）",
+  "name": "NHK ニュース 主要",
+  "url": "https://www.nhk.or.jp/rss/news/cat0.xml",
+  "tags": [
+   "ニュース",
+   "日本語"
+  ],
+  "keywords": [
+   "速報"
+  ]
+ },
+ {
+  "genre": "一般ニュース（日本）",
+  "name": "NHK ニュース 社会",
+  "url": "https://www.nhk.or.jp/rss/news/cat1.xml",
+  "tags": [
+   "社会",
+   "日本語"
+  ],
+  "keywords": [
+   "事件",
+   "災害",
+   "地震"
+  ]
+ },
+ {
+  "genre": "一般ニュース（日本）",
+  "name": "NHK ニュース 政治",
+  "url": "https://www.nhk.or.jp/rss/news/cat4.xml",
+  "tags": [
+   "政治",
+   "日本語"
+  ],
+  "keywords": [
+   "政治",
+   "国会",
+   "選挙",
+   "内閣"
+  ]
+ },
+ {
+  "genre": "一般ニュース（日本）",
+  "name": "NHK ニュース 国際",
+  "url": "https://www.nhk.or.jp/rss/news/cat6.xml",
+  "tags": [
+   "国際",
+   "日本語"
+  ],
+  "keywords": [
+   "国際",
+   "外交"
+  ]
+ },
+ {
+  "genre": "一般ニュース（日本）",
+  "name": "朝日新聞 速報",
+  "url": "https://www.asahi.com/rss/asahi/newsheadlines.rdf",
+  "tags": [
+   "ニュース",
+   "日本語"
+  ],
+  "keywords": [
+   "速報",
+   "朝日新聞"
+  ]
+ },
+ {
+  "genre": "一般ニュース（日本）",
+  "name": "毎日新聞 速報",
+  "url": "https://mainichi.jp/rss/etc/mainichi-flash.rss",
+  "tags": [
+   "ニュース",
+   "日本語"
+  ],
+  "keywords": [
+   "速報",
+   "毎日新聞"
+  ]
+ },
+ {
+  "genre": "一般ニュース（海外）",
+  "name": "BBC News",
+  "url": "https://feeds.bbci.co.uk/news/rss.xml",
+  "tags": [
+   "ニュース",
+   "国際"
+  ],
+  "keywords": [
+   "bbc"
+  ]
+ },
+ {
+  "genre": "一般ニュース（海外）",
+  "name": "BBC World",
+  "url": "https://feeds.bbci.co.uk/news/world/rss.xml",
+  "tags": [
+   "国際"
+  ],
+  "keywords": [
+   "bbc",
+   "国際",
+   "world"
+  ]
+ },
+ {
+  "genre": "一般ニュース（海外）",
+  "name": "The Guardian World",
+  "url": "https://www.theguardian.com/world/rss",
+  "tags": [
+   "国際"
+  ],
+  "keywords": [
+   "guardian",
+   "国際",
+   "world"
+  ]
+ },
+ {
+  "genre": "一般ニュース（海外）",
+  "name": "NYT Home Page",
+  "url": "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+  "tags": [
+   "ニュース",
+   "国際"
+  ],
+  "keywords": [
+   "nyt",
+   "nytimes"
+  ]
+ },
+ {
+  "genre": "一般ニュース（海外）",
+  "name": "NPR News",
+  "url": "https://feeds.npr.org/1001/rss.xml",
+  "tags": [
+   "ニュース",
+   "米国"
+  ],
+  "keywords": [
+   "npr",
+   "米国",
+   "america"
+  ]
+ },
+ {
+  "genre": "一般ニュース（海外）",
+  "name": "Al Jazeera",
+  "url": "https://www.aljazeera.com/xml/rss/all.xml",
+  "tags": [
+   "国際"
+  ],
+  "keywords": [
+   "aljazeera",
+   "中東",
+   "国際"
+  ]
+ },
+ {
+  "genre": "一般ニュース（海外）",
+  "name": "WSJ World News",
+  "url": "https://feeds.a.dj.com/rss/RSSWorldNews.xml",
+  "tags": [
+   "国際",
+   "経済"
+  ],
+  "keywords": [
+   "wsj",
+   "国際",
+   "経済"
+  ]
+ },
+ {
+  "genre": "経済（日本）",
+  "name": "NHK ニュース 経済",
+  "url": "https://www.nhk.or.jp/rss/news/cat5.xml",
+  "tags": [
+   "経済",
+   "日本語"
+  ],
+  "keywords": [
+   "経済",
+   "景気",
+   "物価",
+   "円安",
+   "円高"
+  ]
+ },
+ {
+  "genre": "経済（日本）",
+  "name": "東洋経済オンライン",
+  "url": "https://toyokeizai.net/list/feed/rss",
+  "tags": [
+   "経済",
+   "ビジネス",
+   "日本語"
+  ],
+  "keywords": [
+   "経済",
+   "ビジネス",
+   "東洋経済"
+  ]
+ },
+ {
+  "genre": "経済（日本）",
+  "name": "ダイヤモンド・オンライン",
+  "url": "https://diamond.jp/list/feed/rss/diamond",
+  "tags": [
+   "経済",
+   "ビジネス",
+   "日本語"
+  ],
+  "keywords": [
+   "経済",
+   "ビジネス",
+   "ダイヤモンド"
+  ]
+ },
+ {
+  "genre": "経済（日本）",
+  "name": "ITmedia ビジネスオンライン",
+  "url": "https://rss.itmedia.co.jp/rss/2.0/business.xml",
+  "tags": [
+   "ビジネス",
+   "日本語"
+  ],
+  "keywords": [
+   "ビジネス",
+   "itmedia",
+   "経営"
+  ]
+ },
+ {
+  "genre": "経済（日本）",
+  "name": "日本銀行 What's New",
+  "url": "https://www.boj.or.jp/rss/whatsnew.xml",
+  "tags": [
+   "金融政策",
+   "日本語"
+  ],
+  "keywords": [
+   "日銀",
+   "日本銀行",
+   "金融政策",
+   "金利",
+   "利上",
+   "利下"
+  ]
+ },
+ {
+  "genre": "経済（海外）",
+  "name": "BBC Business",
+  "url": "https://feeds.bbci.co.uk/news/business/rss.xml",
+  "tags": [
+   "経済",
+   "ビジネス"
+  ],
+  "keywords": [
+   "bbc",
+   "経済",
+   "business"
+  ]
+ },
+ {
+  "genre": "経済（海外）",
+  "name": "The Guardian Business",
+  "url": "https://www.theguardian.com/uk/business/rss",
+  "tags": [
+   "経済",
+   "ビジネス"
+  ],
+  "keywords": [
+   "guardian",
+   "経済",
+   "business"
+  ]
+ },
+ {
+  "genre": "経済（海外）",
+  "name": "NYT Business",
+  "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
+  "tags": [
+   "ビジネス"
+  ],
+  "keywords": [
+   "nyt",
+   "business",
+   "ビジネス"
+  ]
+ },
+ {
+  "genre": "経済（海外）",
+  "name": "NYT Economy",
+  "url": "https://rss.nytimes.com/services/xml/rss/nyt/Economy.xml",
+  "tags": [
+   "経済"
+  ],
+  "keywords": [
+   "nyt",
+   "economy",
+   "経済"
+  ]
+ },
+ {
+  "genre": "経済（海外）",
+  "name": "CNBC Top News",
+  "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+  "tags": [
+   "経済",
+   "市場"
+  ],
+  "keywords": [
+   "cnbc",
+   "株価",
+   "市場",
+   "stocks"
+  ]
+ },
+ {
+  "genre": "経済（海外）",
+  "name": "CNBC Economy",
+  "url": "https://www.cnbc.com/id/20910258/device/rss/rss.html",
+  "tags": [
+   "経済"
+  ],
+  "keywords": [
+   "cnbc",
+   "economy",
+   "経済",
+   "inflation",
+   "インフレ"
+  ]
+ },
+ {
+  "genre": "経済（海外）",
+  "name": "WSJ Markets",
+  "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+  "tags": [
+   "市場"
+  ],
+  "keywords": [
+   "wsj",
+   "市場",
+   "株価",
+   "markets"
+  ]
+ },
+ {
+  "genre": "経済（海外）",
+  "name": "Bloomberg Markets",
+  "url": "https://feeds.bloomberg.com/markets/news.rss",
+  "tags": [
+   "市場"
+  ],
+  "keywords": [
+   "bloomberg",
+   "市場",
+   "株価",
+   "為替",
+   "markets"
+  ]
+ },
+ {
+  "genre": "経済（海外）",
+  "name": "The Economist Finance & economics",
+  "url": "https://www.economist.com/finance-and-economics/rss.xml",
+  "tags": [
+   "経済"
+  ],
+  "keywords": [
+   "economist",
+   "経済",
+   "economy"
+  ]
+ },
+ {
+  "genre": "経済（海外）",
+  "name": "MarketWatch Top Stories",
+  "url": "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+  "tags": [
+   "市場"
+  ],
+  "keywords": [
+   "marketwatch",
+   "市場",
+   "株価",
+   "stocks"
+  ]
+ },
+ {
+  "genre": "経済（海外）",
+  "name": "Yahoo Finance",
+  "url": "https://finance.yahoo.com/news/rssindex",
+  "tags": [
+   "市場",
+   "ビジネス"
+  ],
+  "keywords": [
+   "finance",
+   "株価",
+   "市場",
+   "投資",
+   "investing"
+  ]
+ },
+ {
+  "genre": "経済（海外）",
+  "name": "NPR Business",
+  "url": "https://feeds.npr.org/1006/rss.xml",
+  "tags": [
+   "ビジネス",
+   "米国"
+  ],
+  "keywords": [
+   "npr",
+   "business",
+   "ビジネス"
+  ]
+ },
+ {
+  "genre": "経済（海外）",
+  "name": "FRB Press Releases",
+  "url": "https://www.federalreserve.gov/feeds/press_all.xml",
+  "tags": [
+   "金融政策"
+  ],
+  "keywords": [
+   "frb",
+   "fed",
+   "fomc",
+   "金融政策",
+   "金利",
+   "利上",
+   "利下"
+  ]
+ },
+ {
+  "genre": "科学",
+  "name": "Nature",
+  "url": "https://www.nature.com/nature.rss",
+  "tags": [
+   "科学",
+   "研究"
+  ],
+  "keywords": [
+   "nature",
+   "論文",
+   "科学",
+   "science"
+  ]
+ },
+ {
+  "genre": "科学",
+  "name": "Science News（AAAS）",
+  "url": "https://www.science.org/rss/news_current.xml",
+  "tags": [
+   "科学",
+   "研究"
+  ],
+  "keywords": [
+   "science",
+   "論文",
+   "科学"
+  ]
+ },
+ {
+  "genre": "科学",
+  "name": "NASA Breaking News",
+  "url": "https://www.nasa.gov/rss/dyn/breaking_news.rss",
+  "tags": [
+   "宇宙",
+   "科学"
+  ],
+  "keywords": [
+   "nasa",
+   "宇宙",
+   "宇宙開発",
+   "ロケット",
+   "rocket",
+   "spacex"
+  ]
+ },
+ {
+  "genre": "科学",
+  "name": "NHK ニュース 科学・文化",
+  "url": "https://www.nhk.or.jp/rss/news/cat3.xml",
+  "tags": [
+   "科学",
+   "日本語"
+  ],
+  "keywords": [
+   "科学",
+   "ノーベル"
+  ]
+ }
+]
