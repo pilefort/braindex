@@ -2,8 +2,6 @@ package template
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -72,11 +70,11 @@ func TestInstallFeatures_MergesGitignore(t *testing.T) {
 	if !has(res.Merged, GitignorePath) || has(res.Created, GitignorePath) || has(res.Skipped, GitignorePath) {
 		t.Errorf("merged=%v created=%v skipped=%v", res.Merged, res.Created, res.Skipped)
 	}
-	b, _ := os.ReadFile(filepath.Join(dst, GitignorePath))
+	b := readAt(t, dst, GitignorePath)
 	if !strings.HasPrefix(string(b), "*.tmp\n") || !strings.Contains(string(b), "news/.ingested/\n") {
 		t.Errorf(".gitignore の中身:\n%s", b)
 	}
-	led, _, _ := LoadLedger(dst)
+	led := loadLedger(t, dst)
 	if _, ok := led.Files[GitignorePath]; ok {
 		t.Error("既存だった .gitignore を台帳に記録している")
 	}

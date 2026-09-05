@@ -92,7 +92,10 @@ func TestBuildConfig_Sections(t *testing.T) {
 		}
 	}
 	// schedule の jobs が空でも "jobs": [] と書く(節が無いのと違い、既定の 2 本にならない)
-	b, _, _ := BuildConfig(nil, []Feature{FeatureSchedule})
+	b, _, err := BuildConfig(nil, []Feature{FeatureSchedule})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !bytes.Contains(b, []byte(`"jobs": []`)) {
 		t.Errorf("schedule だけのとき jobs が空配列でない:\n%s", b)
 	}

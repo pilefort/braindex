@@ -9,6 +9,29 @@ import (
 	"testing"
 )
 
+// hubFiles は hub の雛形を読む(失敗はテストの失敗)。
+func hubFiles(t *testing.T) []File {
+	t.Helper()
+	files, err := Files(KindHub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+// loadLedger は dst の台帳を読む(無い・読めないはテストの失敗)。
+func loadLedger(t *testing.T, dst string) Ledger {
+	t.Helper()
+	led, found, err := LoadLedger(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatalf("%s に台帳が無い", dst)
+	}
+	return led
+}
+
 // 対応表は hub の雛形を漏れなく・重複なく覆う。雛形にファイルを足したら、どの機能で配るかを
 // 対応表に書かないとこのテストが落ちる(黙って all だけに入る、を防ぐ)。
 func TestFeatures_CoverAllHubFiles(t *testing.T) {
@@ -187,7 +210,7 @@ func TestFeatureFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tmpl, _ := Files(KindHub)
+	tmpl := hubFiles(t)
 	if len(all) != len(tmpl) {
 		t.Fatalf("all=%d 雛形=%d", len(all), len(tmpl))
 	}
@@ -219,14 +242,14 @@ func TestInstallFeatures_Incremental(t *testing.T) {
 	if len(res.Created) != 0 || len(res.Merged) != 0 {
 		t.Errorf("2 回目に変更がある: created=%v merged=%v", res.Created, res.Merged)
 	}
-	files, _ := Files(KindHub)
+	files := hubFiles(t)
 	for _, f := range files {
 		a, err := os.ReadFile(filepath.Join(step, filepath.FromSlash(f.Path)))
 		if err != nil {
 			t.Errorf("段階的に足した hub に %s が無い: %v", f.Path, err)
 			continue
 		}
-		b, _ := os.ReadFile(filepath.Join(once, filepath.FromSlash(f.Path)))
+		b := readAt(t, once, f.Path)
 		if !bytes.Equal(a, b) {
 			t.Errorf("%s が一括と段階的で違う:\n--- 段階的\n%s\n--- 一括\n%s", f.Path, a, b)
 		}
@@ -263,7 +286,7 @@ func TestInstallFeatures_CoreOnly(t *testing.T) {
 			t.Errorf("段 0 に %s がある", p)
 		}
 	}
-	led, _, _ := LoadLedger(dst)
+	led := loadLedger(t, dst)
 	if len(led.Features) != 0 {
 		t.Errorf("段 0 の台帳に features がある: %v", led.Features)
 	}
@@ -276,7 +299,7 @@ func TestInstallFeatures_MergesIntoEditedConfig(t *testing.T) {
 	if _, err := InstallFeatures(dst, nil); err != nil {
 		t.Fatal(err)
 	}
-	led, _, _ := LoadLedger(dst)
+	led := loadLedger(t, dst)
 	distributed := led.Files[ConfigPath]
 
 	// 配った版のまま retro を足す → 台帳は新しい内容に進む
@@ -287,7 +310,7 @@ func TestInstallFeatures_MergesIntoEditedConfig(t *testing.T) {
 	if !has(res.Merged, ConfigPath) || has(res.Created, ConfigPath) {
 		t.Errorf("retro: merged=%v created=%v", res.Merged, res.Created)
 	}
-	led, _, _ = LoadLedger(dst)
+	led = loadLedger(t, dst)
 	cfg := readAt(t, dst, ConfigPath)
 	if led.Files[ConfigPath] == distributed || led.Files[ConfigPath] != Hash(cfg) {
 		t.Errorf("配った版のままの設定に節を足したのに台帳が進んでいない")
@@ -304,7 +327,7 @@ func TestInstallFeatures_MergesIntoEditedConfig(t *testing.T) {
 	if !bytes.Contains(cfg, []byte(`"root": "/my/notes"`)) || !bytes.Contains(cfg, []byte(`"news"`)) || !bytes.Contains(cfg, []byte(`"retro"`)) {
 		t.Errorf("編集した root が残っていない、または節が足りない:\n%s", cfg)
 	}
-	led, _, _ = LoadLedger(dst)
+	led = loadLedger(t, dst)
 	if led.Files[ConfigPath] != before {
 		t.Errorf("編集済みの設定に節を足したのに台帳が進んだ")
 	}
