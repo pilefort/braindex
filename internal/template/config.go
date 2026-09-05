@@ -44,6 +44,9 @@ func BuildConfig(existing []byte, feats []Feature) (out []byte, changed bool, er
 		if err := json.Unmarshal(existing, &cur); err != nil {
 			return nil, false, fmt.Errorf("%s: %w", ConfigPath, err)
 		}
+		if cur == nil { // JSON の null。Unmarshal はエラーにせず map を nil にする
+			return nil, false, fmt.Errorf("%s: オブジェクトでない(null)", ConfigPath)
+		}
 	}
 	tmpl, err := configSections()
 	if err != nil {

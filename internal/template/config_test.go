@@ -171,4 +171,8 @@ func TestBuildConfig_InvalidExisting(t *testing.T) {
 	if _, _, err := BuildConfig([]byte(`[1]`), nil); err == nil {
 		t.Error("オブジェクトでない JSON でエラーにならない")
 	}
+	// null は json.Unmarshal がエラーにせず map を nil にする。panic せずエラーにする
+	if _, _, err := BuildConfig([]byte(`null`), nil); err == nil {
+		t.Error("null でエラーにならない")
+	}
 }
