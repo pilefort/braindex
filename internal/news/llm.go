@@ -104,6 +104,9 @@ func (c ClaudeCLI) Annotate(ctx context.Context, prompt string) (string, error) 
 		args = append(args, "--model", c.Model)
 	}
 	cmd := exec.CommandContext(ctx, "claude", args...)
+	// npm 版の claude.cmd は孫プロセスを残すことがあり、タイムアウトで親を殺しても標準出力のパイプが閉じず Wait が返らない。
+	// パイプの閉じを待つ上限を置いて、Timeout が効くようにする
+	cmd.WaitDelay = 5 * time.Second
 	cmd.Stdin = strings.NewReader(prompt)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
@@ -203,9 +206,19 @@ func Annotate(ctx context.Context, a Annotator, results []Result, cache Annotati
 			continue
 		}
 		got := ParseAnnotationResponse(out)
+		// バッチに無い id は捨てる(応答が捏造した id をキャッシュに永続させない)
+		asked := make(map[string]bool, end-i)
+		for _, it := range todo[i:end] {
+			asked[it.ID] = true
+		}
+		for id := range got {
+			if !asked[id] {
+				delete(got, id)
+			}
+		}
 		if len(got) == 0 {
 			rep.Failed++
-			rep.Errors = append(rep.Errors, "応答に JSON 配列が無い")
+			rep.Errors = append(rep.Errors, "応答に採点対象の id を持つ JSON 配列が無い")
 			continue
 		}
 		for id, v := range got {
@@ -267,32 +280,47 @@ func BuildAnnotationPrompt(batch []annotationItem, terms, examples []string) str
 
 var codeFence = regexp.MustCompile("(?s)^```(?:json)?\\s*|\\s*```$")
 
-// ParseAnnotationResponse は claude の出力(JSON 配列。コードフェンスや前置きが混ざっても許容)を注釈にする。失敗は空。
-// id の無い要素は捨てる。r が 0〜MaxScore の整数でなければ未採点(nil)。
+// annotationRow は応答の 1 要素。
+type annotationRow struct {
+	ID      string          `json:"id"`
+	Title   string          `json:"t"`
+	Summary string          `json:"s"`
+	Score   json.RawMessage `json:"r"`
+}
+
+// ParseAnnotationResponse は claude の出力(JSON 配列。コードフェンスや前置き・後置きが混ざっても許容)を注釈にする。失敗は空。
+// 各 `[` の位置から JSON の値 1 つを読んでみて、最初に配列として読めたものを採る(前置きの「[注]」のような角括弧に惑わされない)。
+// id の無い要素は捨てる。r が 0〜MaxScore の整数でなければ未採点(nil)。訳の改行・連続空白は 1 個の空白にする(md の 1 行を割らない)。
 func ParseAnnotationResponse(text string) Annotations {
 	out := Annotations{}
 	t := codeFence.ReplaceAllString(strings.TrimSpace(text), "")
-	start, end := strings.Index(t, "["), strings.LastIndex(t, "]")
-	if start < 0 || end <= start {
-		return out
+	var arr []annotationRow
+	found := false
+	for i := 0; i < len(t); i++ {
+		if t[i] != '[' {
+			continue
+		}
+		dec := json.NewDecoder(strings.NewReader(t[i:]))
+		var try []annotationRow
+		if err := dec.Decode(&try); err == nil {
+			arr, found = try, true
+			break
+		}
 	}
-	var arr []struct {
-		ID      string          `json:"id"`
-		Title   string          `json:"t"`
-		Summary string          `json:"s"`
-		Score   json.RawMessage `json:"r"`
-	}
-	if err := json.Unmarshal([]byte(t[start:end+1]), &arr); err != nil {
+	if !found {
 		return out
 	}
 	for _, it := range arr {
 		if it.ID == "" {
 			continue
 		}
-		out[it.ID] = Annotation{Title: strings.TrimSpace(it.Title), Summary: strings.TrimSpace(it.Summary), Score: normScore(it.Score)}
+		out[it.ID] = Annotation{Title: oneLine(it.Title), Summary: oneLine(it.Summary), Score: normScore(it.Score)}
 	}
 	return out
 }
+
+// oneLine は空白(改行・タブ・連続空白)を 1 個の空白にする(feed の見出しの正規化と同じ)。
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 // normScore は r(数値か文字列)を 0〜MaxScore の整数にする。欠落・範囲外・非数は nil。
 func normScore(raw json.RawMessage) *int {
@@ -309,8 +337,9 @@ func normScore(raw json.RawMessage) *int {
 
 // ApplyAnnotations は語の一致の Ranking に LLM の関心度を重ねる(LLM が採点した記事はその点で上書きし、Matched は LLMMark だけ)。
 // LLM 未採点の記事は rk の点を保つ。rk が nil(プロファイルが空)のときは、注釈に採点が 1 件でもあれば新しい Ranking を作り、
-// 未採点の記事は minScore(主要表示=フォールバック)にする。採点が 1 件も無ければ rk をそのまま返す。
-func ApplyAnnotations(rk Ranking, results []Result, ann Annotations, minScore int) Ranking {
+// 未採点の記事は載せない(Ranking に無い＝未採点。Split は主要表示に入れ、描画はバッジを付けない。関心度を捏造しない)。
+// 採点が 1 件も無ければ rk をそのまま返す。
+func ApplyAnnotations(rk Ranking, results []Result, ann Annotations) Ranking {
 	scored := false
 	for _, r := range results {
 		for _, e := range r.New {
@@ -329,10 +358,8 @@ func ApplyAnnotations(rk Ranking, results []Result, ann Annotations, minScore in
 				out[e.ID] = interest.Score{Value: *a.Score, Matched: []string{LLMMark}}
 				continue
 			}
-			if rk != nil {
-				out[e.ID] = rk[e.ID]
-			} else {
-				out[e.ID] = interest.Score{Value: minScore}
+			if v, ok := rk[e.ID]; ok {
+				out[e.ID] = v
 			}
 		}
 	}
@@ -345,4 +372,17 @@ func (a Annotations) translation(id string) string {
 		return ""
 	}
 	return a[id].Title
+}
+
+// LLMScored は LLM の点が実際に適用された新着の件数(Matched が LLMMark だけの記事)。脚注の表記に使う。
+func LLMScored(results []Result, rk Ranking) int {
+	n := 0
+	for _, r := range results {
+		for _, e := range r.New {
+			if s, ok := rk[e.ID]; ok && len(s.Matched) == 1 && s.Matched[0] == LLMMark {
+				n++
+			}
+		}
+	}
+	return n
 }

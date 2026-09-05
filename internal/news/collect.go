@@ -100,19 +100,25 @@ func Rank(results []Result, p interest.Profile) Ranking {
 }
 
 // Split は新着を 主要(関心度 minScore 以上・降順・同点は記載順)と 関心外(未満・記載順)に分ける。
-// rk が nil なら全件が主要(記載順)。
+// rk が nil なら全件が主要(記載順)。rk に無い記事は未採点として主要に入れ、並べ替えでは minScore と同じ扱い(原型と同じ)。
 func Split(entries []feed.Entry, rk Ranking, minScore int) (main, low []feed.Entry) {
 	if rk == nil {
 		return entries, nil
 	}
+	value := func(e feed.Entry) int {
+		if s, ok := rk[e.ID]; ok {
+			return s.Value
+		}
+		return minScore
+	}
 	for _, e := range entries {
-		if rk[e.ID].Value >= minScore {
+		if value(e) >= minScore {
 			main = append(main, e)
 		} else {
 			low = append(low, e)
 		}
 	}
-	sort.SliceStable(main, func(i, j int) bool { return rk[main[i].ID].Value > rk[main[j].ID].Value })
+	sort.SliceStable(main, func(i, j int) bool { return value(main[i]) > value(main[j]) })
 	return main, low
 }
 
@@ -189,8 +195,7 @@ func writeTier(sb *strings.Builder, entries []feed.Entry, o DigestOptions, inden
 			fmt.Fprintf(sb, "%s ", e.Published)
 		}
 		fmt.Fprintf(sb, "[%s](%s)", escapeTitle(e.Title), e.Link)
-		if o.Ranking != nil {
-			s := o.Ranking[e.ID]
+		if s, ok := o.Ranking[e.ID]; ok { // 無い＝未採点(★ を付けない)
 			fmt.Fprintf(sb, " ★%d", s.Value)
 			if len(s.Matched) > 0 {
 				fmt.Fprintf(sb, "（%s）", strings.Join(s.Matched, "・"))
