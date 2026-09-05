@@ -4,21 +4,15 @@
 
 **Markdown ノートの索引を、LLM なし・依存なし・決定的に作るリポ横断の CLI。**
 
-複数の git リポジトリに散らばった Markdown ノート（`docs/notes/`・`docs/decisions.md`）を、
-コピーせずに 1 枚の索引 `catalog.md` にまとめる CLI と、その索引を中心に知識を蓄積・レビューする
-フォルダ規約のテンプレート。
+複数の git リポジトリに散らばった Markdown ノート（`docs/notes/`・`docs/decisions.md`）を、コピーせずに 1 枚の索引
+`catalog.md` にまとめる。索引を grep して当たりを付け、パスの先の実ファイルを読む。索引をコミットすれば、再生成したときの
+`git diff` がそのまま「前回からの差分」になり、週次レビューの材料になる。
 
-**誰のための道具か**: Claude Code を日常的に使い、リポジトリごとに知識や wiki を整えている人。別のリポに移ったとき、
-他のリポで済ませたことを繰り返さないための索引が中核で、その周りに 3 つの周辺機能がある。日々のニュースをその人の関心で選んで出す（`news`）、
-いま学ぶと良さそうなことを示す（`learn`）、Claude Code とのセッションをレビューしてスキルの最適化と棚卸をする（`retro`）。
-**Claude Code 専用**で、他のコーディングエージェントのログには対応しない。索引だけから始めて、必要な機能を 1 つずつ足せる（[段階的な取り込み](#段階的な取り込み)）。
+**誰のための道具か**: Claude Code を日常的に使い、リポジトリごとに知識や wiki を整えている人。索引が中核で、その周りに
+週次レビュー・振り返り（セッションの訂正率）・ニュース・学習の提案がある。**Claude Code 専用**で、他のコーディングエージェントの
+ログには対応しない。索引だけから始めて、必要な機能を 1 つずつ足せる（[段階的な取り込み](#段階的な取り込み)）。
 
-- [構成](#構成) — 何がどこに置かれ、どう流れるか
-- [何をするか](#何をするか) — 引く・書く・回す・確かめる・振り返る・知る・決める・示す・裏を取る
-- [セットアップ](#セットアップ) — 3 手で hub リポが動く
-- [コマンド](#コマンド) — 索引／`init`／`update`／`review`／`lint`／`retro`／`news`／`approvals`／`answer`／`verify`／`scope`／`schedule`
-- [設計](#設計) — 3 原則・やらないこと・LLM wiki 型との対応
-- [開発](#開発) — 状態・リポジトリの地図
+コマンドごとの詳しい説明は [`manual/`](manual/README.md) にある。
 
 ## 構成
 
@@ -28,139 +22,45 @@ hub が持つのは索引と週次レビューだけで、知識の正本は各�
 ```text
 parent/                            ← braindex.json の root（既定 ".."＝hub の親）
 ├── hub/                           ← 索引を置くリポ。braindex はここで実行する
-│   ├── braindex.json              設定（root / notes_dirs / extra / review / retro / news / approvals / schedule）
+│   ├── braindex.json              設定（root / notes_dirs / extra ＋ 足した機能の節）
 │   ├── index/catalog.md           ■ 索引：1 ノート 1 行（日付・種別・タイトル・要旨・パス）
-│   ├── work/review/2026-09-03.md  週次レビューの下書き（braindex review）
-│   ├── news/                      ニュースの置き場（ダイジェストと、選別で残した見出し keep/）
-│   ├── docs/  work/               hub 自身のノートと作業状態（work/APPROVALS.md は判断待ち）
-│   └── .claude/skills/            判断を埋めるスキル（braindex-review・retro・record-lint・contradiction-scan・research-distill）
+│   ├── docs/  work/               hub 自身のノートと作業状態（-add conventions）
+│   ├── work/review/               週次レビューの下書き（-add review）
+│   ├── news/                      ニュースの置き場（-add news）
+│   └── .claude/skills/            判断を埋めるスキル（機能ごとに入る）
 ├── alpha/                         ← 各プロジェクトのリポ。知識の正本はこちら
-│   ├── docs/notes/**/*.md         索引に載る（種別 notes・notes/<サブディレクトリ>）
-│   ├── docs/decisions.md          索引に載る（種別 decisions・末尾の H2 見出し 3 件）
+│   ├── docs/notes/**/*.md         索引に載る
+│   ├── docs/decisions.md          索引に載る（末尾の H2 見出し 3 件）
 │   └── work/ISSUE-*.md            braindex lint が検査する（索引には載せない）
 └── beta/
-    └── ...
 ```
-
-索引はコピーではなくパスを持つ。生成・参照・レビューはこう回る。
-
-```text
-生成:  各リポの docs/notes/**/*.md ＋ docs/decisions.md
-         └─▶ scan（走査）─▶ extract（日付・種別・タイトル・要旨）─▶ render（1 行に整形）
-               └─▶ hub の index/catalog.md（LF 固定。同じ入力なら常にバイト一致）
-
-引く:  人 / エージェント ─▶ catalog.md を grep ─▶ ヒット行のパスの実ファイルを読む
-         索引はコピーを持たない。要旨 80 字は手がかりであって、内容の代わりではない
-
-回す:  catalog.md をコミット ─▶ 再生成すると git diff ＝ 前回からの差分
-         └─▶ braindex review が索引の増減・差分ファイル・放置 TODO を集計し、週次レビューの下書きへ
-```
-
-## 何をするか
-
-- **引く**: `braindex` を実行すると `<root>/*/docs/notes/**/*.md` と `<root>/*/docs/decisions.md` を走査し、
-  `index/catalog.md` に 1 ノート 1 行（日付・種別・タイトル・要旨・パス）を書く。
-  索引を grep して当たりを付け、パスの先の実ファイルを読む。索引の要旨だけで答えない。
-- **書く**: 知識は各リポの `docs/notes/` に書く。索引側への転記はしない。
-- **回す**: 索引を再生成してコミットすると、`git diff` がそのまま「前回からの差分」になる。
-  週次レビューはこれを材料にする。
-- **確かめる**: 作業状態（`work/ISSUE-*.md`）が規約の形か、ノートが曖昧でないか（出典なき数字・日付なし・裸のヘッジ…）を
-  `braindex lint` で決定論に検査する。複数ノートをまたぐ矛盾を探すときは、`braindex scope` が索引から走査対象を切り出す（判定は人かエージェント）。
-- **振り返る**: コーディングエージェントとのセッションで、ユーザーがエージェントの振る舞いを訂正した割合（訂正率）を
-  ローカルのログから常時計測し、閾値を超えたらレトロスペクティブ（訂正の型の洗い出しと規約への反映）を促す。
-- **知る**: 直近のセッション内容と、最近書いたノートから関心分野を推定し、その人に合ったニュースを選んで提示する。
-  「残す／不要」の選別が関心の推定に戻る。
-- **学ぶ**: 関心プロファイルと訂正の文脈から「いま学ぶと良さそうなこと」の候補を理由つきで出す（`braindex learn`）。
-  会話（利用者とエージェント双方の本文）に繰り返し出るのにノートに無い語、訂正の周辺に出る語、残した記事にあるのに書いていない語の 3 つ。手元の材料だけで LLM は使わない。
-- **決める**: 判断待ち（`work/APPROVALS.md`）をブラウザのフォームで聞き、答えを `docs/decisions.md` に
-  3 段（結論 → 理由 → 根拠）で追記する。受け口は 127.0.0.1 だけで、外へは出さない。
-- **示す**: 読み返す価値のある回答は Markdown で書き、自己完結の HTML にして既定ブラウザで開く（チャットは流れる）。
-- **裏を取る**: ノートに書いた GitHub リポ・arXiv 論文・URL・逐語引用が実在するかを、一次ソースへの GET で照合する。
-- **調べる**: 外の事実（最近の動向・論文・数字）の調査は、hub に入るスキル `research-distill` の手順で行う。サブエージェントに一次ソースで
-  裏を取らせ、親が `braindex verify` で独立に再照合し、結果を `braindex answer` で HTML にする。末尾に確度 3 層（独立確認／サブエージェント確認／主張どまり）の検証メモを付ける。
-
-中核は「引く」と「回す」で、これが索引 CLI。ほかは索引の周りで動く周辺機能で、いずれも main に入っている。
 
 ## セットアップ
 
-### 1. 入れる
-
 ```sh
-go install github.com/pilefort/braindex/cmd/braindex@latest
-```
-
-Go 1.26 以降。依存は標準ライブラリのみ。clone してあるなら `go install ./cmd/braindex` でもよい。
-
-### 2. hub を作る
-
-索引を置く hub リポと、各プロジェクトのリポを、同じ親ディレクトリの直下に並べる。
-
-```sh
+go install github.com/pilefort/braindex/cmd/braindex@latest   # Go 1.26 以降。依存は標準ライブラリのみ
 mkdir hub && cd hub
 braindex init                                  # 段 0: README・CLAUDE.md・braindex.json(索引の設定だけ)
 git init && git add . && git commit -m "hub"   # 索引の diff を「前回からの差分」にするため git 管理下に置く
 braindex                                       # 索引 index/catalog.md を生成
 ```
 
-これで段 0（索引だけ）が動く。機能は `braindex init -add <機能>` で 1 つずつ足す（一覧は `braindex init -list`。
-既存ファイルは上書きせず、`braindex.json` には無い節だけ足すので、何度実行しても安全）:
+これで段 0（索引だけ）が動く。**索引はコミットする**（git 管理下にないと `braindex review` の増減が常に 0 件になる）。
+hub の外のリポで作業するセッションからも引かせる設定は [manual/init-update.md](manual/init-update.md#エージェントに横断検索させる)。
+
+## 段階的な取り込み
+
+全部を一度に入れる必要はない。各段は前の段の設定を捨てずに足せる（2026-09-05・設計の条件。`docs/decisions.md`）。機能は `braindex init -add <機能>` で 1 つずつ足す（一覧は `braindex init -list`）。
+既存ファイルは上書きせず、`braindex.json` には無い節だけ足すので、何度実行しても安全。`braindex update` は足した機能の分だけ追従する。
 
 ```sh
 braindex init -add conventions   # 段 1: docs/・work/ の規約とスキル record-lint・contradiction-scan・research-distill
 braindex init -add review        # 段 2: 週次レビュー(スキル braindex-review・work/review/・設定 review 節)。conventions を自動で足す
-braindex review                  #        週に 1 回: レビューの下書き work/review/<今日>.md
 braindex init -add retro         # 段 3: 振り返り(スキル retro・設定 retro 節)
 braindex init -add news          # 段 4: ニュース(news/feeds.example.json・設定 news 節・.gitignore の行)
 braindex init -add schedule      #        定期実行(設定 schedule 節。jobs は足してある review・retro の分)
 braindex init -add all           # 全部を一度に(従来の一括セットアップ)
 ```
-
-`braindex init` が置く `braindex.json`（`"root": ".."`）が設定の雛形の正本で、braindex のリポジトリに別置きの雛形は置いていない。
-手で `braindex.json` を書くなら、キーの一覧は「braindex — 索引の生成」の設定の表を見る。
-
-**索引はコミットする。** hub が git 管理下にないと `braindex review` は索引の増減を常に 0 件と報告し、終了コード 2 で終わる。
-
-### 3. 各リポに骨格を置く（任意）
-
-```sh
-braindex init -repo ../alpha   # docs/notes/{common,project}/・docs/decisions.md・work/{APPROVALS,TODO}.md
-```
-
-hub 側・リポ側とも既存ファイルは上書きしないので、再実行しても安全。
-hub の判断を埋めるスキルは機能ごとに入る（`.claude/skills/` の `record-lint`・`contradiction-scan`・`research-distill` は
-`-add conventions`、`braindex-review` は `-add review`、`retro` は `-add retro`）。
-
-### 4. エージェントに横断検索させる
-
-hub の `CLAUDE.md` には「索引を grep → 実ファイルを読む」の手順が入るが、hub の外のリポで作業している
-セッションからも引かせるには、利用者のグローバル `CLAUDE.md`（Claude Code なら `~/.claude/CLAUDE.md`）に次の 3 行を足す（`<hub>` は hub の場所）:
-
-```md
-- 複数リポにまたがる知識を答える前に、`<hub>/index/catalog.md` を `grep -i <語>` で引く（記憶で答えない）
-- ヒット行のパスは `root`（hub の `braindex.json`。既定は hub の親ディレクトリ）からの相対。その実ファイルを読む。要旨は 80 字の手がかりであって、内容の代わりではない
-- 何も当たらなければ、そう言う。ノートや決定をでっち上げない
-```
-
-### 5. 定期実行
-
-判断は人が行うので、自動化するのは下書きの作成だけ。設定の `schedule` 節（`braindex init -add schedule` が足す。ジョブは足してある
-review・retro の分）に書いたジョブを、hub で `braindex schedule install` と打つと OS のスケジューラ（Windows は schtasks、macOS・Linux は crontab）に登録できる。
-
-```sh
-braindex schedule print      # 登録に使うコマンドを出すだけ（何も変えない）
-braindex schedule install    # 登録する（再実行しても二重にならない）
-braindex schedule list       # 設定のジョブと、OS 側に登録されているか
-braindex schedule uninstall  # この hub の登録を消す
-```
-
-節を省略すると、週次レビュー（月 09:00）と訂正率の確認（月 09:05）の 2 本になる。hub と braindex 自身の絶対パスを埋め込むので、
-定期実行の環境の PATH には依存しない（どちらかを移したら登録し直す）。詳細は [`braindex schedule`](#braindex-schedule--定期実行の登録) の節。
-自分で cron や schtasks に書きたいときは `braindex schedule print` の出力をそのまま使える。
-同じ日に 2 回動いても、既にある下書きは上書きしない。
-
-## 段階的な取り込み
-
-全部を一度に入れる必要はない。各段は前の段の設定を捨てずに足せる（2026-09-05・設計の条件。`docs/decisions.md`）。
 
 | 段 | 入れるもの | 要るもの | 得られること |
 |---|---|---|---|
@@ -171,534 +71,42 @@ braindex schedule uninstall  # この hub の登録を消す
 | 4. ニュース | `braindex init -add news` → `braindex news`（`news/feeds.json`。`news suggest` と束で始められる） | フィードの URL | 関心で選んだダイジェストと、残す／不要の選別 |
 | 5. 学習の提案 | `braindex learn`（配布物は無いので `-add` は要らない） | 段 0・3・4 の材料（索引・セッション・keep） | いま学ぶと良さそうなことの候補 |
 
-各段は `braindex init -add <機能>` の 1 手で、前の段の設定を捨てずに足せる（`braindex.json` は無い節だけ足す）。
-`braindex update` は足した機能の分だけ追従する。
+各リポの骨格（`docs/notes/`・`docs/decisions.md`・`work/`）は `braindex init -repo <リポ>` で置く。
 
 ## コマンド
 
-| コマンド | 入力 | 出力 |
-|---|---|---|
-| `braindex` | `<root>/*/docs/notes/**/*.md`・`<root>/*/docs/decisions.md` | `index/catalog.md` |
-| `braindex init` | 埋め込みのテンプレ | hub の骨格（既定は段 0。`-add <機能>` で足す・`-repo` で各リポの骨格） |
-| `braindex update` | 埋め込みのテンプレ・台帳 `.braindex/template.json` | 追いついた雛形（編集済みは `<名前>.new`）と `index/catalog.md` |
-| `braindex review` | 索引の前回コミット・各リポの `git log`・`work/TODO.md` | `work/review/<今日>.md` |
-| `braindex lint` | `<root>/*/work/ISSUE-*.md` | 指摘（stdout）と終了コード |
-| `braindex retro` | Claude Code のセッションログ（`~/.claude/projects/*/*.jsonl`） | 率の表（stdout）・ダイジェスト（一時ディレクトリ） |
-| `braindex news` | `news/feeds.json` のフィード（GET）と関心の出典（索引・セッション・`news/keep/`） | `news/digest_<日付>_<層>.md` と選別 UI の同名 `.html` |
-| `braindex learn` | 索引・セッションログ・`news/keep`（`news profile` と同じ材料）と訂正辞書 | 学習の提案（Markdown・`-json`） |
-| `braindex approvals` | `work/APPROVALS.md` | ブラウザのフォーム → `docs/decisions.md` への追記 |
-| `braindex answer` | Markdown 1 ファイル | 自己完結 HTML（一時置き場・既定ブラウザで開く） |
-| `braindex verify` | GitHub リポ・arXiv ID・URL・逐語引用 | 照合の結果（stdout・`-json`） |
-| `braindex scope` | `index/catalog.md`（`-dir` ならディレクトリ配下の `*.md`） | 矛盾検査の走査対象（chunk 分割・stdout・`-json`） |
-| `braindex schedule` | 設定の `schedule` 節 | OS のスケジューラへの登録 |
+| コマンド | 入力 | 出力 | 手引き |
+|---|---|---|---|
+| `braindex` | `<root>/*/docs/notes/**/*.md`・`<root>/*/docs/decisions.md` | `index/catalog.md` | [generate](manual/generate.md) |
+| `braindex init` | 埋め込みのテンプレ | hub の骨格（既定は段 0。`-add <機能>` で足す・`-repo` で各リポの骨格） | [init-update](manual/init-update.md) |
+| `braindex update` | 埋め込みのテンプレ・台帳 `.braindex/template.json` | 足した機能の分だけ追いついた雛形（編集済みは `<名前>.new`）と `index/catalog.md` | [init-update](manual/init-update.md) |
+| `braindex review` | 索引の前回コミット・各リポの `git log`・`work/TODO.md` | `work/review/<今日>.md` | [review-lint](manual/review-lint.md) |
+| `braindex lint` | `<root>/*/work/ISSUE-*.md`・ノート | 指摘（stdout）と終了コード | [review-lint](manual/review-lint.md) |
+| `braindex retro` | Claude Code のセッションログ（`~/.claude/projects/*/*.jsonl`） | 率の表（stdout）・ダイジェスト（一時ディレクトリ） | [retro](manual/retro.md) |
+| `braindex news` | `news/feeds.json` のフィード（GET）と関心の出典（索引・セッション・`news/keep/`） | `news/digest_<日付>_<層>.md` と選別 UI の同名 `.html` | [news](manual/news.md) |
+| `braindex learn` | 索引・セッションログ・`news/keep` と訂正辞書 | 学習の提案（Markdown・`-json`） | [learn](manual/learn.md) |
+| `braindex approvals` | `work/APPROVALS.md` | ブラウザのフォーム → `docs/decisions.md` への追記 | [tools](manual/tools.md) |
+| `braindex answer` | Markdown 1 ファイル | 自己完結 HTML（一時置き場・既定ブラウザで開く） | [tools](manual/tools.md) |
+| `braindex verify` | GitHub リポ・arXiv ID・URL・逐語引用 | 照合の結果（stdout・`-json`） | [tools](manual/tools.md) |
+| `braindex scope` | `index/catalog.md`（`-dir` ならディレクトリ配下の `*.md`） | 矛盾検査の走査対象（chunk 分割・stdout・`-json`） | [tools](manual/tools.md) |
+| `braindex schedule` | 設定の `schedule` 節 | OS のスケジューラへの登録 | [schedule](manual/schedule.md) |
 
 終了コードは共通で **0 成功／1 失敗（結果を書かない）／2 警告つき完了（結果は書いたが、飛ばしたものや取りこぼしがある）**。
-「2 なら結果は使える」が全コマンドで成り立つので、定期実行から一律に判定できる。
-
-| 2 を返す場面 | コマンド |
-|---|---|
-| 読めないものを飛ばした | 索引の生成・`review`・`news fetch`（フィード・選別 JSON・統計）・`news profile` |
-| 指摘・不一致があった | `lint`（指摘あり）・`verify`（NOT FOUND あり）・`approvals status`（記載漏れ・未反映の回答）・`approvals apply`（反映できなかった項目） |
-| 利用者の編集を残して `.new` を置いた | `update` |
-| 突き合わせる相手がいない | `scope`（対象が 2 件未満） |
-
-3 を使うのは 2 つだけ: `retro check`（閾値超え）と `approvals serve`（時間切れ）。
+3 を使うのは `retro check`（閾値超え）と `approvals serve`（時間切れ）だけ。場面ごとの表は [manual/README.md](manual/README.md#終了コード共通)。
 フラグの要約は `braindex -h`、各コマンドは `braindex <コマンド> -h`。
 
-### braindex — 索引の生成
-
-`braindex.json`（カレントディレクトリ。`-config` で変更可。無くてもよく、そのときは `-root` が必須）:
-
-| キー | 意味 |
-|---|---|
-| `root` | 走査のルート。直下の各ディレクトリを 1 リポとみなす。相対パスは設定ファイルのディレクトリ基準。`-root` が無ければ必須 |
-| `notes_dirs` | 各リポのノート置き場。既定 `["docs/notes"]`。`["wiki"]` や、移行中の `["docs/notes", "wiki"]` も可。種別ラベルは末尾セグメント。リポ内の相対パスに限る（`..` を含むパスと絶対パスは設定の誤りとして終了コード 1） |
-| `extra` | 規約外の置き場を個別に足す配列。各要素は `repo`（root 直下のリポ名）・`path`（リポ内の起点。`"."` はリポ直下。`notes_dirs` と同じくリポ内の相対パスに限る）・`recursive`（`true` でサブディレクトリも走査）・`kind`（種別ラベル）・`exclude`（グロブの配列。`/` を含むパターンは起点からの相対パス、含まなければファイル名とディレクトリ名に掛ける。ディレクトリに当たるとその枝ごと除外する。大文字小文字は区別する） |
-| `review` | 週次レビュー（`braindex review`）の節。`dir`（記録の置き場。既定 `work/review`）・`since_days`（前回の記録が無いときに遡る日数。既定 14）・`stale_todo_weeks`（TODO を放置とみなす週数。既定 4）・`archive_months`（何か月より前をアーカイブ候補にするか。既定 6）。省略可 |
-| `retro` | 振り返り（`braindex retro`）の節。`sessions_dir`・`window_days`・`threshold`・`position_bins`・`dictionary`・`dictionary_extra`。省略可。詳細は `braindex retro` の節 |
-| `news` | ニュースサジェスト（`braindex news`）の節。`dir`（既定 `news`）・`feeds`（既定 `news/feeds.json`）・`seen_days`（既定 90）・`cap_per_layer`（層ごとの 1 フィード表示上限。既定 `{"daily": 15, "weekly": 25}`・表に無い層は 20）・`profile_days`（既定 14）・`sessions_dir`・`show_min_score`（主要表示にする関心度の下限。0〜3・既定 2。**0 は全件を主要表示**で、省略とは別の意味）・`llm`（`off`（既定）か `claude-cli`。LLM 補助の opt-in）・`llm_model`・`llm_timeout_sec`（既定 120）。省略可。範囲外の値は設定の誤りとしてエラー |
-| `schedule` | 定期実行（`braindex schedule`）の節。`jobs` の配列（`name`・`args`・`when`）。省略すると既定の 2 本。省略可 |
-
-未知のキーはエラーにする（`notes_dir` のような打ち間違いを無言で無視しない）。
-
-例（`alpha` リポの `research/` を種別 `research` で載せ、README と下書きを除く）:
-
-```json
-{
-  "root": "..",
-  "notes_dirs": ["docs/notes"],
-  "extra": [
-    { "repo": "alpha", "path": "research", "recursive": true, "kind": "research", "exclude": ["README.md", "*.draft.md"] }
-  ]
-}
-```
-
-フラグ: `-config` `-root` `-out`（既定は設定ファイルと同じディレクトリの `index/catalog.md`）`-date YYYY-MM-DD`（生成日の固定。テスト・CI 用）。
-終了コード: 0 成功／1 失敗（フラグの誤り・設定・root が読めない。索引は書かない）／2 警告つき完了（読めないファイルや存在しない `extra` を stderr に出して飛ばし、索引は書く）。
-
-索引の各行の決め方:
-
-- リポ: `root` 直下の各ディレクトリ（`.` で始まるものは除く）。root 相対パスに `archive` セグメントを含むファイルは除外
-- 種別: ノート置き場の直下はその末尾セグメント（既定 `notes`）、サブディレクトリ配下は `notes/<サブディレクトリ>`、`docs/decisions.md` は `decisions`、`extra` は指定した `kind`（`recursive` ならサブディレクトリ配下は `kind/<サブディレクトリ>`）
-- 日付: ファイル名の `YYYYMMDD` か `YYYY-MM-DD` → 本文先頭 10 行の ISO 日付か `YYYY年M月D日` → 無ければ空欄（mtime には頼らない）
-- タイトル: 最初の `# ` 行。無ければファイル名（`.md` を除く）
-- 要旨: タイトル直後の、見出し・表・コードフェンスでない最初の本文行を 80 字で切る。`decisions.md` は末尾の H2 見出し 3 件
-- 並び: リポ名昇順 → 日付降順 → パス昇順。改行は LF 固定。入力の BOM と CRLF は正規化する
-
-### braindex init — 骨格の展開
-
-hub リポ（引数なし）か各プロジェクトのリポ（`-repo <dir>`）に骨格を展開する。既存ファイルは上書きしない。
-
-hub の既定は段 0（`README.md`・`CLAUDE.md`・`.gitattributes`・`braindex.json` の `root`／`notes_dirs`／`extra`）で、
-機能は `-add <機能>[,<機能>...]` で足す。機能と配布物の対応は `braindex init -list` が出す:
-
-| 機能 | 配るもの | `braindex.json` に足す節 | 依存 |
-|---|---|---|---|
-| `conventions` | `docs/`（overview・glossary・decisions・conventions・notes/）・`work/`（APPROVALS・TODO）・skill `record-lint`・`contradiction-scan`・`research-distill` | `approvals` | — |
-| `review` | skill `braindex-review`・`work/review/` | `review` | `conventions`（自動で足し、その旨を出す） |
-| `retro` | skill `retro` | `retro` | — |
-| `news` | `news/feeds.example.json`・`.gitignore` の news の行 | `news` | — |
-| `schedule` | — | `schedule`（`jobs` は足してある review・retro の分。無ければ空。後から足した分は `braindex update` が足す） | — |
-| `all` | 上の全部 | 全部 | — |
-
-同じ機能を 2 回足しても安全: ファイルは既存を残し、`braindex.json` は無い節だけを固定のキー順で足す（既にある値は触らない）。
-`.gitignore` も無い行だけを末尾に足す。足した機能は台帳 `.braindex/template.json` の `features` に記録され、`update` の追従範囲になる。
-未知の機能名は候補を出して終了コード 1。`-repo` と `-add` は併用できない。
-
-### braindex update — 追いつかせる
-
-hub（引数なし）か各プロジェクトのリポ（`-repo <dir>`）の雛形由来ファイルを、いま入っている braindex の版に
-追いつかせ、続けて索引を再生成する。`init` が「まだ無いものを足す」のに対し、`update` は
-「既にあるものを今の版にする」。CLI に機能を足しても、既に立ち上がっている hub には
-スキルや雛形の改良が届かない（`init` は既存ファイルを上書きしないため）ので、その経路になる。
-
-判定は台帳 `.braindex/template.json`（`init` が書く「配った版のハッシュ」）で行う。
-
-| 現物の状態 | update の動き |
-|---|---|
-| 無い | 作る |
-| 配った版のまま（台帳のハッシュと一致） | 今の版にする |
-| 既に今の版と同じ | 何もしない |
-| 利用者が編集した | **現物を残し、隣に `<名前>.new` を置く** |
-| 利用者が編集した `braindex.json`・`.gitignore` | 無い節・行だけ足す（「追記」）。`braindex.json` は加えて `.new` も置く（節の中の新しいキーは足さないため）。`.gitignore` は `.new` を置かない |
-
-追従するのは台帳の `features`（`init -add` で足した機能）の分だけで、足していない機能のファイルは作らない。
-`features` の記録が無い hub（機能の仕組みが入る前の `init` で作ったもの）は、存在するファイルと `braindex.json` の節から
-足してある機能を推定して台帳に書き、その旨を 1 行出す。
-
-台帳を持たない hub は、既存ファイルの素性が分からないので「編集済み」の側に倒す。ただし現物が今の版と同じなら
-「そのまま」になるので、`.new` が置かれるのは現物と今の版が食い違うファイルだけになる。`.new` の中身を見て、
-要るところだけ自分のファイルに写す。`-dry-run` は何も書かずに変更点だけを出し、`-force` は編集済みも上書きする。
-
-取り込みは 2 手になる。**バイナリの更新は `update` の担当ではない**——実行ファイルの入れ替えは Go のツールチェーンが受け持ち、`update` は hub の中身だけを見る。
-
-```sh
-go install github.com/pilefort/braindex/cmd/braindex@latest   # 1. バイナリ。@latest はタグに解決する
-braindex update                                               # 2. 雛形の追従＋索引の再生成
-```
-
-**`braindex.json` が変わるときは版差に注意する。** 新しい節の入った設定を古い版の braindex で読むと、
-未知のキーはエラーなので索引生成を含む全コマンドが止まる。複数のマシンで使っているなら、
-先にすべてのマシンの braindex を更新する（この場合 `update` は警告を出す）。
-
-### braindex review — 週次レビューの下書き
-
-hub で `braindex review` を実行すると、`work/review/<今日>.md` に週次レビューの下書きができる。集計は CLI が決定論で行い、
-判断（差分の要約・アーカイブの可否・次アクション）は人か、人が使うエージェント（hub に入るスキル `braindex-review`）が埋める。
-索引 `index/catalog.md` は読むだけで書き換えない（再生成は `braindex`）。
-
-下書きの節（この順・固定）:
-
-| 節 | 中身 | 埋めるのは |
-|---|---|---|
-| 索引（件数と増減） | 前回レビュー時点の索引（hub が git 管理下ならそのコミット、無ければディスクの索引）と、いま走査した結果の差。リポ別に 追加／変更（変わった列名つき）／削除 | CLI |
-| 差分ファイル（リポ別） | 各リポで前回以降のコミットが `notes_dirs` と `docs/decisions.md` に触れたファイル（`git log --since --name-status`）。git 管理外のリポは飛ばして警告 | CLI |
-| 放置 TODO | 各リポの `work/TODO.md` の未完了項目のうち、行が最後に変わった日（`git blame`）が `stale_todo_weeks` 週より前のもの。git で追えなければ mtime に `~` | CLI |
-| アーカイブ候補（機械条件のみ） | `archive_months` か月より前で、今回の差分に無いノート。`decisions` は含めない | CLI |
-| 今週の差分ダイジェスト／アーカイブ（実施・見送りと理由）／次アクション | 見出しだけ | 人 |
-
-フラグ: `-config`（設定ファイル＝hub の位置。既定はカレントの `braindex.json`。無ければ失敗）`-date YYYY-MM-DD`（今日の固定）`-since YYYY-MM-DD`（前回日。既定は記録の置き場にある最新の `YYYY-MM-DD.md`、無ければ `since_days` 日前）
-`-out`（出力先。既にあれば書かない）`-stdout`（標準出力へ）。
-終了コード: 0 成功／1 失敗（フラグの誤り・設定が無い・出力先が既にある。何も書かない）／2 警告つき完了（git 不在・git 管理外のリポを飛ばした）。
-git はあれば使う。無い環境でも索引の増減（ディスクの索引との比較）・放置 TODO（日付は mtime で `~` つき）・アーカイブ候補は出る。
-
-### braindex lint — ISSUE とノートの検査
-
-`work/ISSUE-<slug>.md`（作業状態。テンプレ `docs/conventions.md` の形）が規約どおりか、ノート（それ以外の `.md`）が
-曖昧でないかを決定論で検査する。索引には載せない。`ISSUE-*.md` は形の検査、それ以外はノートの検査になる（`-kind issue|note` で固定できる）。
-
-```sh
-braindex lint                         # root 直下の各リポの work/ISSUE-*.md をまとめて検査(root は索引と同じ解決規則)
-braindex lint work                    # ディレクトリ直下の ISSUE-*.md
-braindex lint work/ISSUE-x.md         # ファイル
-braindex lint docs/notes/x.md         # ノートの曖昧さ検査(用語集は同じリポの docs/glossary.md を自動で探す)
-braindex lint -kind note docs/notes   # ディレクトリ直下の *.md をノートとして検査
-```
-
-指摘は stdout に `パス:行: [種別] 内容` で出す（ファイル全体に掛かる指摘は行番号なし。`-json` なら `path`・`line`・`msg`・`kind`・`severity` の配列）。
-終了コード: 0 指摘なし／1 失敗（フラグ・root・パスの誤り）／2 指摘あり。
-
-#### ISSUE の形
-
-| 検査 | 指摘 |
-|---|---|
-| 見出し | 先頭の見出しが `# ISSUE:` で始まらない |
-| 必須の節 | `## 現在の作業` `## 状態` が無い（対象リスト・メモは任意） |
-| 現在地 | `← いまここ` が無い、または 2 つ以上 |
-| 最終更新 | `最終更新: YYYY-MM-DD` が無い・形式が違う・未来・`-stale-days N` 以上たっている |
-| 仕様 | `仕様: SPEC-<slug>.md` の参照先が同じディレクトリに無い |
-| HEAD 比較（git 管理下のみ） | HEAD にあったチェック項目（`- [ ]`／`- [x]`）が消えた／内容が変わったのに最終更新が HEAD と同じ |
-
-フラグ: `-config` `-root` `-date YYYY-MM-DD`（基準日）`-stale-days N`（0 で見ない）`-no-git`（HEAD 比較をしない）
-`-kind issue|note` `-glossary <用語集>` `-json`。
-git が無い・git 管理外のファイルは HEAD 比較を飛ばす（要約の「HEAD 比較 N 件」で分かる）。
-
-なぜ: ISSUE は「次のセッションが 1 枚読んで再開できる状態」を目的にするが、更新のたびに丸ごと書き直すので、既存の項目を落とす事故が起きる。
-エージェントの実行状態をランタイムが検証して不正なら差し戻す設計（SKILL.state, arXiv:2608.26263）と同じ形で、機械が形を確かめ、判断は人がする。
-
-#### ノートの曖昧さ
-
-後から読む者（人もエージェントも）が事実をもっともらしく再構成してしまう書き方を拾う。確度は 2 段階で、warn はほぼそのまま直してよく、
-candidate（種別名に「(候補)」が付く）は本文の意味で真偽を確かめてから直す。判断と修正案の手順は hub に入るスキル `record-lint`。
-
-| 種別 | 確度 | 指摘 |
-|---|---|---|
-| 曖昧な数量詞 | warn | 多い・最近・かなり など、数値や日付に置き換えるべき語 |
-| 日付なし | warn | 本文に日付（`YYYY-MM-DD`・`YYYY/M/D`・`YYYY 年 M 月`）が一つも無く、ファイル名（`YYYYMMDD`・`YYYY-MM-DD`）にも無い |
-| 出典なき数字 | candidate | 単位つきの数や小数がある行に、出典マーカー（出典・根拠・参照・実測・→・URL・ファイル名 など）が無い |
-| 裸のヘッジ | candidate | たぶん・かもしれない・〜と思う などが、（推測）・未確認 のタグも出典も無いまま付いている |
-| なぜ欠落 | candidate | 決定（`記録日`・`採用日` の語を持つ `##` ブロック。`decisions.md` は全ブロック）に理由の語が無い |
-| 根拠欠落 | candidate | 決定に `根拠:` 行が無い |
-| 未定義用語 | candidate | 「鉤括弧の語」・`[[link]]`・英大文字始まりの語が用語集に無い（`-glossary` か、同じリポの `docs/glossary.md` があるときだけ） |
-
-コードフェンスの中は見ない（未定義用語だけは本文全体から語を拾う）。表の行は出典なき数字と裸のヘッジで見ない。語彙表は日本語のみで CLI に埋め込む。
-
-### braindex retro — 訂正率の計測
-
-Claude Code のセッションログ（既定 `~/.claude/projects/<slug>/*.jsonl`）から「人間の発話のうち、エージェントの振る舞いへの訂正の割合」（訂正率）を
-決定論で測り、閾値を超えたら振り返り（レトロスペクティブ）を促す。計測は CLI、振り返り本体の判断は人か、hub に入るスキル `retro`。
-発話の本文はどこにも書かず送らない（リポに残るのは数値と所見だけ）。
-
-```sh
-braindex retro stats [-since YYYY-MM-DD | -window-days N] [-by project,week,position]   # 発話数・訂正数・率の表
-braindex retro check [-window-days N] [-threshold 0.1] [-quiet]                          # 窓の率を閾値と比べて 1 行。超えたら終了コード 3
-braindex retro extract [-since YYYY-MM-DD | -window-days N] [-out DIR]                  # セッションごとの md ダイジェストと index.tsv を一時ディレクトリへ
-```
-
-- 分母（人間の発話）: `type: user` で本文がある行から、サブエージェント（`isSidechain`）・tool_result だけの行・スラッシュコマンド・継続要約・中断・
-  `<system-reminder>` を除くと空の行・`isMeta`（Skill 起動の文脈など、人が打っていない行）・`<task-notification>`（サブエージェントの完了通知）を除いたもの
-- 分子（訂正）: 訂正辞書に当たった発話。辞書は 1 行 1 正規表現の平文（`#` はコメント）で、既定を CLI に埋め込む。設定 `retro.dictionary` で差し替え、
-  `retro.dictionary_extra` で追加。不満・好例の語（`sentiment` 辞書）は率に入れず、ダイジェストの印に使う。判定の精度より「同じ基準で継続して測れる」を優先する
-- 窓: 既定は直近 14 日（その日の 0 時起点。同じ日の間は何度実行しても同じ結果）。週の境界と 0 時は実行環境のタイムゾーン
-- 位置: 各発話にセッション内の通し番号（何番目の人間の発話か）を持ち、`-by position` で区間（既定 `1-3,4-10,11-30,31-`。最初の 3 発話を分ける）別の率を出す。長いセッションで訂正が増えるかを見るため
-- ダイジェスト（`extract`）: 窓の中の人間の発話ごとに「直前のアシスタント本文 300 字 → 発話（2000 字まで）」。訂正辞書のヒットは `★`、感情辞書は `☆` を見出しに付ける。
-  出力は `sessions/<プロジェクト>/<開始日時>_<ID>.md` と `index.tsv`。既定の出力先は OS の一時ディレクトリの `braindex-retro`。
-  出力先の `sessions/` と `index.tsv` は実行のたびに書き直す（前回の分は消える。出力先の他のファイルは触らない）。
-  セッションログには機微が含まれるので、`-out` でリポの中に向けるのは自己責任で
-
-設定（`braindex.json` の `retro` 節。設定ファイルが無くても動き、`root`（hub）も要らない）:
-
-| キー | 意味 |
-|---|---|
-| `sessions_dir` | セッションログの置き場。既定 `~/.claude/projects`（`~` は展開する。相対パスは設定ファイルのディレクトリ基準） |
-| `window_days` | `check` の窓（直近何日か）。既定 14 |
-| `threshold` | 訂正率の閾値（0〜1）。既定 0.08（試用後に見直す前提の暫定値） |
-| `position_bins` | 位置の区間。既定 `"1-3,4-10,11-30,31-"`（`下限-上限` か `下限-` をコンマ区切り） |
-| `dictionary` / `dictionary_extra` | 訂正辞書のファイル（差し替え／追加）。省略で埋め込みの既定辞書 |
-
-フラグ: 共通 `-config` `-sessions DIR`（設定より優先）`-date YYYY-MM-DD`（今日の固定）。`stats`／`extract` は `-since` か `-window-days`（同時は不可）。
-`check` は `-window-days`・`-threshold`（明示したものだけが設定を上書き）・`-quiet`（超えたときだけ出力。警告も出さない）。
-終了コード: `stats`／`extract` は 0 成功／1 失敗／2 警告つき（読めないログを飛ばした）。`check` は 0 閾値以下／1 失敗／2 閾値以下だが警告つき／3 閾値超え（警告があっても 3）。
-
-組み込みの例。Claude Code の hook（`~/.claude/settings.json`）の `SessionStart` に置くと、超えたときだけ 1 行がセッションに入る（`|| true` は、hook が終了コード 0 のときだけ標準出力をセッションに入れるため）:
-
-```json
-{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "braindex retro check -quiet || true" } ] } ] } }
-```
-
-定期実行なら週 1 回。cron: `0 9 * * 1 braindex retro check; [ $? -eq 3 ] && <通知コマンド>`。Windows のタスクスケジューラなら、
-`braindex retro check` を回して終了コード 3 のときだけ通知する `.cmd` を登録する。`braindex` が定期実行の環境の PATH に無ければフルパスで書く。
-
-閾値超えの後は、hub のスキル `retro`（`braindex init -add retro` が展開する `.claude/skills/retro/SKILL.md`）の手順で `braindex retro extract` のダイジェストを読み、
-所見（訂正の型・繰り返し指示・うまくいった協働）と規約への反映案を hub の `docs/notes/retro-YYYY-MM-DD.md` に残す。規約の書き換えは承認の後。
-
-なぜ: 原型（作者の 2026-07〜08 のログ 530 セッション）を人手と LLM で分類したら、訂正の多くは「規約が無い」のではなく「規約があるのに出力時に効いていない」型だった。
-だから訂正率を同じ基準で測り続け、上がったときに振り返る回路を置く。
-
-### braindex news — ニュースサジェスト
-
-hub で `braindex news fetch` を実行すると、`news/feeds.json` のフィードを GET し、既読（`news/.seen.json`）に無い記事を
-`news/digest_<日付>_<層>.md`（記録用）と、同名の `.html`（選別 UI・既定ブラウザで開く）に書く。
-記事は関心プロファイルで採点し、関心度が `news.show_min_score`（既定 2）以上を主要表示、未満は「関心外と判定」に折りたたむ。
-HTML の「選別を書き出す」が保存した JSON を `braindex news apply` が取り込み、「残す」を `news/keep/YYYY-MM.md` に追記する。
-keep は次のプロファイルの出典になるので、**選別がそのまま関心の推定に戻る**。
-外へ出る通信はフィードの GET だけで、セッション内容もノート本文も送らない。HTML は外部の JS・CSS を参照しない。
-フィードのリンクは `http(s)` のものだけを載せる（それ以外は題名だけを出し、選別 JSON にも `news/keep/` にも入れない）。
-
-フィード一覧 `news/feeds.json` は自分で作る。`braindex init -add news` は隣に `news/feeds.example.json`（公開フィード 3 件の見本）を置くので、
-コピーして書き換える。`name` と `url` を持つオブジェクトの配列:
-
-```json
-[
-  { "name": "Go Blog", "url": "https://go.dev/blog/feed.atom", "layer": "weekly", "lang": "en" }
-]
-```
-
-`layer` は自由なラベル（`daily`・`weekly` など）で、`news fetch -layer <層>` の絞り込みと表示上限（`cap_per_layer`）に使う。
-空のフィードは `-layer all`（既定）のときだけ取る。`lang`・`category`・`note` は任意。未知のキー・`name` の重複・
-`http(s)` でない URL はエラーにする。RSS 2.0・Atom・RSS 1.0 を読み、記事の識別子は追跡パラメータを除いたリンクから作る
-（同じ記事が `utm_` 付きで再配信されても既読と一致する）。
-
-サブコマンド:
-
-| サブコマンド | 何をするか |
-|---|---|
-| `news fetch` | フィードを取得し、新着のダイジェスト（Markdown）と選別 UI（HTML）を書く。冒頭で `apply` と同じ取り込みも動く |
-| `news profile` | 関心プロファイル（語 → 重み・出典）を表示する。出典は索引の直近差分・直近のセッション内容・`news/keep/`・`news/interests.md` |
-| `news apply` | 選別 JSON を `<news.dir>/inbox` と `-inbox`（既定 `~/Downloads`）から取り込む |
-| `news suggest` | 直近の会話・索引・keep から作った関心プロファイルに当たる取材先（RSS）を、同梱の取材先目録（17 ジャンル・98 本）から候補として出す。`feeds.json` に登録済みのものは除く。`-top N`（既定 10）・`-json` |
-
-重みは出典ごとに最大を 1 に正規化した値の和で、決定論。既定では LLM を使わない。窓の起点は `retro` と同じローカルの 0 時。
-主なフラグ: `-config` `-date YYYY-MM-DD` `-layer` `-out` `-stdout` `-no-open` `-no-score`（採点せず全件を主要表示）`-no-llm`
-`-replay`（既読を無視して再生成し、既読も更新しない）`-days` `-top` `-json` `-sessions` `-inbox`。
-終了コード: 0 成功／1 失敗（**同じ日の出力先が既にある**・全フィードの取得失敗。何も書かない）／2 警告つきで完了（一部のフィードが取れなかった・採点の出典が無かった・選別や統計を取り込めなかった・LLM 補助が呼べなかった）。
-同じ日に 2 回動かすと、既にあるダイジェストは上書きせず終了コード 1 で止まる（`braindex review` と同じ。読み直すだけなら `-out` で別名に、捨ててよければ `-stdout` に出す）。
-
-**設定例**（`braindex init -add news` が足す節と同じ。全部省略可で、値は既定）:
-
-```json
-"news": { "dir": "news", "feeds": "news/feeds.json", "seen_days": 90, "profile_days": 14,
-          "cap_per_layer": { "daily": 15, "weekly": 25 }, "show_min_score": 2,
-          "llm": "off", "llm_model": "", "llm_timeout_sec": 120 }
-```
-
-**置き場 `news/`**: `feeds.json`（自分で書く）・`keep/YYYY-MM.md`（残した見出し。蓄積側なので版管理に残す）・`interests.md`（任意の補助）が利用者のもの。
-`digest_*`・`.seen.json`（既読）・`.stats.json`（選別の統計）・`.llm_cache.json`・`.ingested/`（取り込み済みの選別 JSON）は作業ファイルで、
-`braindex init -add news` が hub の `.gitignore` に足す行が除外する。
-
-**補助ファイル `news/interests.md` の書き方**: 1 行 1 語。空行と `#` 始まりは読まない。行は記事側と同じ語の抽出規則（ラテン文字 3 字以上・カタカナ 2 字以上・漢字 2〜6 字。
-大文字小文字は畳む）を通してから語にするので、**規則で語にならない書き方（`ai`・`go` のような 2 字のラテン文字、記号だけ、長い漢字の複合語）は記事側でも語にならず、
-表に重みつきで並んでも照合には効かない**。`braindex news profile` の表で `extra` 列に載っている語が、記事の見出しに現れる形と同じかを確かめる。
-`|` を含む行は表の描画を崩すので書かない。
-
-**LLM 補助（opt-in）**: `"llm": "claude-cli"` にすると、`claude` CLI（PATH にあるもの）をヘッドレスで呼び、英語見出しの日本語訳と関心度 0〜3 を受け取って
-語の一致の点に重ねる（バッジの説明とダイジェストに `LLM` と出る）。渡すのは見出し・概要・言語・関心プロファイルの語・keep の見出しだけで、リンク・セッション本文・
-ノート本文は渡さない。結果は `news/.llm_cache.json` に記事 ID で覚え、同じ記事を 2 回聞かない。`llm_model` で `--model` を指定できる（空なら CLI の既定）。
-CLI が無い・`llm_timeout_sec` を超えた・応答が JSON でないときは警告（終了コード 2）にして、その記事は語の点のまま出す。`-no-llm`（と `-no-score`）で止まる。
-
-**定期実行**: 設定の `schedule.jobs` に足して `braindex schedule install`（登録の仕組みは [`braindex schedule`](#braindex-schedule--定期実行の登録)）:
-
-```json
-{ "name": "news", "args": ["news", "fetch", "-layer", "daily", "-no-open"], "when": "daily:07:30" }
-```
-
-`-no-open` にしておき、朝に `news/digest_<日付>_daily.html` を自分で開く（cron・schtasks から起動したプロセスはログイン中のデスクトップにウィンドウを出せない）。
-選別を書き出した JSON は次回の `fetch` か `braindex news apply` が拾う。
-
-**取材先の候補（`braindex news suggest`）**: 何を `feeds.json` に書けばよいか分からないとき、直近の会話で使っている技術から取材先を探す。
-同梱の目録の各取材先が持つ照合語（例: Docker Blog → `docker` `dockerfile` `compose` `コンテナ`）と関心プロファイルの語を手元で突き合わせ、
-当たった語の重みの和が大きい順に出す。照合は手元だけで、通信も LLM もしない。出力は当たった語と数だけで発話の本文は載せない。
-候補を採るときは、出力の URL を `feeds.json` に `{"name": "…", "url": "…"}` として書く（選別 HTML からの登録は次の版）。
-照合語は作者が付けた分類で、当たり方が外れることがある。`braindex news profile` で自分の語を見て、`interests.md` に語を足せば当たりを寄せられる。
-
-### braindex learn — 学習の提案
-
-```
-braindex learn                 # 直近 14 日（news.profile_days）の材料から 3 つの節を出す
-braindex learn -top 5 -json    # 各節 5 件・JSON
-```
-
-「いま学ぶと良さそうなこと」の候補を、手元の材料だけから決定論で出す。材料と窓は `braindex news profile` と同じ
-（索引・セッションログ・`news/keep`・補助ファイル）。訂正の判定は `braindex retro` と同じ辞書（設定 `retro.dictionary` があればそれ）。
-出力は語と件数だけで、発話の本文は載せない。外には何も送らない。
-
-| 節 | 条件 | 読み |
-|---|---|---|
-| 触れているがノートに無い | 会話（利用者とエージェント双方の本文）に 3 セッション以上出るのに、索引（全期間）にも keep にも無い語。全セッションの 10% を超えて出る語は汎用語として除く | 理解が定着していない候補。ノートに 1 本書くか学び直す |
-| 訂正の文脈に繰り返し出る | 訂正辞書に当たった発話と、その直前の発話に出る語。2 発話以上 | つまずきの周辺にある候補 |
-| 残した記事にあるがノートに無い | keep の見出しにあるのに索引に無い語 | 読んで残したが自分の言葉にしていない候補 |
-
-同じ冒頭（120 字）の発話が 3 セッション以上に現れるもの（40 字未満の短い発話は除く）は定型（`claude -p` の機械実行・貼り付け）として
-訂正の文脈から除き、除いた数を材料の行に出す。URL は語にしない。索引が無い hub では「ノートに無い」の判定が緩くなる（先に `braindex` で索引を作る）。
-閾値はコードの既定値（v1・設定にしていない）。フラグは `-config` `-date` `-days` `-sessions` `-top` `-json`（位置引数は受け付けない）。
-終了コード: 0 成功／1 失敗／2 警告つき（索引やセッションの置き場が無い）。
-
-### braindex approvals — 判断待ちのフォーム
-
-`work/APPROVALS.md` の判断待ち（1 項目 1 判断・5 欄「決めたいこと／なぜ今決めるか／選択肢／私の案／決めないとどうなるか」）を
-ブラウザのフォームにして聞き、答えを記録する。受け口は 127.0.0.1 の空きポートだけで、回答を 1 回受けたら終わる（常駐しない）。外へは何も送らない。
-
-```sh
-braindex approvals serve -apply   # フォームを開いて回答を待ち、そのまま反映する
-braindex approvals status         # 件数・記載漏れ・未反映の回答（書き込みなし）
-braindex approvals apply          # 受けた回答を反映する（聞くのと分けたいとき）
-```
-
-選んだ項目は `docs/decisions.md` に 3 段（結論 → 理由 → 根拠）で追記して `APPROVALS.md` から消し、保留は項目を残して
-「**保留（日付）:**」を付ける。反映した回答 JSON は `.applied.json` に改名するので、2 回反映されない。
-フラグ: `-file`（判断待ちのファイル）`-dir`（回答 JSON の置き場。既定は OS の一時ディレクトリの `braindex-approvals`）
-`-config`（設定ファイル。既定はカレントの `braindex.json`。無くてもよい）`-timeout 秒`（0 で無期限）`-no-open` `-apply` `-decisions` `-date` `-reply`。
-
-設定（`braindex.json` の `approvals` 節。節ごと省略してよく、設定ファイルが無くても動く）:
-
-```json
-{ "approvals": { "file": "work/APPROVALS.md", "decisions": "docs/decisions.md", "timeout_sec": 0 } }
-```
-
-- `file` — 判断待ちのファイル。既定 `work/APPROVALS.md`
-- `decisions` — 決定の追記先。既定 `docs/decisions.md`
-- `timeout_sec` — `serve` が回答を待つ秒数。既定 `0`（無期限）。負の値は設定の誤りとして止める
-
-相対パスは **`braindex.json` のある場所**からの相対で解く（コマンドを打ったカレントからではない）。
-優先順位は **フラグ > 設定 > 既定** で、`-file` などを明示したときはフラグが勝つ。
-設定ファイルは全体を読むので、`news` など**別の節にタイプミスがあると `approvals` も終了コード 1 で止まる**（他のコマンドと同じ挙動）。
-設定ファイルが既定の置き場に無いのは正常で、そのときはフラグと既定だけで動く。`-config` で指定したのに無いときだけ失敗する。
-終了コード: `serve` 0 回答あり／3 時間切れ、`apply` 0 反映した・回答なし／2 反映できなかった項目がある、`status` 0 ／2 記載漏れか未反映の回答あり。いずれも 1 は失敗。
-
-### braindex answer — 回答の HTML 化
-
-`braindex answer <md>` は Markdown を自己完結の HTML（外部の JS・CSS を参照しない）にして書き、既定ブラウザで開く。
-出力先の既定は一時置き場で、実行のたびに `-ttl-days`（既定 14）より古いものを消す。
-**HTML は読むための一時物**なので、残す価値のある内容は `.md` を `docs/notes/` に置いてから渡す（置き場所が寿命を表す）。
-リンクの `href` に出すのは `http(s)` と、スキームを持たないもの（相対パス・`#見出し`）だけ。`javascript:` などは文字として残す。
-
-```sh
-braindex answer note.md                  # HTML にして開く
-braindex answer -no-open note.md         # 書くだけ
-braindex answer -out out.html note.md    # 出力先を指定する
-braindex answer -dir                     # 一時置き場の場所を表示して終わる
-braindex answer -purge                   # 一時置き場の中を今すぐ全部消す
-```
-
-フラグ: `-out` `-no-open` `-dir` `-purge` `-ttl-days`（0 で消さない）。フラグは `<md>` より前に置く。終了コード: 0 成功／1 失敗。
-
-### braindex verify — 実在の照合
-
-ノートに書いた GitHub リポ・arXiv 論文・URL・逐語引用を、一次ソースへの GET で照合する（こちらから本文は送らない）。
-
-```sh
-braindex verify github pilefort/braindex
-braindex verify arxiv 2608.26263
-braindex verify url https://go.dev/blog/
-braindex verify quote https://example.com/a "引用したい文を二十四字以上そのまま書く"
-braindex verify -json github pilefort/braindex   # フラグは種別より前に置く
-```
-
-出力は 1 件 1 行（種別・対象・判定・実測のタブ区切り。判定は `FOUND`／`NOT FOUND`／`ERROR`。`-json` で配列）。
-`github` は実在・スター数・作成日、`arxiv` は ID の実在（実測の列にタイトル）、`url` は HTTP 200 か、`quote` は本文（タグ除去・空白正規化）に引用が実在するか。
-`quote` は空白の揺れだけ許し、24 字未満の引用は ERROR になる。`GITHUB_TOKEN` があれば GitHub API の認証に使う（任意・レート制限対策）。
-終了コード: 0 全件 FOUND／2 NOT FOUND あり／1 失敗（ERROR あり・引数の誤り）。
-
-### braindex scope — 矛盾検査の走査対象
-
-複数ノートをまたぐ相互矛盾・陳腐化を探すとき、索引から走査対象を列挙・絞り込み・chunk 分割して出す。**矛盾の判定はしない**
-（chunk ごとに実ファイルを全文読み比べ、反証で偽陽性を落とす手順は hub に入るスキル `contradiction-scan`）。
-
-```sh
-braindex scope -topic 長さ         # タイトル・要旨・パスに語を含む行(大小無視)
-braindex scope -repo alpha         # その見出し(リポ名)の行だけ
-braindex scope -full -size 20      # 全件を 20 件ずつの chunk に分ける
-braindex scope -dir docs/notes     # 索引を使わず、ディレクトリ配下の *.md を列挙する
-```
-
-出力のパスは、どちらのモードでもそのまま開ける形で出る——索引を使うときは索引の行と同じ `root` 相対、
-`-dir` のときは渡したディレクトリと結合した形。`-dir` の列挙は `archive` セグメントと `.` で始まるディレクトリの
-配下を対象にしない（起点として直接渡したときだけは中を見る）。`archive` の扱いは索引と同じで、
-`.` で始まるディレクトリは索引より広く除く（索引が `.` を見るのは `root` 直下のリポ名だけ）。
-フラグ: `-topic` `-repo` `-dir` `-full` `-size N`（既定 12）`-json`（`mode`・`n_entries`・`chunks`）`-catalog` `-config`。
-終了コード: 0 ／1 失敗／2 対象が 2 件未満（突き合わせる相手がいない）。
-
-### braindex schedule — 定期実行の登録
-
-設定 `braindex.json` の `schedule` 節に書いたジョブを、この OS のスケジューラに登録する。
-Windows は `schtasks`（`/F` で上書きするので再実行しても二重にならない。タスク名は `braindex-<hub のフォルダ名>-<ジョブ名>`）、
-macOS・Linux は `crontab`（`# BEGIN braindex <hub>` 〜 `# END braindex <hub>` で囲んだブロックだけを書き換え、
-ブロックの外の行と別 hub のブロックには触らない）。
-**登録できるのは braindex 自身のサブコマンドだけ**で、設定ファイルを任意コード実行の口にしない。
-
-```json
-"schedule": {
-  "jobs": [
-    { "name": "review", "args": ["review"],         "when": "weekly:mon:09:00" },
-    { "name": "retro",  "args": ["retro", "check"], "when": "weekly:mon:09:05" }
-  ]
-}
-```
-
-- `name`: 英小文字・数字・ハイフンの 1〜32 文字。タスク名と cron 行の目印になる
-- `args`: braindex に渡す引数。`args[0]` は登録済みのサブコマンド名でなければならない。文字列 1 本にしないのは、シェルの分割規則を設定ファイルに持ち込まないため
-- `when`: `daily:HH:MM` か `weekly:<曜日>:HH:MM`（曜日は `mon`〜`sun`）の 2 形だけ。cron 式は schtasks に一般変換できない（`*/15` など）ので受けない
-
-節を省略すると上の 2 本になる。hub と braindex 自身の絶対パスを埋め込むので（定期実行の環境は PATH が違う）、
-**どちらかを移したら登録し直す**。`braindex init` は自動では登録しない（init は「既存を上書きしないファイル展開」で、OS への副作用は性質が違う）。
-
-サブコマンド: `list`（設定のジョブと OS 側の登録状態）・`print`（登録に使うコマンドを出すだけ）・`install`（登録する）・`uninstall`（消す）。
-
-crontab 側では、`crontab -l` が読めなければ**何もせず終了コード 1** で止まる（読めないまま書き戻すと既にある行を消してしまうため）。
-ただし「まだ crontab が無い」ことを示す失敗（出力が `no crontab for <利用者>` の 1 行だけ。BSD cron の `crontab: ` 接頭辞も可）だけは空の crontab として扱うので、
-`crontab` を一度も作っていない環境でもそのまま `braindex schedule install` できる。
-文言の違う cron 実装ではこの判別が効かず終了コード 1 で止まるので、その場合は `crontab -e` で空の crontab を作ってから実行する。
-フラグ: `-config` `-job 名前`（1 本だけを対象にする）`-dry-run`（`install`・`uninstall`。実行せずコマンドを出す）。
-終了コード: 0 ／1 フラグ・設定の誤り、またはスケジューラ側が失敗した（登録できていないので失敗）。
-
 ## 設計
-
-### 3 原則
 
 1. **指す、コピーしない。** 知識の正本は各リポにある。索引はパスで指すだけなので、正が 2 つにならない。
 2. **索引は決定的。LLM を使わない。** 同じ入力からは常にバイト一致の索引が出る。だから索引をコミットでき、diff が意味を持つ。
    周辺機能（振り返る・知る）は LLM を採点や要約の補助に使ってよいが、取得と計測は決定論で行い、判断は人に残す。
 3. **寿命で分ける。** 蓄積するもの（`docs/`）と揮発するもの（`work/`）を混ぜない。索引は前者だけを見る。
 
-理由と却下案は作者の設計メモ `docs/decisions.md` にある。
+やらないこと: 意味検索・ベクトル DB（recall 失敗の実例が出るまで入れない）／LLM による索引の要旨生成・索引更新／
+ノート本文・セッション内容の外部送信（ニュースの取得は GET のみ）／ネタ帳（索引・レビュー・ニュースとは独立した機能で、テンプレの核ではない）。
 
-### やらないこと
-
-- 意味検索・ベクトル DB（recall 失敗の実例が出るまで入れない）
-- LLM による索引の要旨生成・索引更新
-- ノート本文・セッション内容の外部送信（ニュースの取得は GET のみ）
-- ネタ帳（アイデア帳）。索引・レビュー・ニュースとは独立した機能で、テンプレの核ではない
-
-### LLM wiki 型との対応
-
-Karpathy の LLM wiki 型（2026-04・`raw/` の素材から LLM が `wiki/` のページを編纂し `index.md` と `log.md` を維持する）と
-似た部品を持つが、役割の置き方が違う。ノート置き場は設定 `notes_dirs`（配列・既定 `["docs/notes"]`）で変えたり足したりできるので、
-`wiki/` を使う運用でも、`docs/notes` と `wiki` を並走させる移行中でも、そのまま走査できる。
-
-| LLM wiki 型 | braindex | 違い |
-|---|---|---|
-| `raw/`（素材） | 各リポの作業そのもの（コード・調査・会話） | 素材を 1 か所に集めない |
-| `wiki/`（LLM が編纂したページ） | 各リポの `docs/notes/`（`notes_dirs` で変更・追加可） | 人かエージェントが出典つきで書く。LLM が編纂・書き換えはしない |
-| `index.md`（LLM が更新する目次） | hub リポの `index/catalog.md` | CLI が決定的に再生成する。LLM は触らない |
-| `log.md`（追記式の履歴） | `git log` と `catalog.md` の diff | 専用ファイルを持たない |
-| lint（矛盾・陳腐化の検出） | 週次レビュー（`braindex review` が索引の増減・差分ファイル・放置 TODO・アーカイブ候補を集計し、スキル `braindex-review` が判断を埋める） | 集計は CLI、判断は人 |
-| （外の事実の取り込みは raw への投入） | 調査（スキル `research-distill` がサブエージェントに一次ソースで裏を取らせ、`braindex verify` で実在を再照合し、`braindex answer` で HTML にする） | 照合は CLI（GET のみ）、真偽の判断は人かエージェント。結果は出典つきで `docs/notes/` に置く |
-
-## 開発
-
-### 状態
-
-v0.1.0（2026-09-03）: 索引 CLI（Phase 1）を原型から移植して可搬化し、セットアップ `braindex init`（フォルダ規約のテンプレ同梱）・
-週次レビューの集計 `braindex review`（Phase 2）・ISSUE の検査 `braindex lint`・訂正率トリガのレトロスペクティブ `braindex retro`（Phase 3）を足した。
-原型は作者の私用「第二の脳」で 2026-08-07 から運用しているもの（非公開・20 リポ 307 ノートを索引中）。
-
-タグの後（2026-09-03）に main へ入ったもの: ニュースサジェスト `braindex news`（Phase 4）・判断待ちのフォーム `braindex approvals`（Phase 5）・
-ノートの曖昧さ検査 `braindex lint -kind note` と走査対象の切り出し `braindex scope`（Phase 6）・回答の HTML 化 `braindex answer` と
-実在の照合 `braindex verify`（Phase 7）・定期実行の登録 `braindex schedule`。次のタグで出る。
-
-### リポジトリの地図
-
-| 場所 | 何が入るか |
-|---|---|
-| `cmd/braindex` | サブコマンドの登録とフラグ解析（`main.go`・`commands.go`・`cmd_*.go`） |
-| `internal/` | 索引の実装（`scan` → `extract` → `render` → `catalog`）と `config`・`template`（init）・`lint`・`review`・`sessions`／`retro`・`feed`／`interest`／`news`（ニュース）・`approvals`・`mdhtml`／`verify`（回答の HTML 化と照合）・`scope`・`schedule` |
-| `.github/workflows/ci.yml` | CI。ubuntu と windows で gofmt／vet／test に加え、同じ入力から 2 回生成してバイト一致することを確かめる |
-| `CONTRIBUTING.md` | 開発の決まり（テスト・決定性・持ち込まないもの） |
-| `docs/` `work/` | 作者の設計メモ（`overview`・`decisions`・`glossary`・`conventions`）と作業状態。git 管理下（2026-09-03 決定。複数マシン・並行セッション間で同期するため） |
-
-```sh
-go test ./...   # 依存なし。CI は gofmt -l . と go vet ./... も回す
-```
+Karpathy の LLM wiki 型との対応・リポジトリの地図・版の状態は [manual/design.md](manual/design.md)。
+理由と却下案は作者の設計メモ `docs/decisions.md`、開発の決まりは [`CONTRIBUTING.md`](CONTRIBUTING.md)。
 
 ## ライセンス
 
