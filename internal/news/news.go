@@ -53,7 +53,7 @@ const (
 	KeepDir             = "keep"         // Dir の下。選別で残した見出し(YYYY-MM.md)。git 管理
 	InterestsFile       = "interests.md" // Dir の下。補助の関心ファイル(任意・1 行 1 語)
 	DefaultCap          = 20
-	SeenFile            = ".seen.json" // Dir の下。git 管理外(hub の .gitignore テンプレで除外)
+	SeenFile            = ".seen.json" // Dir の下。git 管理外(braindex init が配る hub の .gitignore が news/.*.json を除外する)
 )
 
 // DefaultCapPerLayer は cap_per_layer を省略したときの層別上限。

@@ -1,0 +1,5 @@
+[
+  { "name": "Go Blog", "url": "https://go.dev/blog/feed.atom", "layer": "weekly", "lang": "en", "category": "言語", "note": "Go 公式ブログ" },
+  { "name": "GitHub Changelog", "url": "https://github.blog/changelog/feed/", "layer": "daily", "lang": "en", "category": "ツール", "note": "GitHub の機能変更" },
+  { "name": "W3C News", "url": "https://www.w3.org/blog/news/feed", "layer": "weekly", "lang": "en", "category": "標準", "note": "Web 標準の動き" }
+]

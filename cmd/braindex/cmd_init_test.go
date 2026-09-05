@@ -15,13 +15,27 @@ func TestInit_Hub(t *testing.T) {
 	if code := dispatch([]string{"init", dir}, &so, &se); code != 0 {
 		t.Fatalf("exit=%d want 0\nstderr=%s", code, se.String())
 	}
-	for _, p := range []string{"README.md", "braindex.json", "docs/conventions.md", "work/review/.gitkeep", ".claude/skills/braindex-review/SKILL.md", ".claude/skills/retro/SKILL.md", ".claude/skills/record-lint/SKILL.md", ".claude/skills/contradiction-scan/SKILL.md", ".claude/skills/research-distill/SKILL.md"} {
+	for _, p := range []string{"README.md", "braindex.json", ".gitignore", "news/feeds.example.json", "docs/conventions.md", "work/review/.gitkeep", ".claude/skills/braindex-review/SKILL.md", ".claude/skills/retro/SKILL.md", ".claude/skills/record-lint/SKILL.md", ".claude/skills/contradiction-scan/SKILL.md", ".claude/skills/research-distill/SKILL.md"} {
 		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(p))); err != nil {
 			t.Errorf("作られていない: %s", p)
 		}
 	}
 	if !strings.Contains(so.String(), "作成: braindex.json") {
 		t.Errorf("stdout に作成の記録が無い: %s", so.String())
+	}
+	// news の置き場: 設定に news 節があり、.gitignore が既読・キャッシュ・ダイジェストを除外し、keep は残す
+	cfg, _ := os.ReadFile(filepath.Join(dir, "braindex.json"))
+	if !strings.Contains(string(cfg), `"news"`) || !strings.Contains(string(cfg), `"llm": "off"`) {
+		t.Errorf("braindex.json に news 節(llm: off)が無い: %s", cfg)
+	}
+	gi, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	for _, want := range []string{"news/.*.json", "news/digest_*", "news/.ingested/"} {
+		if !strings.Contains(string(gi), want) {
+			t.Errorf(".gitignore に %s が無い: %s", want, gi)
+		}
+	}
+	if strings.Contains(string(gi), "\nnews/keep") {
+		t.Errorf(".gitignore が keep を除外している(keep は蓄積側): %s", gi)
 	}
 
 	// 再実行: 何も上書きせず、その旨を出す
