@@ -5,7 +5,8 @@
 **Markdown ノートの索引を、LLM なし・依存なし・決定的に作るリポ横断の CLI。**
 
 複数の git リポジトリに散らばった Markdown ノート（`docs/notes/`・`docs/decisions.md`）を、コピーせずに 1 枚の索引
-`catalog.md` にまとめる。索引を grep して当たりを付け、パスの先の実ファイルを読む。索引をコミットすれば、再生成したときの
+`catalog.md` にまとめる。索引を grep して当たりを付け、パスの先の実ファイルを読む。索引に無ければ `braindex search <語>` で本文を引き、
+「無い」と言う前に `braindex diagnose` で読めなかった範囲が無いか確かめる。索引をコミットすれば、再生成したときの
 `git diff` がそのまま「前回からの差分」になり、週次レビューの材料になる。
 
 **誰のための道具か**: Claude Code を日常的に使い、リポジトリごとに知識や wiki を整えている人。索引が中核で、その周りに
@@ -16,18 +17,21 @@
 
 ## 構成
 
-`root`（既定は hub の親ディレクトリ）の直下にリポジトリを並べ、そのうち 1 つを hub にする。
+`root`（既定は hub の親ディレクトリ）の直下にリポジトリを並べ、そのうち 1 つを hub にする
+（`<group>/<name>` のように 1 段はさんで並べているなら、設定に `"repo_depth": 2` を書く）。
 hub が持つのは索引と週次レビューだけで、知識の正本は各リポに残る。
 
 ```text
 parent/                            ← braindex.json の root（既定 ".."＝hub の親）
 ├── hub/                           ← 索引を置くリポ。braindex はここで実行する
-│   ├── braindex.json              設定（root / notes_dirs / extra ＋ 足した機能の節）
-│   ├── index/catalog.md           ■ 索引：1 ノート 1 行（日付・種別・タイトル・要旨・パス）
-│   ├── news/                      ニュースの置き場（既定で入る）
+│   ├── braindex.json              設定（root / notes_dirs / extra / repo_depth ＋ 足した機能の節）
+│   ├── index/catalog.md           ■ 索引：1 ノート 1 行（日付・種別・タイトル・要旨・パス）。先頭に走査の記録
+│   ├── index/changes.json         本文の変更の記録（内容ハッシュと観測日。索引の行が変わらない更新を見分ける）
+│   ├── news/                      ニュースの置き場（既定で入る。作業ファイルは .gitignore が除外）
 │   ├── .claude/skills/            判断を埋めるスキル（retro は既定。他は機能ごとに入る）
 │   ├── docs/  work/               hub 自身のノートと作業状態（-add conventions）
-│   └── work/review/               週次レビューの下書き（-add review）
+│   ├── work/review/               週次レビューの下書き（-add review）
+│   └── work/learn/answers.json    学習候補への回答（braindex learn answer が書く）
 ├── alpha/                         ← 各プロジェクトのリポ。知識の正本はこちら
 │   ├── docs/notes/**/*.md         索引に載る
 │   ├── docs/decisions.md          索引に載る（最新の記録日・件数つきタイトル・末尾の決定 1 件）
@@ -68,7 +72,7 @@ braindex init -add all              フル: 上の全部。learn（学習の提�
 
 | 入口 | 要るもの | 得られること |
 |---|---|---|
-| `braindex init` | 既存のノート。規約の乗り換えは不要 | `index/catalog.md`（別のリポで済ませたことを grep で引ける）・訂正率の常時計測・関心で選んだニュースの選別・その定期実行 |
+| `braindex init` | 既存のノート。規約の乗り換えは不要 | `index/catalog.md`（別のリポで済ませたことを grep で引ける。`search` で本文も引け、`diagnose` で走査の状態を確かめられる）・訂正率の常時計測・関心で選んだニュースの選別・その定期実行 |
 | `-add conventions` | 新しくノートを書く場所を規約に寄せる意思 | 決定 3 段・ISSUE・TODO の形が揃い、`lint`・`approvals` が使える |
 | `-add review` | conventions と hub の git 管理 | 前回からの差分・放置 TODO・アーカイブ候補の下書き（週次） |
 | `-add all` | 上の全部 | skill 5 本と全節。`braindex learn` の材料も揃う |
@@ -79,14 +83,16 @@ braindex init -add all              フル: 上の全部。learn（学習の提�
 
 | コマンド | 入力 | 出力 | 手引き |
 |---|---|---|---|
-| `braindex` | `<root>/*/docs/notes/**/*.md`・`<root>/*/docs/decisions.md` | `index/catalog.md` | [generate](manual/generate.md) |
+| `braindex` | `<root>/*/docs/notes/**/*.md`・`<root>/*/docs/decisions.md`（`*` はリポ。`repo_depth: 2` なら `*/*`） | `index/catalog.md`（先頭に走査の記録）・`index/changes.json`（本文の変更の記録） | [generate](manual/generate.md) |
+| `braindex search` | 各リポのノート本文（索引と同じ走査規則） | 語を含む行の「パス:行: 内容」と確認できなかった範囲（stdout・`-json`） | [search](manual/search.md) |
+| `braindex diagnose` | 設定・いまの走査・保存済みの索引 | 何を見に行き、何が読めて、索引が何を取りこぼしているか（stdout・`-json`。索引もノートも書き換えない） | [diagnose](manual/diagnose.md) |
 | `braindex init` | 埋め込みのテンプレ | hub の骨格（既定は索引＋retro・news・schedule。`-add <機能>` で足す・`-repo` で各リポの骨格） | [init-update](manual/init-update.md) |
 | `braindex update` | 埋め込みのテンプレ・台帳 `.braindex/template.json` | 足した機能の分だけ追いついた雛形（編集済みは `<名前>.new`）と `index/catalog.md` | [init-update](manual/init-update.md) |
 | `braindex review` | 索引の前回コミット・各リポの `git log`・`work/TODO.md` | `work/review/<今日>.md` | [review-lint](manual/review-lint.md) |
 | `braindex lint` | `<root>/*/work/ISSUE-*.md`・ノート | 指摘（stdout）と終了コード | [review-lint](manual/review-lint.md) |
 | `braindex retro` | Claude Code のセッションログ（`~/.claude/projects/*/*.jsonl`） | 率の表（stdout）・ダイジェスト（一時ディレクトリ） | [retro](manual/retro.md) |
 | `braindex news` | `news/feeds.json` のフィード（GET）と関心の出典（索引・セッション・`news/keep/`） | `news/digest_<日付>_<層>.md` と選別 UI の同名 `.html` | [news](manual/news.md) |
-| `braindex learn` | 索引・セッションログ・`news/keep` と訂正辞書 | 学習の提案（Markdown・`-json`） | [learn](manual/learn.md) |
+| `braindex learn` | 索引・ノート本文・セッションログ・`news/keep` と訂正辞書・回答 `work/learn/answers.json` | 学習の提案（本文照合つき。Markdown・`-json`）。`learn answer` で候補に「既知・不要・後で」を返す | [learn](manual/learn.md) |
 | `braindex approvals` | `work/APPROVALS.md` | ブラウザのフォーム → `docs/decisions.md` への追記 | [tools](manual/tools.md) |
 | `braindex answer` | Markdown 1 ファイル | 自己完結 HTML（一時置き場・既定ブラウザで開く） | [tools](manual/tools.md) |
 | `braindex verify` | GitHub リポ・arXiv ID・URL・逐語引用 | 照合の結果（stdout・`-json`） | [tools](manual/tools.md) |
@@ -107,6 +113,7 @@ braindex init -add all              フル: 上の全部。learn（学習の提�
 やらないこと: 意味検索・ベクトル DB（recall 失敗の実例が出るまで入れない）／LLM による索引の要旨生成・索引更新／
 ノート本文・セッション内容の外部送信（ニュースの取得は GET のみ）／ネタ帳（索引・レビュー・ニュースとは独立した機能で、テンプレの核ではない）。
 
+どの機能が安定していて、どれが試用中（既定値・辞書・閾値を試用後に見直す前提）かは [manual/README.md の安定度](manual/README.md#安定度)。
 Karpathy の LLM wiki 型との対応・リポジトリの地図・版の状態は [manual/design.md](manual/design.md)。
 理由と却下案は作者の設計メモ `docs/decisions.md`、開発の決まりは [`CONTRIBUTING.md`](CONTRIBUTING.md)。
 

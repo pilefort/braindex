@@ -16,3 +16,9 @@ Records のタイトル・要旨は既存の表と同じく半角パイプを全
 旧 `render.Entry` は共通型の別名、旧 `review.ParseCatalog` は共通の読み取り処理を
 呼ぶ互換入口として残す。既存利用側の一括移行は不要。
 読取時の BOM・改行の正規化、空入力、壊れた表のエラーも従来の扱いを維持する。
+
+索引の先頭にある走査の記録（「走査:」の行と「- 読めなかった:」の一覧。形は [generate.md](generate.md) の「走査の記録」）は
+`catalog.ParseCoverage` で読み戻す。`indexdata.ParseCatalog` は表の行と `## ` 見出しだけを見るので、この行は読み飛ばす
+（記録を足す前の読み手との互換）。記録を持たない索引は `Coverage.Known` が false（完全性は不明）で、
+記録があって読めなかった範囲が無ければ `Coverage.Complete()` が true になる。生成側では `catalog.Build` の
+`Result.Coverage` に同じ値が入る。

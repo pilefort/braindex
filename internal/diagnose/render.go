@@ -44,36 +44,10 @@ func Render(r Report) []byte {
 	}
 
 	b.WriteString("\n## いま走査すると\n")
-	withNotes := 0
-	for _, ri := range r.Scan.Repos {
-		if ri.Entries > 0 {
-			withNotes++
-		}
-	}
-	fmt.Fprintf(&b, "- 索引に載る: %d 件（root 直下 %d リポのうち %d リポ）\n", r.Scan.Entries, len(r.Scan.Repos), withNotes)
-	if len(r.Scan.Gaps) == 0 {
-		b.WriteString("- 読めなかった範囲: なし\n")
+	if r.Scan.Failed != "" {
+		b.WriteString("- 走査していない: " + r.Scan.Failed + "\n")
 	} else {
-		fmt.Fprintf(&b, "- 読めなかった範囲: %d 件（この範囲のノートは載らない。無いのか読めないのかは分からない）\n", len(r.Scan.Gaps))
-		for _, g := range r.Scan.Gaps {
-			b.WriteString("  - " + g.Path + " — " + g.Reason + "\n")
-		}
-	}
-	if len(r.Scan.Warnings) == 0 {
-		b.WriteString("- 警告: なし\n")
-	} else {
-		fmt.Fprintf(&b, "- 警告: %d 件\n", len(r.Scan.Warnings))
-		for _, w := range r.Scan.Warnings {
-			b.WriteString("  - " + w + "\n")
-		}
-	}
-	if len(r.Scan.Repos) == 0 {
-		b.WriteString("- リポ別: root 直下にディレクトリが無い（ドットで始まるものは見ない）\n")
-	} else {
-		b.WriteString("- リポ別:\n")
-		for _, ri := range r.Scan.Repos {
-			b.WriteString("  - " + repoLine(ri) + "\n")
-		}
+		writeScan(&b, r.Scan)
 	}
 
 	b.WriteString("\n## 保存済みの索引\n")
@@ -102,33 +76,40 @@ func Render(r Report) []byte {
 				b.WriteString("  - " + g.Path + " — " + g.Reason + "\n")
 			}
 		}
-		if d := r.Saved.Diff; d != nil {
-			if d.Count() == 0 {
-				b.WriteString("- いまの走査との差: なし\n")
-			} else {
-				fmt.Fprintf(&b, "- いまの走査との差: %d 件\n", d.Count())
-				writeDiffList(&b, "未反映", "いま見つかるが索引に無い。再生成で載る", d.NotIndexed, nil)
-				writeDiffList(&b, "確認不能", "索引にあるが、今回読めなかった範囲の中。有無は分からない", nil, d.Unconfirmed)
-				writeDiffList(&b, "対象外", "索引にあるが、いまの設定では走査しない場所", nil, d.OutOfScope)
-				writeDiffList(&b, "無い", "索引にあるが、置き場は確認できてそのパスに無い", d.Gone, nil)
-			}
+		switch d := r.Saved.Diff; {
+		case d == nil:
+			b.WriteString("- いまの走査との差: 比べていない（走査していない）\n")
+		case d.Count() == 0:
+			b.WriteString("- いまの走査との差: なし\n")
+		default:
+			fmt.Fprintf(&b, "- いまの走査との差: %d 件\n", d.Count())
+			writeDiffList(&b, "未反映", "いま見つかるが索引に無い。再生成で載る", d.NotIndexed, nil)
+			writeDiffList(&b, "確認不能", "索引にあるが、今回読めなかった範囲の中。有無は分からない", nil, d.Unconfirmed)
+			writeDiffList(&b, "対象外", "索引にあるが、いまの設定では走査しない場所", nil, d.OutOfScope)
+			writeDiffList(&b, "無い", "索引にあるが、置き場は確認できてそのパスに無い", d.Gone, nil)
 		}
 	}
 
 	if p := r.Path; p != nil {
 		b.WriteString("\n## パス " + p.Path + "\n")
-		if p.Covered {
+		switch {
+		case r.Scan.Failed != "":
+			b.WriteString("- いまの設定: 判定していない（走査できない設定）\n")
+			b.WriteString("- いま走査すると: 走査していない\n")
+		case p.Covered:
 			b.WriteString("- いまの設定: 対象（" + p.Rule + "）\n")
-		} else {
+		default:
 			b.WriteString("- いまの設定: 対象外（" + p.Rule + "）\n")
 		}
-		switch p.Scanned {
-		case "found":
-			b.WriteString("- いま走査すると: 見つかる（索引に載る）\n")
-		case "gap":
-			b.WriteString("- いま走査すると: 読めなかった範囲 " + p.Gap + " の中（有無は分からない）\n")
-		default:
-			b.WriteString("- いま走査すると: 見つからない（置き場は確認できた。無いか、対象外）\n")
+		if r.Scan.Failed == "" {
+			switch p.Scanned {
+			case "found":
+				b.WriteString("- いま走査すると: 見つかる（索引に載る）\n")
+			case "gap":
+				b.WriteString("- いま走査すると: 読めなかった範囲 " + p.Gap + " の中（有無は分からない）\n")
+			default:
+				b.WriteString("- いま走査すると: 見つからない（置き場は確認できた。無いか、対象外）\n")
+			}
 		}
 		switch p.Indexed {
 		case "yes":
@@ -140,6 +121,41 @@ func Render(r Report) []byte {
 		}
 	}
 	return []byte(b.String())
+}
+
+// writeScan は「いま走査すると」の本体(件数・読めなかった範囲・警告・リポ別)を書く。走査できたときだけ呼ぶ。
+func writeScan(b *strings.Builder, s ScanInfo) {
+	withNotes := 0
+	for _, ri := range s.Repos {
+		if ri.Entries > 0 {
+			withNotes++
+		}
+	}
+	fmt.Fprintf(b, "- 索引に載る: %d 件（root 直下 %d リポのうち %d リポ）\n", s.Entries, len(s.Repos), withNotes)
+	if len(s.Gaps) == 0 {
+		b.WriteString("- 読めなかった範囲: なし\n")
+	} else {
+		fmt.Fprintf(b, "- 読めなかった範囲: %d 件（この範囲のノートは載らない。無いのか読めないのかは分からない）\n", len(s.Gaps))
+		for _, g := range s.Gaps {
+			b.WriteString("  - " + g.Path + " — " + g.Reason + "\n")
+		}
+	}
+	if len(s.Warnings) == 0 {
+		b.WriteString("- 警告: なし\n")
+	} else {
+		fmt.Fprintf(b, "- 警告: %d 件\n", len(s.Warnings))
+		for _, w := range s.Warnings {
+			b.WriteString("  - " + w + "\n")
+		}
+	}
+	if len(s.Repos) == 0 {
+		b.WriteString("- リポ別: root 直下にディレクトリが無い（ドットで始まるものは見ない）\n")
+	} else {
+		b.WriteString("- リポ別:\n")
+		for _, ri := range s.Repos {
+			b.WriteString("  - " + repoLine(ri) + "\n")
+		}
+	}
 }
 
 // extraLine は extra の 1 規則を「repo/path（再帰・種別 kind・除外 …）: 起点の状態」の形にする。
