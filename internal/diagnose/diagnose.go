@@ -71,7 +71,7 @@ type ExtraInfo struct {
 // ScanInfo は「いま走査すると」の結果。
 type ScanInfo struct {
 	Entries  int        `json:"entries"`
-	Repos    []RepoInfo `json:"repos"` // root 直下のディレクトリ(ドット始まりを除く)。名前昇順。ノートが無いものも載る
+	Repos    []RepoInfo `json:"repos"` // 走査と同じ規則で列挙したリポ(repo_depth 段目・ドット始まりを除く)。名前昇順。ノートが無いものも載る
 	Gaps     []GapInfo  `json:"gaps"`
 	Warnings []string   `json:"warnings"` // 読めなかった範囲以外の警告(存在しない extra など)
 }
@@ -170,7 +170,7 @@ func Build(in Input) (Report, error) {
 		NotesDirsDefault: len(in.Cfg.NotesDirs) == 0,
 		Extra:            extraInfos(in.Cfg, rootAbs, res),
 	}
-	r.Scan = scanInfo(rootAbs, notesDirs, res)
+	r.Scan = scanInfo(in.Cfg, rootAbs, notesDirs, res)
 	saved, savedEntries := savedInfo(in.CatalogPath, in.Cfg, res)
 	r.Saved = saved
 	if in.Path != "" {
@@ -297,8 +297,8 @@ func countUnder(records []indexdata.Entry, baseRel string, recursive bool) int {
 	return n
 }
 
-// scanInfo は「いま走査すると」を組み立てる。リポは root 直下の全ディレクトリ(ノートが無いものも)。
-func scanInfo(rootAbs string, notesDirs []string, res catalog.Result) ScanInfo {
+// scanInfo は「いま走査すると」を組み立てる。リポは走査と同じ規則で列挙する(repo_depth 段目の全ディレクトリ。ノートが無いものも)。
+func scanInfo(cfg scan.Config, rootAbs string, notesDirs []string, res catalog.Result) ScanInfo {
 	si := ScanInfo{Entries: res.Entries, Repos: []RepoInfo{}, Gaps: gapInfos(res.Coverage.Gaps), Warnings: []string{}}
 	// 走査の警告には読めなかった範囲が同じ文言で 1 行ずつ入っている。二重に見せないよう、それ以外だけ残す
 	gapLines := map[string]bool{}
@@ -314,15 +314,14 @@ func scanInfo(rootAbs string, notesDirs []string, res catalog.Result) ScanInfo {
 	for _, e := range res.Records {
 		byRepo[e.Repo] = append(byRepo[e.Repo], e)
 	}
-	entries, err := os.ReadDir(rootAbs)
+	// リポの列挙は走査と同じ規則にする(repo_depth が 2 なら group/name がリポ)。
+	// ここで root 直下だけを見ると、depth 2 の hub で group をリポとして並べてしまう
+	repos, _, err := scan.ListRepos(rootAbs, cfg.Depth())
 	if err != nil {
 		return si // catalog.Build が通っているので普通は読める
 	}
-	for _, de := range entries {
-		if !de.IsDir() || strings.HasPrefix(de.Name(), ".") {
-			continue
-		}
-		name := de.Name()
+	for _, rp := range repos {
+		name := rp.Name
 		ri := RepoInfo{Name: name, Entries: len(byRepo[name]), Kinds: []KindCount{}, Places: []PlaceInfo{}}
 		kinds := map[string]int{}
 		for _, e := range byRepo[name] {
@@ -337,7 +336,7 @@ func scanInfo(rootAbs string, notesDirs []string, res catalog.Result) ScanInfo {
 				ri.Gaps++
 			}
 		}
-		repoDir := filepath.Join(rootAbs, name)
+		repoDir := rp.Dir
 		decRel := name + "/docs/decisions.md"
 		dec := PlaceInfo{Path: "docs/decisions.md", Status: placeStatus(filepath.Join(repoDir, "docs", "decisions.md"), true)}
 		for _, e := range byRepo[name] {
