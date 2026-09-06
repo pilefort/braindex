@@ -16,7 +16,7 @@ import (
 
 // 語の規則。
 const (
-	minLatin  = 3 // ラテン文字の語の最短(go・md のような 2 文字は雑音が多い)
+	minLatin  = 3 // ラテン文字の語の最短(md・fn のような 2 文字は雑音が多い)。例外は shortLatin
 	minKana   = 2 // カタカナ連続の最短
 	minKanji  = 2 // 漢字連続の最短
 	maxKanji  = 6 // 漢字連続の最長。超える連続は 1 語にできない(複合語が長すぎる)ので捨てる
@@ -25,6 +25,13 @@ const (
 )
 
 var latinRe = regexp.MustCompile(`[A-Za-z][A-Za-z0-9_\-]*`)
+
+// shortLatin は 2 文字でも語として拾うもの。2 文字は雑音が多いので原則落とすが、
+// 領域を名指しする語がそこに落ちると、その領域の関心をまったく拾えなくなる
+// (設計レビュー 2026-09-06 M10)。足すのは「その語が出たら話題が特定できる」ものだけ。
+var shortLatin = map[string]bool{
+	"go": true, "ai": true, "ci": true, "ui": true, "db": true,
+}
 
 // Words は text から語を取り出す。同じ語が複数回あっても 1 回ずつ返す(出現順)。
 // ラテン文字は小文字に畳む。数字だけ・ストップワード・長すぎる語は除く。
@@ -42,10 +49,11 @@ func Words(text string) []string {
 	// ラテン文字・数字・_・- の並び(識別子を含む)
 	for _, m := range latinRe.FindAllString(text, -1) {
 		m = strings.Trim(m, "_-")
-		if utf8.RuneCountInString(m) < minLatin || len(m) > maxLatin {
+		lower := strings.ToLower(m)
+		if n := utf8.RuneCountInString(m); (n < minLatin && !shortLatin[lower]) || len(m) > maxLatin {
 			continue
 		}
-		add(strings.ToLower(m))
+		add(lower)
 	}
 	// カタカナ連続・漢字連続
 	runes := []rune(text)

@@ -85,15 +85,23 @@ type Ranking map[string]interest.Score
 
 // Rank は各フィードの新着を関心プロファイルで採点する。プロファイルが空なら nil(採点無し)。
 // 照合する文字列は 見出し＋概要。
-func Rank(results []Result, p interest.Profile) Ranking {
+//
+// demoted に名前がある取材先は、点の上限を DemotedMaxScore に下げる(不要ばかり付く取材先を
+// 主要表示から下ろす。決定 2026-09-06)。nil なら下げない。
+func Rank(results []Result, p interest.Profile, demoted map[string]bool) Ranking {
 	if len(p.Terms) == 0 {
 		return nil
 	}
 	rk := Ranking{}
 	rater := interest.NewRater(p) // 重み表は 1 回だけ作る(記事ごとに作り直さない)
 	for _, r := range results {
+		down := demoted[r.Source.Name]
 		for _, e := range r.New {
-			rk[e.ID] = rater.Rate(e.Title + " " + e.Summary)
+			s := rater.Rate(e.Title + " " + e.Summary)
+			if down && s.Value > DemotedMaxScore {
+				s.Value = DemotedMaxScore
+			}
+			rk[e.ID] = s
 		}
 	}
 	return rk
