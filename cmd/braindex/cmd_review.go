@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pilefort/braindex/internal/config"
+	"github.com/pilefort/braindex/internal/fsutil"
 	"github.com/pilefort/braindex/internal/review"
 )
 
@@ -129,7 +130,7 @@ func runReview(args []string, stdout, stderr io.Writer) int {
 		if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
 			return fail(err)
 		}
-		if err := os.WriteFile(outPath, res.Report, 0o644); err != nil {
+		if err := fsutil.WriteAtomic(outPath, res.Report, 0o644); err != nil {
 			return fail(err)
 		}
 		fmt.Fprintf(stdout, "review 下書き: %s(前回 %s)\n", outPath, since)
