@@ -253,3 +253,37 @@ func TestReview_前回の索引が読めなくても続ける(t *testing.T) {
 		t.Errorf("読めなかったのに 0 件として増減を出している:\n%s", got)
 	}
 }
+
+// 前回の下書きの判断の節が見出しだけなら、今回の「次アクション」の直下に書いて終了コード 2。
+// 機械節は毎週埋まるので回っているように見えるが、判断の節が空なら回路は動いていない
+// (設計レビュー 2026-09-06 M7)。
+func TestReview_前回の判断の節が空なら伝える(t *testing.T) {
+	_, hub := hubWithRepo(t)
+	cfg := filepath.Join(hub, "braindex.json")
+	prev := filepath.Join(hub, "work", "review", "2026-08-26.md")
+	writeFile(t, prev, "# 週次レビュー 2026-08-26\n\n## 索引（件数と増減）\n\n前回 0 件 → 今回 1 件\n"+
+		"\n## 今週の差分ダイジェスト（リポ別）\n\n（差分ファイルを実物で読み、リポごとに 1〜3 行）\n"+
+		"\n## アーカイブ（実施・見送りと理由）\n\n- 見送り: まだ参照する\n"+
+		"\n## 次アクション\n\n（1〜3 件）\n")
+
+	var so, se bytes.Buffer
+	code := dispatch([]string{"review", "-config", cfg, "-date", "2026-09-02", "-stdout"}, &so, &se)
+	if code != 2 {
+		t.Fatalf("exit=%d want 2\nstderr=%s", code, se.String())
+	}
+	want := "前回（2026-08-26）の判断の節が空のまま: 今週の差分ダイジェスト（リポ別）・次アクション"
+	mustContain(t, "下書き", so.String(), "## 次アクション\n\n（1〜3 件）\n\n- "+want+"\n")
+	mustContain(t, "stderr", se.String(), want)
+
+	// 埋まっていれば何も言わない
+	writeFile(t, prev, "# 週次レビュー 2026-08-26\n"+
+		"\n## 今週の差分ダイジェスト（リポ別）\n\n- repo-a: 直した\n"+
+		"\n## アーカイブ（実施・見送りと理由）\n\n- 見送り: まだ参照する\n"+
+		"\n## 次アクション\n\n- 取材先を 1 つ足す\n")
+	so.Reset()
+	se.Reset()
+	dispatch([]string{"review", "-config", cfg, "-date", "2026-09-02", "-stdout"}, &so, &se)
+	if strings.Contains(so.String(), "判断の節が空のまま") {
+		t.Errorf("埋まっているのに言っている:\n%s", so.String())
+	}
+}

@@ -114,6 +114,7 @@ func runReview(args []string, stdout, stderr io.Writer) int {
 		Cfg:        cfg,
 		HubDir:     hubDir,
 		CatalogRel: defaultOut,
+		PrevPath:   filepath.Join(reviewDir, since+".md"),
 		Settings:   s,
 	})
 	if err != nil {

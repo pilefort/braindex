@@ -60,6 +60,10 @@ braindex retro extract [-since YYYY-MM-DD | -window-days N] [-out DIR]          
 定期実行なら週 1 回。cron: `0 9 * * 1 braindex retro check; [ $? -eq 3 ] && <通知コマンド>`。Windows のタスクスケジューラなら、
 `braindex retro check` を回して終了コード 3 のときだけ通知する `.cmd` を登録する。`braindex` が定期実行の環境の PATH に無ければフルパスで書く。
 
+**鳴らしたのに所見ノートが無ければ 1 行に添える**（2026-09-06 追加）。`docs/notes/` の下に、ファイル名の日付が窓の中にある
+`retro-YYYY-MM-DD.md` が 1 つも無ければ、`（所見ノート docs/notes/retro-YYYY-MM-DD.md が窓の中に無い）` を末尾に足す。
+状態ファイルは持たず、ノートの有無そのものを見る。`docs/notes/` ごと無い hub（その規約を採っていない）には言わない。
+
 閾値超えの後は、hub のスキル `retro`（`braindex init -add retro` が展開する `.claude/skills/retro/SKILL.md`）の手順で `braindex retro extract` のダイジェストを読み、
 所見（訂正の型・繰り返し指示・うまくいった協働）と規約への反映案を hub の `docs/notes/retro-YYYY-MM-DD.md` に残す。規約の書き換えは承認の後。
 

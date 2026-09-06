@@ -64,6 +64,7 @@ type Input struct {
 	Cfg        scan.Config // 走査設定。Root は解決済み(カレント基準か絶対)
 	HubDir     string      // 設定ファイルのディレクトリ(hub のルート)
 	CatalogRel string      // 索引の hub 相対パス(スラッシュ区切り。例 index/catalog.md)
+	PrevPath   string      // 前回の下書き work/review/<前回日>.md。空なら判断の節の確認をしない
 	Settings   Settings    // 既定値は Build が埋める
 }
 
@@ -183,6 +184,15 @@ func Build(in Input) (Result, error) {
 	b.WriteString("\n## 今週の差分ダイジェスト（リポ別）\n\n（差分ファイルを実物で読み、リポごとに 1〜3 行。索引の要旨だけで書かない）\n")
 	b.WriteString("\n## アーカイブ（実施・見送りと理由）\n\n（候補ごとに 実施／見送り と理由。移動は承認の後）\n")
 	b.WriteString("\n## 次アクション\n\n（1〜3 件）\n")
+	// 前回の判断の節が空のままなら、今回の「次アクション」の直下に書く。機械節は毎週埋まるので
+	// 回っているように見えるが、判断の節が空なら回路は動いていない(設計レビュー 2026-09-06 M7)。
+	empty, ws := emptyJudgementSections(in.PrevPath)
+	res.Warnings = append(res.Warnings, ws...)
+	if len(empty) > 0 {
+		msg := fmt.Sprintf("前回（%s）の判断の節が空のまま: %s", in.Since, strings.Join(empty, "・"))
+		fmt.Fprintf(&b, "\n- %s\n", msg)
+		res.Warnings = append(res.Warnings, msg)
+	}
 	res.Report = []byte(b.String())
 	return res, nil
 }
