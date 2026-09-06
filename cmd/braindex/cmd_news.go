@@ -283,6 +283,11 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
 			return fail(err)
 		}
+		// 選別の保存先を先に作っておく。HTML の保存ダイアログで辿れるようにするため
+		// (無いディレクトリはダイアログで選べない。設計レビュー 2026-09-06 H4)
+		if err := os.MkdirAll(filepath.Join(newsDir, "inbox"), 0o755); err != nil {
+			fmt.Fprintf(stderr, "braindex news fetch: 警告: 選別の保存先を作れない: %v\n", err)
+		}
 		if err := os.WriteFile(outPath, digest, 0o644); err != nil {
 			return fail(err)
 		}

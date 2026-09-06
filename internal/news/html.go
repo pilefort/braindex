@@ -273,7 +273,7 @@ if(e.key==="j")move(1);else if(e.key==="k")move(-1);
 else if(cur>=0&&e.key==="f")setS(items[cur],"keep");
 else if(cur>=0&&e.key==="x")setS(items[cur],"drop");
 else if(cur>=0&&e.key==="u")setS(items[cur],null);});
-document.getElementById("exp").onclick=()=>{
+const exportSel=()=>{
 const keeps=[],stats={};
 items.forEach(li=>{const f=li.dataset.feed,s=state[li.dataset.id],low=li.dataset.low==="1";
 const st=stats[f]=stats[f]||{shown:0,kept:0,dropped:0,hidden:0,rescued:0};
@@ -282,10 +282,30 @@ if(s==="keep"){if(low)st.rescued++;else st.kept++;keeps.push({id:li.dataset.id,t
 else if(s==="drop"&&!low)st.dropped++;});
 const payload={type:"braindex-news-selection",date:META.date,layer:META.layer,exported_at:new Date().toISOString(),keeps,feed_stats:stats};
 const ts=new Date().toISOString().replace(/[-:T]/g,"").slice(0,14);
-const a=document.createElement("a");
-a.href=URL.createObjectURL(new Blob([JSON.stringify(payload,null,1)],{type:"application/json"}));
-a.download="braindex-news-selection_"+META.date+"_"+META.layer+"_"+ts+".json";a.click();
-document.getElementById("exp").textContent="書き出し済み ✓（braindex news apply で反映）";};
+const name="braindex-news-selection_"+META.date+"_"+META.layer+"_"+ts+".json";
+const body=JSON.stringify(payload,null,1);
+const btn=document.getElementById("exp");
+const done=t=>{btn.textContent=t;};
+// 保存ダイアログ(File System Access API)があれば置き場を自分で選べる。id を付けると Chrome と Edge は
+// 前回選んだディレクトリを覚えるので、初回に hub の news/inbox/ を選べば 2 回目からそこが既定になる。
+// 非対応のブラウザ(Firefox・Safari)と、ダイアログが出せなかったときは従来のダウンロードに落とす。
+const fallback=()=>{const a=document.createElement("a");
+a.href=URL.createObjectURL(new Blob([body],{type:"application/json"}));
+a.download=name;a.click();
+done("書き出し済み ✓（ダウンロード先から braindex news apply で反映）");};
+if(typeof window.showSaveFilePicker==="function"){
+btn.onclick=null;
+(async()=>{try{
+const h=await window.showSaveFilePicker({suggestedName:name,id:"braindex-news-inbox",
+types:[{description:"braindex の選別",accept:{"application/json":[".json"]}}]});
+const w=await h.createWritable();await w.write(body);await w.close();
+done("保存した ✓ "+h.name+"（braindex news apply で反映）");
+}catch(err){
+if(err&&err.name==="AbortError"){done("選別を書き出す");return;} // 人が閉じただけ。何もしない
+fallback();
+}finally{btn.onclick=exportSel;}})();
+}else fallback();};
+document.getElementById("exp").onclick=exportSel;
 paint();
 </script></body></html>
 `

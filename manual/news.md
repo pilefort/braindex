@@ -71,6 +71,12 @@ CLI が無い・`llm_timeout_sec` を超えた・応答が JSON でないとき�
 ```
 
 `-no-open` なのは、cron・schtasks から起動したプロセスがログイン中のデスクトップにウィンドウを出せないため。朝に `news/digest_<日付>_daily.html` を自分で開く。
+**選別の保存先**: 「選別を書き出す」を押すと保存ダイアログが出る（Chrome・Edge）。**初回は hub の `news/inbox/` を選ぶ**と、
+2 回目からは同じ場所が既定になる（`id` でディレクトリを覚えるため）。`news fetch` が `news/inbox/` を先に作っておくので、
+ダイアログでそのまま辿れる。Firefox と Safari は保存ダイアログに対応していないので、従来どおりダウンロード先に落ちる。
+ダイアログを閉じただけのときは何も書かず、ボタンの文字も戻る。
+`file://` で開いた HTML でもダイアログは出る（実測 2026-09-06 → `docs/notes/common/file-url-save-picker.md`）。
+
 選別を書き出した JSON は次回の `fetch` か `braindex news apply` が拾う。
 
 **取り込みは中身を検査する**: 選別 JSON はブラウザのダウンロード先（誰でも置ける場所）から拾うので、そのまま信じない。
