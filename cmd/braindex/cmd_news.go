@@ -14,6 +14,7 @@ import (
 
 	"github.com/pilefort/braindex/internal/config"
 	"github.com/pilefort/braindex/internal/feed"
+	"github.com/pilefort/braindex/internal/fsutil"
 	"github.com/pilefort/braindex/internal/news"
 )
 
@@ -288,7 +289,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		if err := os.MkdirAll(filepath.Join(newsDir, "inbox"), 0o755); err != nil {
 			fmt.Fprintf(stderr, "braindex news fetch: 警告: 選別の保存先を作れない: %v\n", err)
 		}
-		if err := os.WriteFile(outPath, digest, 0o644); err != nil {
+		if err := fsutil.WriteAtomic(outPath, digest, 0o644); err != nil {
 			return fail(err)
 		}
 		htmlPath := strings.TrimSuffix(outPath, filepath.Ext(outPath)) + ".html"
@@ -300,7 +301,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 				return fail(err)
 			}
 		}
-		if err := os.WriteFile(htmlPath, news.RenderHTML(results, do), 0o644); err != nil {
+		if err := fsutil.WriteAtomic(htmlPath, news.RenderHTML(results, do), 0o644); err != nil {
 			return fail(err)
 		}
 		fmt.Fprintf(stdout, "news ダイジェスト: %s\n", outPath)

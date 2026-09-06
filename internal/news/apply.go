@@ -96,7 +96,7 @@ func LoadStats(path string) (Stats, error) {
 	return st, nil
 }
 
-// Save は統計ファイルを書く(キー順で整形。同じ内容なら同じバイト列)。
+// Save は統計ファイルを書く(キー順で整形。同じ内容なら同じバイト列)。書き込みは原子的。
 func (st Stats) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -108,7 +108,7 @@ func (st Stats) Save(path string) error {
 	if err := enc.Encode(st); err != nil {
 		return err
 	}
-	return os.WriteFile(path, buf.Bytes(), 0o644)
+	return writeAtomic(path, buf.Bytes(), 0o644)
 }
 
 // Totals はスナップショットをフィード別に合計する。
@@ -294,17 +294,23 @@ func moveFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(dst, b, 0o644); err != nil {
+	if err := writeAtomic(dst, b, 0o644); err != nil {
 		return err
 	}
 	return os.Remove(src)
 }
 
-// appendKeeps は keep ファイルに、まだ無いリンクの記事だけ追記する。ファイルが無ければ見出しから作る。
+// appendKeeps は keep ファイルに、まだ無いリンクの記事だけ足して書き直す。ファイルが無ければ見出しから作る。
+// 追記(O_APPEND)でなく全体を原子的に書き直すのは、途中で止まったときに書きかけの行を残さないため
+// (リンクの欠けた行は次回の重複判定に掛からず、同じ記事がもう 1 行増える)。既にある部分はバイト列のまま写す。
 func appendKeeps(path, month string, keeps []Keep, date, layer string) error {
 	existing, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
+	}
+	perm := fs.FileMode(0o644)
+	if fi, serr := os.Stat(path); serr == nil { // 利用者の版管理下のファイルなので、権限は今のまま保つ
+		perm = fi.Mode().Perm()
 	}
 	var fresh []Keep
 	for _, k := range keeps {
@@ -321,16 +327,14 @@ func appendKeeps(path, month string, keeps []Keep, date, layer string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+	var buf bytes.Buffer
 	if len(existing) == 0 {
-		fmt.Fprintf(f, "# 選別済みニュース %s\n", month)
+		fmt.Fprintf(&buf, "# 選別済みニュース %s\n", month)
+	} else {
+		buf.Write(existing)
 	}
-	_, err = f.WriteString(KeepMarkdown(fresh, date, layer))
-	return err
+	buf.WriteString(KeepMarkdown(fresh, date, layer))
+	return writeAtomic(path, buf.Bytes(), perm)
 }
 
 // 不要ばかり付く取材先を主要表示から下ろす条件(決定 2026-09-06)。
