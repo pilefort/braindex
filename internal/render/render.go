@@ -7,16 +7,23 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/pilefort/braindex/internal/indexdata"
 )
 
 // Entry は catalog の 1 行。
-type Entry struct {
-	Repo    string
-	Date    string
-	Kind    string
-	Title   string
-	Summary string
-	Path    string // root 相対・スラッシュ区切り
+type Entry = indexdata.Entry
+
+// CatalogEntry は表に保存して読み戻したときの値へ正規化する。
+// 比較用の構造化データと既存の Markdown 読取の値を揃える。
+func CatalogEntry(e Entry) Entry {
+	e.Repo = strings.TrimSpace(e.Repo)
+	e.Date = strings.TrimSpace(e.Date)
+	e.Kind = strings.TrimSpace(e.Kind)
+	e.Title = strings.TrimSpace(esc(e.Title))
+	e.Summary = strings.TrimSpace(esc(e.Summary))
+	e.Path = strings.TrimSpace(e.Path)
+	return e
 }
 
 // Render はエントリ列を catalog.md のバイト列にする。genDate は先頭に載せる生成日(実行日)。

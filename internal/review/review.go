@@ -93,10 +93,7 @@ func Build(in Input) (Result, error) {
 		return res, err
 	}
 	res.Warnings = append(res.Warnings, built.Warnings...)
-	afterEntries, err := ParseCatalog(built.Catalog)
-	if err != nil {
-		return res, err
-	}
+	afterEntries := built.Records
 
 	g, hasGit := LookGit()
 	var gp *Git
@@ -107,10 +104,11 @@ func Build(in Input) (Result, error) {
 	// 前回の索引
 	before, source, ws := previousCatalog(gp, in.HubDir, in.CatalogRel, in.Since)
 	res.Warnings = append(res.Warnings, ws...)
-	diff, err := DiffIndex(before, built.Catalog)
+	beforeEntries, err := ParseCatalog(before)
 	if err != nil {
-		return res, err
+		return res, fmt.Errorf("前回の索引: %w", err)
 	}
+	diff := diffEntries(beforeEntries, afterEntries)
 
 	// 差分ファイル(索引に載ったリポだけ)
 	ch := Changes{Since: in.Since, Pathspecs: pathspecs(in.Cfg), GitMissing: !hasGit}
