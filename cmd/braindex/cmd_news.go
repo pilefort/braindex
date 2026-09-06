@@ -72,17 +72,18 @@ func runNews(args []string, stdout, stderr io.Writer) int {
 
 // newsFetchOptions は braindex news fetch のコマンドライン。空は「未指定」。
 type newsFetchOptions struct {
-	config   string // -config。hub の位置を兼ねるので必須(既定パスに無ければエラー)
-	date     string // -date。今日の固定(既定: 実行日)
-	layer    string // -layer。フィードの層(既定 all)
-	replay   bool   // -replay。既読を無視して全件を出し、既読も更新しない
-	stdout   bool   // -stdout。ファイルに書かず標準出力へ(既読は更新する)
-	out      string // -out。出力先(既定: <news.dir>/digest_<日付>_<層>.md。既にあれば書かない)
-	inbox    string // -inbox。選別 JSON を探すディレクトリ(既定 ~/Downloads)
-	noOpen   bool   // -no-open。HTML を既定ブラウザで開かない
-	noScore  bool   // -no-score。関心プロファイルで採点しない(全件を主要表示)
-	noLLM    bool   // -no-llm。設定 news.llm が claude-cli でも LLM 補助を呼ばない
-	sessions string // -sessions。関心プロファイルのセッションログの置き場(news profile と同じ既定)
+	config      string // -config。hub の位置を兼ねるので必須(既定パスに無ければエラー)
+	date        string // -date。今日の固定(既定: 実行日)
+	layer       string // -layer。フィードの層(既定 all)
+	replay      bool   // -replay。既読を無視して全件を出し、既読も更新しない
+	stdout      bool   // -stdout。ファイルに書かず標準出力へ(既読は更新する)
+	out         string // -out。出力先(既定: <news.dir>/digest_<日付>_<層>.md。既にあれば書かない)
+	inbox       string // -inbox。選別 JSON を探すディレクトリ(既定 ~/Downloads)
+	noOpen      bool   // -no-open。HTML を既定ブラウザで開かない
+	noScore     bool   // -no-score。関心プロファイルで採点しない(全件を主要表示)
+	noLLM       bool   // -no-llm。設定 news.llm が claude-cli でも LLM 補助を呼ばない
+	sessions    string // -sessions。関心プロファイルのセッションログの置き場(news profile と同じ既定)
+	allProjects bool   // -all-projects。root の外のセッションも数える
 }
 
 // runNewsFetch は braindex news fetch を実行する。
@@ -105,6 +106,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&o.noScore, "no-score", false, "関心プロファイルで採点しない(全件を主要表示・出典を読まない)")
 	fs.BoolVar(&o.noLLM, "no-llm", false, "LLM 補助(設定 news.llm = claude-cli の翻訳＋採点)を呼ばない(語の一致の点だけで出す)")
 	fs.StringVar(&o.sessions, "sessions", "", "関心プロファイルが読むセッションログの置き場(既定: news profile と同じ)")
+	fs.BoolVar(&o.allProjects, "all-projects", false, "root の外で交わしたセッションも数える(既定: root 配下だけ。設定 retro.all_projects と同じ)")
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方: braindex news fetch [-config braindex.json] [-date YYYY-MM-DD] [-layer <層>] [-replay] [-stdout] [-out <path>] [-no-open] [-no-score] [-no-llm] [-sessions DIR]")
 		fmt.Fprintln(stderr, "  hub のルートで実行し、news/feeds.json のフィードを GET して、既読(news/.seen.json)に無い記事を")
@@ -230,7 +232,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	var profileTerms []string
 	profileWarnings := 0
 	if !o.noScore {
-		p, ws, err := loadProfile(fc, hubDir, today, 0, o.sessions)
+		p, ws, err := loadProfile(fc, hubDir, today, 0, o.sessions, o.allProjects)
 		if err != nil {
 			return fail(err)
 		}

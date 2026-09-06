@@ -59,12 +59,13 @@ func runRetro(args []string, stdout, stderr io.Writer) int {
 
 // retroStatsOptions は braindex retro stats のコマンドライン。空は「未指定」。
 type retroStatsOptions struct {
-	config     string // -config。無くても動く(retro は hub を要らない)
-	sessions   string // -sessions。セッションログの置き場(設定より優先)
-	date       string // -date。今日の固定(-window-days の基準)
-	since      string // -since。この日以降
-	windowDays int    // -window-days。直近 N 日
-	by         string // -by。区分(コンマ区切り)
+	config      string // -config。無くても動く(retro は hub を要らない)
+	sessions    string // -sessions。セッションログの置き場(設定より優先)
+	date        string // -date。今日の固定(-window-days の基準)
+	since       string // -since。この日以降
+	windowDays  int    // -window-days。直近 N 日
+	by          string // -by。区分(コンマ区切り)
+	allProjects bool   // -all-projects。root の外のセッションも数える
 }
 
 // runRetroStats は braindex retro stats を実行する。
@@ -74,6 +75,7 @@ func runRetroStats(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	fs.StringVar(&o.config, "config", "", "設定ファイルのパス(既定: カレントの braindex.json。無ければ既定値で動く)")
 	fs.StringVar(&o.sessions, "sessions", "", "セッションログの置き場(既定: 設定 retro.sessions_dir → ~/.claude/projects)")
+	fs.BoolVar(&o.allProjects, "all-projects", false, "root の外で交わしたセッションも数える(既定: root 配下だけ。設定 retro.all_projects と同じ)")
 	fs.StringVar(&o.date, "date", "", "今日として使う日付 YYYY-MM-DD(既定: 実行日)。-window-days の基準")
 	fs.StringVar(&o.since, "since", "", "この日以降の発話だけを数える YYYY-MM-DD(既定: 全期間)")
 	fs.IntVar(&o.windowDays, "window-days", 0, "直近 N 日の発話だけを数える(-since と同時には使えない)")
@@ -118,15 +120,16 @@ func runRetroStats(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	env, err := loadRetroEnv(o.config, o.sessions)
+	env, err := loadRetroEnv(o.config, o.sessions, o.allProjects)
 	if err != nil {
 		return fail(err)
 	}
 
-	ss, warns, err := sessions.Dir{Path: env.sessionsDir}.Sessions(sessions.Options{Since: w.Since})
+	ss, sessWarns, err := sessions.Dir{Path: env.sessionsDir}.Sessions(sessions.Options{Since: w.Since, UnderRoot: env.underRoot})
 	if err != nil {
 		return fail(err)
 	}
+	warns := append(env.warnings, sessWarns...)
 	for _, wn := range warns {
 		fmt.Fprintln(stderr, "braindex retro stats: 警告:", wn)
 	}
@@ -153,12 +156,13 @@ func runRetroStats(args []string, stdout, stderr io.Writer) int {
 
 // retroCheckOptions は braindex retro check のコマンドライン。
 type retroCheckOptions struct {
-	config     string  // -config
-	sessions   string  // -sessions
-	date       string  // -date。今日の固定
-	windowDays int     // -window-days(既定: 設定 retro.window_days)
-	threshold  float64 // -threshold(既定: 設定 retro.threshold)
-	quiet      bool    // -quiet。閾値超えのときだけ出力
+	config      string  // -config
+	sessions    string  // -sessions
+	date        string  // -date。今日の固定
+	windowDays  int     // -window-days(既定: 設定 retro.window_days)
+	threshold   float64 // -threshold(既定: 設定 retro.threshold)
+	quiet       bool    // -quiet。閾値超えのときだけ出力
+	allProjects bool    // -all-projects。root の外のセッションも数える
 }
 
 // runRetroCheck は braindex retro check を実行する。
@@ -169,6 +173,7 @@ func runRetroCheck(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	fs.StringVar(&o.config, "config", "", "設定ファイルのパス(既定: カレントの braindex.json。無ければ既定値で動く)")
 	fs.StringVar(&o.sessions, "sessions", "", "セッションログの置き場(既定: 設定 retro.sessions_dir → ~/.claude/projects)")
+	fs.BoolVar(&o.allProjects, "all-projects", false, "root の外で交わしたセッションも数える(既定: root 配下だけ。設定 retro.all_projects と同じ)")
 	fs.StringVar(&o.date, "date", "", "今日として使う日付 YYYY-MM-DD(既定: 実行日)。窓の基準")
 	fs.IntVar(&o.windowDays, "window-days", 0, "直近 N 日を窓にする(既定: 設定 retro.window_days → 14)")
 	fs.Float64Var(&o.threshold, "threshold", 0, "訂正率の閾値 0〜1(既定: 設定 retro.threshold → 0.08)")
@@ -218,7 +223,7 @@ func runRetroCheck(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	env, err := loadRetroEnv(o.config, o.sessions)
+	env, err := loadRetroEnv(o.config, o.sessions, o.allProjects)
 	if err != nil {
 		return fail(err)
 	}
@@ -238,10 +243,11 @@ func runRetroCheck(args []string, stdout, stderr io.Writer) int {
 	if !base.Since.IsZero() {
 		since = base.Since
 	}
-	ss, warns, err := sessions.Dir{Path: env.sessionsDir}.Sessions(sessions.Options{Since: since})
+	ss, sessWarns, err := sessions.Dir{Path: env.sessionsDir}.Sessions(sessions.Options{Since: since, UnderRoot: env.underRoot})
 	if err != nil {
 		return fail(err)
 	}
+	warns := append(env.warnings, sessWarns...)
 	if !o.quiet {
 		for _, wn := range warns {
 			fmt.Fprintln(stderr, "braindex retro check: 警告:", wn)
@@ -287,12 +293,13 @@ func runRetroCheck(args []string, stdout, stderr io.Writer) int {
 
 // retroExtractOptions は braindex retro extract のコマンドライン。
 type retroExtractOptions struct {
-	config     string // -config
-	sessions   string // -sessions
-	date       string // -date。今日の固定
-	since      string // -since
-	windowDays int    // -window-days
-	out        string // -out。出力先(既定: OS の一時ディレクトリの braindex-retro)
+	config      string // -config
+	sessions    string // -sessions
+	date        string // -date。今日の固定
+	since       string // -since
+	windowDays  int    // -window-days
+	out         string // -out。出力先(既定: OS の一時ディレクトリの braindex-retro)
+	allProjects bool   // -all-projects。root の外のセッションも数える
 }
 
 // runRetroExtract は braindex retro extract を実行する。
@@ -304,6 +311,7 @@ func runRetroExtract(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	fs.StringVar(&o.config, "config", "", "設定ファイルのパス(既定: カレントの braindex.json。無ければ既定値で動く)")
 	fs.StringVar(&o.sessions, "sessions", "", "セッションログの置き場(既定: 設定 retro.sessions_dir → ~/.claude/projects)")
+	fs.BoolVar(&o.allProjects, "all-projects", false, "root の外で交わしたセッションも数える(既定: root 配下だけ。設定 retro.all_projects と同じ)")
 	fs.StringVar(&o.date, "date", "", "今日として使う日付 YYYY-MM-DD(既定: 実行日)。-window-days の基準")
 	fs.StringVar(&o.since, "since", "", "この日以降の発話だけを書く YYYY-MM-DD(既定: 全期間)")
 	fs.IntVar(&o.windowDays, "window-days", 0, "直近 N 日の発話だけを書く(-since と同時には使えない)")
@@ -341,7 +349,7 @@ func runRetroExtract(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	env, err := loadRetroEnv(o.config, o.sessions)
+	env, err := loadRetroEnv(o.config, o.sessions, o.allProjects)
 	if err != nil {
 		return fail(err)
 	}
@@ -350,10 +358,11 @@ func runRetroExtract(args []string, stdout, stderr io.Writer) int {
 		outDir = filepath.Join(os.TempDir(), "braindex-retro")
 	}
 
-	ss, warns, err := sessions.Dir{Path: env.sessionsDir}.Sessions(sessions.Options{Since: w.Since})
+	ss, sessWarns, err := sessions.Dir{Path: env.sessionsDir}.Sessions(sessions.Options{Since: w.Since, UnderRoot: env.underRoot})
 	if err != nil {
 		return fail(err)
 	}
+	warns := append(env.warnings, sessWarns...)
 	for _, wn := range warns {
 		fmt.Fprintln(stderr, "braindex retro extract: 警告:", wn)
 	}
@@ -433,12 +442,15 @@ type retroEnv struct {
 	sessionsDir string
 	dicts       []*retro.Dictionary // 判定に使う辞書(dictionary か既定辞書、それに dictionary_extra)
 	bins        []retro.Bin
-	home        string // 表示でホームを "~" に置き換える(取れなければ "")
+	home        string   // 表示でホームを "~" に置き換える(取れなければ "")
+	underRoot   string   // この配下のセッションだけ数える(空なら絞らない)
+	warnings    []string // 環境を決める段で出た警告(セッションの警告の前に出す)
 }
 
 // loadRetroEnv は設定ファイル(無ければ既定値)とフラグから実行環境を決める。
 // 設定ファイル内のパスは "~" を展開し、相対なら設定ファイルのディレクトリ基準。
-func loadRetroEnv(cfgPath, sessionsFlag string) (retroEnv, error) {
+// allProjects はフラグ -all-projects。設定 retro.all_projects と同じで、true なら root の外のセッションも数える。
+func loadRetroEnv(cfgPath, sessionsFlag string, allProjects bool) (retroEnv, error) {
 	var env retroEnv
 	explicit := cfgPath != ""
 	if !explicit {
@@ -461,6 +473,11 @@ func loadRetroEnv(cfgPath, sessionsFlag string) (retroEnv, error) {
 	}
 	s := fc.Retro.WithDefaults()
 	env.settings = s
+	root, why := sessionRoot(fc.Config.Root, baseDir, s.AllProjects || allProjects, found)
+	env.underRoot = root
+	if why != "" {
+		env.warnings = append(env.warnings, why)
+	}
 
 	switch {
 	case sessionsFlag != "":

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 )
 
@@ -27,4 +28,23 @@ func todayOrNow(date string) (time.Time, error) {
 		return time.Now(), nil
 	}
 	return localMidnight(date)
+}
+
+// sessionRoot は「この配下で交わしたセッションだけを数える」対象のディレクトリを返す。
+// 空を返したら絞らない。why はそのときの理由(呼び出し側が警告に出す)。
+//
+// 既定で絞るのは、hub の root の外(索引に載らないリポ・OS のシステムディレクトリなど)で交わした
+// 会話が訂正率や関心プロファイルに混ざるため(設計レビュー 2026-09-06 M2)。
+// 設定 retro.all_projects を true にすると全部数える。
+func sessionRoot(cfgRoot, baseDir string, allProjects, hasConfig bool) (dir, why string) {
+	if allProjects {
+		return "", ""
+	}
+	if cfgRoot == "" {
+		if !hasConfig {
+			return "", "" // hub を持たず -sessions だけで回すのは正当な使い方。黙って全部数える
+		}
+		return "", "設定に root が無いのでセッションを絞れない(root の外の会話も数える)"
+	}
+	return joinIfRelative(baseDir, filepath.FromSlash(cfgRoot)), ""
 }

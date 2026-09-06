@@ -39,6 +39,7 @@ braindex retro extract [-since YYYY-MM-DD | -window-days N] [-out DIR]          
 | キー | 意味 |
 |---|---|
 | `sessions_dir` | セッションログの置き場。既定 `~/.claude/projects`（`~` は展開する。相対パスは設定ファイルのディレクトリ基準） |
+| `all_projects` | `true` で `root` の外で交わしたセッションも数える。既定 `false`（`root` 配下だけ） |
 | `window_days` | `check` の窓（直近何日か）。既定 14 |
 | `threshold` | 訂正率の閾値（0〜1）。既定 0.08（試用後に見直す前提の暫定値） |
 | `baseline_weeks` | 窓の直前の何週を「ふだんの水準」として比べるか。既定 8。`0` で基準を使わず閾値だけにする |
@@ -47,6 +48,7 @@ braindex retro extract [-since YYYY-MM-DD | -window-days N] [-out DIR]          
 
 フラグ: 共通 `-config` `-sessions DIR`（設定より優先）`-date YYYY-MM-DD`（今日の固定）。`stats`／`extract` は `-since` か `-window-days`（同時は不可）。
 `check` は `-window-days`・`-threshold`（明示したものだけが設定を上書き）・`-quiet`（超えたときだけ出力。警告も出さない）。
+共通 `-all-projects`（設定 `retro.all_projects` と同じ。`news profile`・`news fetch`・`news suggest`・`learn` にもある）。
 終了コード: `stats`／`extract` は 0 成功／1 失敗／2 警告つき（読めないログを飛ばした）。`check` は 0 鳴らさない（閾値以下、または閾値超えだが基準と同水準）／1 失敗／2 鳴らさないが警告つき／3 鳴らす（閾値超えかつ基準からも上振れ。警告があっても 3）。
 
 組み込みの例。Claude Code の hook（`~/.claude/settings.json`）の `SessionStart` に置くと、超えたときだけ 1 行がセッションに入る（`|| true` は、hook が終了コード 0 のときだけ標準出力をセッションに入れるため）:
@@ -84,3 +86,15 @@ braindex retro extract [-since YYYY-MM-DD | -window-days N] [-out DIR]          
 3. 合っていれば `internal/sessions/version.go` の `MaxKnownVersion` を上げ、行末のコメントに確かめた日付と対象を書く
 4. `internal/sessions/testdata/projects/-work-repo-c/cccc0001.jsonl`（範囲外の版の fixture）の version が
    まだ範囲外であることを確かめる。範囲に入ってしまったら fixture の version を上げる
+
+## 数えるセッションの範囲
+
+既定では、**`root` の配下で交わしたセッションだけ**を数える（2026-09-06 変更）。`root` は `braindex.json` の `root`（索引の走査対象と同じ）。
+
+`~/.claude/projects` には、索引に載らないリポジトリでの会話も、OS のシステムディレクトリで動かしたときの会話も混ざっている。
+それを全部数えると、訂正率も関心プロファイルも「その人が braindex で扱っている範囲」の外の影響を受ける。
+
+- 範囲の外のセッションは数えず、除いた件数を 1 行の警告にまとめる（`<root> の外のセッション N 件を除いた`）
+- ログに作業ディレクトリが無いセッションも除く（置き場のディレクトリ名しか分からず、配下かどうか判定できないため）。件数は別の 1 行で伝える
+- 全部数えたいときは設定 `retro.all_projects` を `true` にするか、`-all-projects` を付ける
+- `braindex.json` に `root` が無いときは絞らない（絞りようがないので、その旨を警告に出す）。設定ファイルを使わず `-sessions` だけで回すときも絞らない
