@@ -387,19 +387,7 @@ func runRetroExtract(args []string, stdout, stderr io.Writer) int {
 	if err := os.Remove(filepath.Join(outDir, "index.tsv")); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fail(err)
 	}
-	for _, f := range res.Files {
-		p := filepath.Join(outDir, filepath.FromSlash(f.RelPath))
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			return fail(err)
-		}
-		if err := os.WriteFile(p, f.Content, 0o644); err != nil {
-			return fail(err)
-		}
-	}
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return fail(err)
-	}
-	if err := os.WriteFile(filepath.Join(outDir, "index.tsv"), res.Index, 0o644); err != nil {
+	if err := writeExtractOutput(outDir, res); err != nil {
 		return fail(err)
 	}
 	fmt.Fprintf(stdout, "braindex retro extract: %d セッション・発話 %d・訂正 %d → %s\n", res.Sessions, res.UserTurns, res.CorrectionTurns, outDir)
@@ -408,6 +396,23 @@ func runRetroExtract(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return 0
+}
+
+// writeExtractOutput はダイジェストの各ファイルと index.tsv を outDir に書く(置き場が無ければ作る)。
+func writeExtractOutput(outDir string, res retro.Result) error {
+	for _, f := range res.Files {
+		p := filepath.Join(outDir, filepath.FromSlash(f.RelPath))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(p, f.Content, 0o644); err != nil {
+			return err
+		}
+	}
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(outDir, "index.tsv"), res.Index, 0o644)
 }
 
 // retroWindow は -since / -window-days から窓と表示用の見出しを決める(-since > -window-days > 全期間)。
