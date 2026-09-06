@@ -22,8 +22,8 @@ func init() {
 // runDiagnose は braindex diagnose [-config] [-root] [-catalog] [-date] [-path <root 相対>] [-json] を実行する。
 // 索引の生成と同じ設定・同じ走査で「いま索引を作ったらどうなるか」を出し、保存済みの索引(既定: 設定ファイルと
 // 同じディレクトリの index/catalog.md)と突き合わせる。索引も元ノートも書き換えない。
-// 終了コード: 0 問題なし / 1 失敗(フラグ・設定・root の誤り。診断は出さない) / 2 要確認(読めなかった範囲・警告・
-// 索引の欠落や不一致がある。診断は出す)。
+// 終了コード: 0 問題なし / 1 失敗(フラグの誤り・設定ファイルを読めない・root 未指定。診断は出さない) / 2 要確認(読めなかった範囲・
+// 警告・索引の欠落や不一致がある。設定の値の誤りや root が読めず走査できないときも、読んだ設定と保存済みの索引を出して 2)。
 func runDiagnose(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("braindex diagnose", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -40,7 +40,7 @@ func runDiagnose(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "使い方: braindex diagnose [-config <設定>] [-root <ルート>] [-catalog <索引>] [-date YYYY-MM-DD] [-path <root 相対>] [-json]")
 		fmt.Fprintln(stderr, "  索引の生成と同じ設定で走査し、いま索引に載る件数・読めなかった範囲・警告と、保存済みの索引との差を示す。")
 		fmt.Fprintln(stderr, "  索引に行が無いことを「ノートが無い」と読む前に、対象・除外・確認不能を確かめるための道具。索引もノートも書き換えない。")
-		fmt.Fprintln(stderr, "  終了コード: 0 問題なし / 1 失敗 / 2 要確認(読めなかった範囲・警告・索引の欠落や不一致)")
+		fmt.Fprintln(stderr, "  終了コード: 0 問題なし / 1 失敗(フラグ・設定ファイル・root 未指定) / 2 要確認(読めなかった範囲・警告・索引の欠落や不一致。設定の値の誤りで走査できないときも診断は出す)")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
 		fs.PrintDefaults()

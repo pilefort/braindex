@@ -301,6 +301,58 @@ func TestBuild_存在しないextra(t *testing.T) {
 	}
 }
 
+// 設定の値の誤り(exclude のパターン・extra.repo の段数など)や root が読めないときは走査できないが、
+// 診断は出す: 読んだ設定と保存済みの索引を示し、走査の節に理由を置く。差は比べない(走査していない)。
+// 設定を診断する道具が設定の誤りで何も言わずに止まると、どこが誤りかを別の手段で探すことになる。
+func TestBuild_走査できない設定でも設定と索引は出す(t *testing.T) {
+	root, hub := makeRoot(t)
+	good := scan.Config{Root: root}
+	cat := saveCatalog(t, good, hub, "2026-09-01")
+	bad := scan.Config{Root: root, Extra: []scan.ExtraRule{{Repo: "alpha", Path: "docs", Kind: "x", Exclude: []string{"[a"}}}}
+	r := build(t, Input{ConfigFile: filepath.Join(hub, "braindex.json"), Cfg: bad, CatalogPath: cat, Date: "2026-09-06", Path: "alpha/docs/notes/a.md"})
+	if !strings.Contains(r.Scan.Failed, "exclude のパターンが不正") || r.Scan.Entries != 0 || len(r.Scan.Repos) != 0 {
+		t.Errorf("走査: %+v", r.Scan)
+	}
+	if len(r.Config.Extra) != 1 || r.Config.Extra[0].Status != "ok" || r.Config.Root != filepath.ToSlash(root) {
+		t.Errorf("設定: %+v", r.Config)
+	}
+	if r.Saved.Status != "ok" || r.Saved.Entries != 3 || r.Saved.Diff != nil {
+		t.Errorf("保存済み(差は比べない): %+v", r.Saved)
+	}
+	if len(r.Problems) != 1 || !strings.Contains(r.Problems[0], "走査できない: extra alpha/docs: exclude のパターンが不正") {
+		t.Errorf("要確認: %q", r.Problems)
+	}
+	if p := r.Path; p == nil || p.Covered || p.Scanned != "unknown" || p.Indexed != "yes" {
+		t.Errorf("パス: %+v", r.Path)
+	}
+	text := string(Render(r))
+	for _, want := range []string{
+		"- 要確認 1 件:\n  - 走査できない: extra alpha/docs: exclude のパターンが不正: \"[a\"（索引の生成も同じ理由で止まる。設定か root を直す）\n",
+		"- extra: 1 件\n  - alpha/docs（直下のみ・種別 x・除外 [a）: 起点あり・この起点の下で索引に載る 0 件\n",
+		"## いま走査すると\n- 走査していない: extra alpha/docs: exclude のパターンが不正: \"[a\"\n",
+		"- 状態: 生成 2026-09-01・3 件\n",
+		"- いまの走査との差: 比べていない（走査していない）\n",
+		"## パス alpha/docs/notes/a.md\n- いまの設定: 判定していない（走査できない設定）\n- いま走査すると: 走査していない\n- 保存済みの索引: 載っている（2026-08-01・a）\n",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("テキストに %q が無い:\n%s", want, text)
+		}
+	}
+	// 同じ材料なら同じ出力
+	if again := build(t, Input{ConfigFile: filepath.Join(hub, "braindex.json"), Cfg: bad, CatalogPath: cat, Date: "2026-09-06", Path: "alpha/docs/notes/a.md"}); !bytes.Equal(Render(again), Render(r)) {
+		t.Error("2 回の出力が違う")
+	}
+
+	// root が読めない(存在しない)ときも同じ形
+	r = build(t, Input{Cfg: scan.Config{Root: filepath.Join(root, "nowhere")}, CatalogPath: cat, Date: "2026-09-06"})
+	if !strings.Contains(r.Scan.Failed, "root を読めない") || len(r.Problems) != 1 || !strings.Contains(r.Problems[0], "走査できない: root を読めない") {
+		t.Errorf("root が無い: failed=%q problems=%q", r.Scan.Failed, r.Problems)
+	}
+	if r.Saved.Status != "ok" || r.Saved.Diff != nil {
+		t.Errorf("root が無くても保存済みの索引は読む(差は比べない): %+v", r.Saved)
+	}
+}
+
 // root 直下にリポが無ければ、索引に載るものが無いと言う。
 func TestBuild_空のroot(t *testing.T) {
 	root := t.TempDir()

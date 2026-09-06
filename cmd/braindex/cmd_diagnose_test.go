@@ -252,6 +252,61 @@ func TestDiagnose_JSONとテキストが一致(t *testing.T) {
 	}
 }
 
+// 設定の値の誤り(extra の exclude が不正など)では、索引の生成は 1 で止まるが diagnose は 2 で診断を出す:
+// 読んだ設定と保存済みの索引を示し、走査できない理由を要確認に置く。索引もノートも書き換えない。
+func TestDiagnose_設定の値の誤りは2で診断を出す(t *testing.T) {
+	root, cfgPath := diagnoseRoot(t)
+	generate(t, cfgPath)
+	catalog := filepath.Join(root, "hub", "index", "catalog.md")
+	before := readFile(t, catalog)
+	writeFile(t, cfgPath, `{"root": "..", "extra": [{"repo": "alpha", "path": "docs", "kind": "x", "exclude": ["[a"]}]}`)
+	// 索引の生成は同じ設定で 1
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"-config", cfgPath, "-date", "2026-09-06"}, &so, &se); code != 1 {
+		t.Fatalf("索引の生成: exit=%d want 1\n%s", code, se.String())
+	}
+	code, out, errOut := diagnoseRun(t, "-config", cfgPath, "-date", "2026-09-06")
+	if code != 2 {
+		t.Fatalf("exit=%d want 2\n%s%s", code, out, errOut)
+	}
+	for _, want := range []string{
+		"- 要確認 1 件:\n  - 走査できない: extra alpha/docs: exclude のパターンが不正: \"[a\"（索引の生成も同じ理由で止まる。設定か root を直す）\n",
+		"- 設定ファイル: " + filepath.ToSlash(cfgPath) + "\n",
+		"- extra: 1 件\n  - alpha/docs（直下のみ・種別 x・除外 [a）: 起点あり・この起点の下で索引に載る 0 件\n",
+		"## いま走査すると\n- 走査していない: extra alpha/docs: exclude のパターンが不正: \"[a\"\n",
+		"- 状態: 生成 2026-09-01・3 件\n",
+		"- いまの走査との差: 比べていない（走査していない）\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("テキストに %q が無い:\n%s", want, out)
+		}
+	}
+	if !strings.Contains(errOut, "要確認 1 件(終了コード 2)") {
+		t.Errorf("stderr: %s", errOut)
+	}
+	if readFile(t, catalog) != before {
+		t.Error("索引が書き換わった")
+	}
+	// -json も同じ値から出る
+	jcode, js, _ := diagnoseRun(t, "-config", cfgPath, "-date", "2026-09-06", "-json")
+	var got struct {
+		Scan struct {
+			Failed string `json:"failed"`
+		} `json:"scan"`
+		Saved struct {
+			Status string          `json:"status"`
+			Diff   json.RawMessage `json:"diff"`
+		} `json:"saved_index"`
+		Problems []string `json:"problems"`
+	}
+	if err := json.Unmarshal([]byte(js), &got); err != nil || jcode != 2 {
+		t.Fatalf("JSON: exit=%d err=%v\n%s", jcode, err, js)
+	}
+	if !strings.Contains(got.Scan.Failed, "exclude のパターンが不正") || got.Saved.Status != "ok" || got.Saved.Diff != nil || len(got.Problems) != 1 {
+		t.Errorf("JSON: %+v", got)
+	}
+}
+
 // 設定ファイルが無ければ -root が要る(索引の生成と同じ規則)。フラグの誤り・位置引数は 1。-h は 0。
 func TestDiagnose_BadArgs(t *testing.T) {
 	_, cfgPath := diagnoseRoot(t)

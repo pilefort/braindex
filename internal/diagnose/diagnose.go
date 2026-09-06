@@ -70,6 +70,7 @@ type ExtraInfo struct {
 
 // ScanInfo は「いま走査すると」の結果。
 type ScanInfo struct {
+	Failed   string     `json:"failed,omitempty"` // 走査できなかった理由(設定の値の誤り・root が読めない)。空なら走査した。索引の生成も同じ理由で止まる
 	Entries  int        `json:"entries"`
 	Repos    []RepoInfo `json:"repos"` // 走査と同じ規則で列挙したリポ(repo_depth 段目・ドット始まりを除く)。名前昇順。ノートが無いものも載る
 	Gaps     []GapInfo  `json:"gaps"`
@@ -148,30 +149,39 @@ type PathInfo struct {
 }
 
 // Build は診断を組み立てる。走査は索引の生成と同じ経路(catalog.Build)で行い、索引は読むだけ。
-// root が読めない・設定が不正なら error。
+//
+// 走査できない(設定の値の誤り・root が読めない)ときも error にせず、読んだ設定と保存済みの索引だけの診断を返す
+// (Scan.Failed に理由・Problems に「走査できない」)。設定を診断する道具が設定の誤りで何も言わずに止まると、
+// どこが誤りかを別の手段で探すことになる。索引の生成(braindex)は同じ設定で終了コード 1 のまま。
+// error になるのは診断日が無いときだけ。
 func Build(in Input) (Report, error) {
 	if in.Date == "" {
 		return Report{}, errors.New("診断日が空")
 	}
-	res, err := catalog.Build(in.Cfg, in.Date)
-	if err != nil {
-		return Report{}, err
-	}
 	rootAbs, err := filepath.Abs(in.Cfg.Root)
 	if err != nil {
-		return Report{}, err
+		rootAbs = in.Cfg.Root
 	}
 	notesDirs := effectiveNotesDirs(in.Cfg)
 	r := Report{Date: in.Date}
-	r.Config = ConfigInfo{
-		File:             absSlash(in.ConfigFile),
-		Root:             filepath.ToSlash(rootAbs),
-		NotesDirs:        notesDirs,
-		NotesDirsDefault: len(in.Cfg.NotesDirs) == 0,
-		Extra:            extraInfos(in.Cfg, rootAbs, res),
+	res, err := catalog.Build(in.Cfg, in.Date)
+	if err != nil {
+		r.Config = configInfo(in, rootAbs, notesDirs, catalog.Result{})
+		r.Scan = ScanInfo{Failed: err.Error(), Repos: []RepoInfo{}, Gaps: []GapInfo{}, Warnings: []string{}}
+		saved, savedEntries := savedInfo(in.CatalogPath, in.Cfg, nil)
+		r.Saved = saved
+		if in.Path != "" {
+			// 対象かどうかの判定(scan.Covers)は走査と同じ設定を前提にするので、走査できない設定では判定しない
+			p := PathInfo{Path: strings.Trim(filepath.ToSlash(in.Path), "/"), Rule: "走査できない設定なので判定していない", Scanned: "unknown"}
+			p.Indexed, p.Entry = indexedIn(saved, savedEntries, p.Path)
+			r.Path = &p
+		}
+		r.Problems = problems(r)
+		return r, nil
 	}
+	r.Config = configInfo(in, rootAbs, notesDirs, res)
 	r.Scan = scanInfo(in.Cfg, rootAbs, notesDirs, res)
-	saved, savedEntries := savedInfo(in.CatalogPath, in.Cfg, res)
+	saved, savedEntries := savedInfo(in.CatalogPath, in.Cfg, &res)
 	r.Saved = saved
 	if in.Path != "" {
 		p := pathInfo(in.Cfg, notesDirs, in.Path, res, saved, savedEntries)
@@ -179,6 +189,17 @@ func Build(in Input) (Report, error) {
 	}
 	r.Problems = problems(r)
 	return r, nil
+}
+
+// configInfo は解決済みの設定(情報源)を組み立てる。res は走査していなければ zero 値(extra の件数は 0 になる)。
+func configInfo(in Input, rootAbs string, notesDirs []string, res catalog.Result) ConfigInfo {
+	return ConfigInfo{
+		File:             absSlash(in.ConfigFile),
+		Root:             filepath.ToSlash(rootAbs),
+		NotesDirs:        notesDirs,
+		NotesDirsDefault: len(in.Cfg.NotesDirs) == 0,
+		Extra:            extraInfos(in.Cfg, rootAbs, res),
+	}
 }
 
 // JSON は Report を整形した JSON(末尾に改行)にする。
@@ -369,8 +390,8 @@ func scanInfo(cfg scan.Config, rootAbs string, notesDirs []string, res catalog.R
 }
 
 // savedInfo は保存済みの索引を読み、いまの走査と突き合わせる。索引は読むだけで書き換えない。
-// 読み戻した行も返す(問い合わせたパスの照合に使う。二度読みしない)。
-func savedInfo(catalogPath string, cfg scan.Config, res catalog.Result) (SavedInfo, []indexdata.Entry) {
+// 読み戻した行も返す(問い合わせたパスの照合に使う。二度読みしない)。res が nil なら走査していないので差は比べない(Diff は nil)。
+func savedInfo(catalogPath string, cfg scan.Config, res *catalog.Result) (SavedInfo, []indexdata.Entry) {
 	si := SavedInfo{File: absSlash(catalogPath), Gaps: []GapInfo{}}
 	b, err := os.ReadFile(catalogPath)
 	if err != nil {
@@ -406,9 +427,24 @@ func savedInfo(catalogPath string, cfg scan.Config, res catalog.Result) (SavedIn
 		si.Coverage = "gaps"
 	}
 	si.Gaps = gapInfos(cov.Gaps)
-	d := Compare(entries, res.Records, res.Coverage, cfg)
-	si.Diff = &d
+	if res != nil {
+		d := Compare(entries, res.Records, res.Coverage, cfg)
+		si.Diff = &d
+	}
 	return si, entries
+}
+
+// indexedIn は rel が保存済みの索引に載っているかを言う(yes / no / unknown(索引を読めない))。載っていれば行の説明も返す。
+func indexedIn(saved SavedInfo, savedEntries []indexdata.Entry, rel string) (indexed, entry string) {
+	if saved.Status != "ok" {
+		return "unknown", ""
+	}
+	for _, e := range savedEntries {
+		if e.Path == rel {
+			return "yes", describe(e)
+		}
+	}
+	return "no", ""
 }
 
 // generatedDate は索引の先頭「生成: YYYY-MM-DD / ...」行の日付を返す。無ければ ""。
@@ -494,17 +530,7 @@ func pathInfo(cfg scan.Config, notesDirs []string, rel string, res catalog.Resul
 			pi.Gap = gapPath(g)
 		}
 	}
-	pi.Indexed = "unknown"
-	if saved.Status == "ok" {
-		pi.Indexed = "no"
-		for _, e := range savedEntries {
-			if e.Path == rel {
-				pi.Indexed = "yes"
-				pi.Entry = describe(e)
-				break
-			}
-		}
-	}
+	pi.Indexed, pi.Entry = indexedIn(saved, savedEntries, rel)
 	return pi
 }
 
@@ -583,16 +609,22 @@ func hasArchiveSeg(rel string) bool {
 }
 
 // problems は要確認の理由を並べる(終了コード 2 の根拠)。順序は 走査 → 保存済みの索引。
+// 走査できなかったときは、その理由 1 件で走査の側を代表させる(件数 0・差なし は走査していない結果なので言わない)。
 func problems(r Report) []string {
 	p := []string{}
-	if r.Scan.Entries == 0 {
-		p = append(p, "いま走査しても索引に載るファイルが 1 件も無い（root・notes_dirs・extra を見直す）")
-	}
-	if n := len(r.Scan.Gaps); n > 0 {
-		p = append(p, fmt.Sprintf("いま走査すると読めなかった範囲が %d 件ある（その範囲のノートは索引に載らない。無いのか読めないのかは分からない）", n))
-	}
-	if n := len(r.Scan.Warnings); n > 0 {
-		p = append(p, fmt.Sprintf("走査の警告が %d 件ある（存在しない extra など。設定を見直す）", n))
+	switch {
+	case r.Scan.Failed != "":
+		p = append(p, "走査できない: "+r.Scan.Failed+"（索引の生成も同じ理由で止まる。設定か root を直す）")
+	default:
+		if r.Scan.Entries == 0 {
+			p = append(p, "いま走査しても索引に載るファイルが 1 件も無い（root・notes_dirs・extra を見直す）")
+		}
+		if n := len(r.Scan.Gaps); n > 0 {
+			p = append(p, fmt.Sprintf("いま走査すると読めなかった範囲が %d 件ある（その範囲のノートは索引に載らない。無いのか読めないのかは分からない）", n))
+		}
+		if n := len(r.Scan.Warnings); n > 0 {
+			p = append(p, fmt.Sprintf("走査の警告が %d 件ある（存在しない extra など。設定を見直す）", n))
+		}
 	}
 	switch r.Saved.Status {
 	case "missing":
