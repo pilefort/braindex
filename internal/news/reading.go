@@ -48,11 +48,13 @@ type Reading struct {
 
 var readingID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
+// deep(詳しく知りたい)と none(興味なし)は、概要を読んだあとの仕分けに使う(2026-09-07 追加)。
+// 古い保存物には無い値なので、読み込み側は既存の 4 つも通し続ける。
 func validReadingStatus(s string) bool {
-	return s == "later" || s == "done" || s == "hold" || s == "try"
+	return s == "later" || s == "done" || s == "hold" || s == "try" || s == "deep" || s == "none"
 }
 func validQuestionMode(s string) bool {
-	return s == "overview" || s == "stuck" || s == "relate" || s == "try"
+	return s == "overview" || s == "stuck" || s == "relate" || s == "try" || s == "detail"
 }
 
 var questionInstructions = map[string]string{
@@ -60,6 +62,7 @@ var questionInstructions = map[string]string{
 	"stuck":    "原文や解説を読んでも分かりませんでした。前提を補い、身近な例や図を使って順に説明してください。",
 	"relate":   "自分にどう関係するかを知りたいです。用途を決めつけず、必要なら尋ねてください。",
 	"try":      "小さく試すための前提と最初の一歩を整理してください。実行や環境変更は相談してからにしてください。",
+	"detail":   "概要は読みました。仕組み・数字・前提と限界まで踏み込んで詳しく説明してください。",
 }
 
 func LoadReading(dir string) (Reading, error) {

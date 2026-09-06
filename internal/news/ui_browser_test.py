@@ -93,7 +93,22 @@ with sync_playwright() as p:
     assert "news reading -id article-1 -question" in batch, batch
     expect(page.locator("#askOne")).to_be_hidden()
     page.keyboard.press("Escape")
-    print("batch overview checks passed", flush=True)
+    # 概要を読んだあと「詳しく知りたい」にした記事だけを、まとめて頼める。
+    expect(page.locator("#deepExplain")).to_be_disabled()
+    page.locator('[data-view="keep"]').click()
+    # 仕分けの残りが見える（article-3 を入れた直後は「あとで読む」のまま。article-1 は前段で「試したい」にした）。
+    expect(page.locator("#visibleCount")).to_contain_text("まだ仕分けていない 1 件")
+    page.locator('[data-id="article-3"] .reading-status').select_option("deep")
+    expect(page.locator("#visibleCount")).to_contain_text("まだ仕分けていない 0 件")
+    expect(page.locator("#nDeep")).to_have_text("1")
+    page.locator("#deepExplain").click()
+    deep = page.locator("#requestText").input_value()
+    assert "1 件ずつ詳しく解説してください" in deep, deep
+    assert "回答は記事ごとに 1 枚の HTML" in deep, deep
+    assert "news reading -id article-3 -question" in deep, deep
+    assert "article-1" not in deep, deep
+    page.keyboard.press("Escape")
+    print("batch overview and deep checks passed", flush=True)
     page.set_viewport_size({"width": 390, "height": 844})
     page.screenshot(path=str(root / "mobile.png"), full_page=True)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
