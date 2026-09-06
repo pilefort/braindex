@@ -135,7 +135,7 @@ func printNextSteps(w io.Writer, feats []template.Feature) {
 		fmt.Fprintln(w, "  定期実行は `braindex schedule print` で中身を見てから `braindex schedule install`")
 	}
 	if has[template.FeatureConventions] || has[template.FeatureReview] || has[template.FeatureRetro] {
-		fmt.Fprintln(w, "  日本語の推敲スキル(例: ja-tensaku)は同梱しない。要れば自分の .claude/skills/ に置く")
+		fmt.Fprintln(w, "  日本語の推敲スキルは同梱しない。要れば自分の .claude/skills/ に置く")
 	}
 	if !has[template.FeatureConventions] {
 		fmt.Fprintln(w, "  ノートの規約(docs/・work/)と週次レビューを使うなら `braindex init -add conventions` / `-add review`(一覧は `braindex init -list`)")

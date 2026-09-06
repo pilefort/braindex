@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>索引の設計</title>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--ink:#1c2230;--sub:#5a6472;--mut:#8a93a3;--line:#e5e8ee;--line2:#eef1f5;
+  --accent:#1c7ed6;--accent-soft:#e7f1fb;--code:#f0f2f6;
+  --jp:"Hiragino Kaku Gothic ProN","Yu Gothic Medium","Yu Gothic",Meiryo,"Noto Sans JP",system-ui,sans-serif}
+:root[data-theme="dark"]{--bg:#12151b;--panel:#1a1e26;--ink:#e8ebf1;--sub:#a6afbe;--mut:#727c8c;
+  --line:#2a2f3a;--line2:#232833;--accent:#4dabf7;--accent-soft:#16283b;--code:#232833}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--jp);line-height:1.85;font-feature-settings:"palt" 1;
+  -webkit-font-smoothing:antialiased}
+.doc{max-width:820px;margin:0 auto;padding:44px 28px 140px}
+.doc h1{font-size:26px;margin:.1em 0 .7em;line-height:1.4}
+.doc h2{font-size:20px;margin:1.7em 0 .5em;padding-bottom:.25em;border-bottom:1px solid var(--line)}
+.doc h3{font-size:16.5px;margin:1.3em 0 .4em}
+.doc h4{font-size:14.5px;margin:1em 0 .3em;color:var(--sub)}
+.doc p{margin:.7em 0}
+.doc a{color:var(--accent);word-break:break-all}
+.doc strong{font-weight:800}
+.doc code{background:var(--code);padding:.12em .4em;border-radius:5px;font-size:.9em;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.doc pre{background:var(--code);padding:14px 16px;border-radius:10px;overflow:auto;border:1px solid var(--line)}
+.doc pre code{background:none;padding:0}
+.doc ul,.doc ol{padding-left:1.4em;margin:.5em 0}.doc li{margin:.3em 0}
+.doc hr{border:none;border-top:1px solid var(--line);margin:1.6em 0}
+.doc blockquote{margin:.9em 0;padding:.5em 1em;border-left:3px solid var(--accent);background:var(--accent-soft);
+  border-radius:0 8px 8px 0;color:var(--sub)}
+.doc table{border-collapse:collapse;width:100%;margin:1em 0;font-size:13.5px}
+.doc th,.doc td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top;overflow-wrap:anywhere}
+.doc td code,.doc th code{word-break:break-all}
+.doc th{background:var(--line2);font-weight:700;white-space:nowrap}
+.doc tr:nth-child(even) td{background:var(--line2)}
+.doc li.task{list-style:none;margin-left:-1.4em}
+.doc li.task input{margin-right:.55em;width:15px;height:15px;vertical-align:-2px;cursor:pointer;
+  accent-color:var(--accent)}
+.doc li.task.done{color:var(--mut);text-decoration:line-through}
+.tgl{position:fixed;top:14px;right:16px;border:1px solid var(--line);background:var(--panel);color:var(--sub);
+  border-radius:9px;padding:7px 11px;cursor:pointer;font:inherit;font-size:13px}
+.thr-bar{display:flex;gap:8px;justify-content:flex-end;margin:0 0 16px}
+.thr-b{border:1px solid var(--line);background:var(--panel);color:var(--sub);border-radius:8px;
+  padding:5px 10px;cursor:pointer;font:inherit;font-size:12.5px}
+.thr-b[aria-pressed="false"]{opacity:.55;text-decoration:line-through}
+.ent{border:1px solid var(--line);border-radius:12px;background:var(--panel);margin:0 0 14px}
+.ent>summary{list-style:none;cursor:pointer;padding:12px 16px;display:flex;flex-wrap:wrap;
+  align-items:baseline;gap:10px;border-radius:12px}
+.ent>summary::-webkit-details-marker{display:none}
+.ent>summary:hover{background:var(--line2)}
+.ent[open]>summary{border-bottom:1px solid var(--line2);border-radius:12px 12px 0 0}
+.ent-w{color:var(--mut);font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ent-q{font-weight:800;flex:1 1 12em;overflow-wrap:anywhere}
+.ent-n{background:var(--accent);color:#fff;border-radius:999px;padding:1px 9px;font-size:11px;white-space:nowrap}
+.ent-b{padding:2px 16px 10px}
+.ent-b>:first-child{margin-top:.6em}
+.ent-b h2{font-size:17px}
+</style>
+</head>
+<body>
+<main class="doc"><h1>索引の設計</h1>
+<div class="thr-bar"><button class="thr-b" id="thr-open">全部開く</button><button class="thr-b" id="thr-close">全部畳む</button><button class="thr-b" id="thr-auto">自動更新</button></div>
+<details class="ent" id="e-20260906T032000" open>
+<summary><span class="ent-w">2026-09-06 03:20</span><span class="ent-q">走査の順番は決まってる？</span><span class="ent-n">新着</span></summary>
+<div class="ent-b"><p>名前順です。</p>
+<h2>内訳</h2>
+<ul><li>置き場ごとに名前順</li></ul></div>
+</details>
+<details class="ent" id="e-20260905T200000" open>
+<summary><span class="ent-w">2026-09-05 20:00</span><span class="ent-q">索引って何を見てる？</span><span class="ent-n">新着</span></summary>
+<div class="ent-b"><p>ノートの見出しです。</p></div>
+</details>
+</main>
+<button id="t" class="tgl">◐ 表示</button>
+<script>(function(){var t=document.getElementById('t');function ap(v){if(v==='dark')document.documentElement.setAttribute('data-theme','dark');else document.documentElement.removeAttribute('data-theme');}try{var s=localStorage.getItem('ans-theme');if(s)ap(s);else if(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)ap('dark');}catch(e){}if(t)t.addEventListener('click',function(){var d=document.documentElement.getAttribute('data-theme')==='dark';ap(d?'light':'dark');try{localStorage.setItem('ans-theme',d?'light':'dark');}catch(e){}});})();(function(){var seen={};var cbs=document.querySelectorAll('li.task>input[type=checkbox]');for(var i=0;i<cbs.length;i++){(function(cb){var li=cb.parentElement;var ent=li.closest?li.closest('details.ent'):null;var sc=ent?ent.id+':':'';var txt=(li.textContent||'').replace(/\s+/g,' ').trim().slice(0,120);var n=seen[sc+txt]=(seen[sc+txt]||0)+1;var key='ans-task:'+document.title+':'+sc+txt+(n>1?'#'+n:'');function sync(){li.classList.toggle('done',cb.checked);}try{var s=localStorage.getItem(key);if(s!==null)cb.checked=(s==='1');}catch(e){}sync();cb.addEventListener('change',function(){sync();try{localStorage.setItem(key,cb.checked?'1':'0');}catch(e){}});})(cbs[i]);}})();
+(function(){
+var es=document.querySelectorAll('details.ent');
+if(!es.length)return;
+var ns=(location.pathname.split('/').pop()||'thread');
+function get(id){try{return localStorage.getItem('ans-open:'+ns+':'+id);}catch(e){return null;}}
+function put(id,v){try{localStorage.setItem('ans-open:'+ns+':'+id,v?'1':'0');}catch(e){}}
+function unbadge(d){var n=d.querySelector('.ent-n');if(n)n.parentNode.removeChild(n);}
+function mark(d){put(d.id,d.open);unbadge(d);}
+for(var i=0;i<es.length;i++){(function(d){
+var s=get(d.id);
+if(s!==null){d.open=(s==='1');unbadge(d);}
+var sm=d.querySelector('summary');
+if(sm)sm.addEventListener('click',function(){setTimeout(function(){mark(d);},0);});
+})(es[i]);}
+var o=document.getElementById('thr-open'),c=document.getElementById('thr-close');
+function all(v){for(var i=0;i<es.length;i++){es[i].open=v;mark(es[i]);}}
+if(o)o.addEventListener('click',function(){all(true);});
+if(c)c.addEventListener('click',function(){all(false);});
+})();
+(function(){
+var b=document.getElementById('thr-auto');
+if(!b)return;
+var ns=(location.pathname.split('/').pop()||'thread'),ak='ans-auto:'+ns,sk='ans-scroll:'+ns;
+var on=true;try{if(localStorage.getItem(ak)==='0')on=false;}catch(e){}
+function draw(){b.setAttribute('aria-pressed',on?'true':'false');
+b.title=on?'12 秒ごとに読み直す':'自動更新は止めてある';}
+draw();
+b.addEventListener('click',function(){on=!on;try{localStorage.setItem(ak,on?'1':'0');}catch(e){}draw();});
+if('scrollRestoration' in history)history.scrollRestoration='manual';
+try{var y=sessionStorage.getItem(sk);if(y)window.scrollTo(0,parseInt(y,10)||0);}catch(e){}
+addEventListener('scroll',function(){try{sessionStorage.setItem(sk,String(window.pageYOffset));}catch(e){}});
+setInterval(function(){
+if(!on||document.hidden)return;
+var s=window.getSelection&&window.getSelection().toString();
+if(s&&s.trim())return;
+location.reload();
+},12000);
+})();</script>
+</body>
+</html>
