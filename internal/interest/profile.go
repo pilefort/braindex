@@ -121,7 +121,8 @@ func Build(in Input) (Profile, error) {
 	for _, s := range in.Sessions {
 		var sb strings.Builder
 		for _, t := range s.Turns {
-			if t.Time.IsZero() || t.Time.Before(in.Since) || !t.Time.Before(in.Until) {
+			// 定型(機械が流し込んだ指示)は関心の材料にしない(設計レビュー 2026-09-06 M11)
+			if t.Boilerplate || t.Time.IsZero() || t.Time.Before(in.Since) || !t.Time.Before(in.Until) {
 				continue
 			}
 			sb.WriteString(t.Text)

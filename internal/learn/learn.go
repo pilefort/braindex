@@ -25,13 +25,6 @@ type Options struct {
 	Top                 int     // 各節の件数(0 で全件)
 }
 
-// boilerplatePrefixRunes は定型の判定に使う冒頭の長さ(文字)。空白は 1 つに畳んでから切る。
-const boilerplatePrefixRunes = 120
-
-// boilerplateMinRunes より短い発話は定型の判定にかけない。「違う」「そうじゃない」のような短い同文の訂正は、
-// 何セッションで言われても定型(機械実行・貼り付け)ではなく、むしろ検出したい訂正そのものだから。
-const boilerplateMinRunes = 40
-
 func (o Options) withDefaults() Options {
 	if o.MinSessions <= 0 {
 		o.MinSessions = 3
@@ -144,23 +137,10 @@ func Build(in Input) Report {
 		corrections int
 		sessions    map[string]bool
 	}
-	// 定型の検出: 同じ冒頭の発話が何セッションに現れるか(窓の中だけ)
-	prefixSessions := map[string]map[string]bool{}
-	for _, s := range in.Sessions {
-		for _, t := range s.HumanTurns() {
-			if !in.Window.Contains(t.Time) {
-				continue
-			}
-			k, ok := prefix(t.Text)
-			if !ok {
-				continue
-			}
-			if prefixSessions[k] == nil {
-				prefixSessions[k] = map[string]bool{}
-			}
-			prefixSessions[k][s.ID] = true
-		}
-	}
+	// 定型(機械が流し込んだ指示)の印を付ける。判定は読み取り層と共有する——別々に持つと、
+	// 同じログから retro と learn で違う数が出る(設計レビュー 2026-09-06 M11)。
+	// 印は冪等なので、読み取り時に付いていても付け直してよい
+	sessions.MarkBoilerplate(in.Sessions, o.BoilerplateSessions)
 	// 1 パス目: 窓の中の訂正発話が当てた語を全部 exclude に集める。
 	// 数えながら足すと、後のセッションで足された語が前のセッションでは効かず、
 	// セッションの並び順で出力が変わる(設計レビュー 2026-09-06 M3c)。
@@ -173,7 +153,7 @@ func Build(in Input) Report {
 			if len(ms) == 0 {
 				continue
 			}
-			if k, ok := prefix(t.Text); ok && len(prefixSessions[k]) >= o.BoilerplateSessions {
+			if t.Boilerplate {
 				continue // 定型は数えないので、除外語も取らない
 			}
 			for _, m := range ms {
@@ -193,7 +173,7 @@ func Build(in Input) Report {
 			if !in.Window.Contains(t.Time) || len(retro.Classify(t.Text, dicts...)) == 0 {
 				continue
 			}
-			if k, ok := prefix(t.Text); ok && len(prefixSessions[k]) >= o.BoilerplateSessions {
+			if t.Boilerplate {
 				boiler++
 				continue
 			}
@@ -233,20 +213,6 @@ func Build(in Input) Report {
 	r.Stumbles = top(r.Stumbles, o.Top)
 	r.ReadNotWritten = top(r.ReadNotWritten, o.Top)
 	return r
-}
-
-// prefix は定型の判定に使う鍵。空白を 1 つに畳み、先頭 boilerplatePrefixRunes 文字で切る。
-// boilerplateMinRunes より短い発話は判定にかけない(ok=false)。
-func prefix(text string) (string, bool) {
-	t := strings.Join(strings.Fields(text), " ")
-	rs := []rune(t)
-	if len(rs) < boilerplateMinRunes {
-		return "", false
-	}
-	if len(rs) > boilerplatePrefixRunes {
-		rs = rs[:boilerplatePrefixRunes]
-	}
-	return string(rs), true
 }
 
 func sortItems(xs []Item, key func(Item) int) {

@@ -120,6 +120,10 @@ func (c ClaudeCLI) Annotate(ctx context.Context, prompt string) (string, error) 
 	return string(out), nil
 }
 
+// NewsPromptMark は news の LLM 補助が claude に渡すプロンプトの 1 行目。
+// 相手側のセッションログに人間の発話として残るので、braindex 自身の呼び出しだと分かる印を置く。
+const NewsPromptMark = "[braindex-news]"
+
 // claudeArgs は claude CLI のヘッドレス起動の引数。--tools "" でツールを全部禁止する。
 // プロンプトに載るフィードの見出し・概要は他人が書いた本文で、そこに埋めた指示で Claude にファイルや URL を
 // 触らせないため(設計レビュー 2026-09-06 H3)。採点と翻訳に道具は要らない。
@@ -272,6 +276,10 @@ func BuildAnnotationPrompt(batch []annotationItem, terms, examples []string) str
 	}
 	items, _ := json.Marshal(batch) // 文字列と構造体だけなので失敗しない
 	var sb strings.Builder
+	// 先頭の印は braindex 自身の呼び出しの目印。claude -p のプロンプトは相手側のログに人間の発話として
+	// 残るので、印が無いと braindex が自分で作った発話を訂正率や関心プロファイルに数えてしまう
+	// (sessions.ExcludeReason が "[braindex-" で始まる発話を除く。設計レビュー 2026-09-06 M11)
+	sb.WriteString(NewsPromptMark + "\n")
 	sb.WriteString("あなたは個人向けニュースダイジェストの選別係。各項目に関心度 r を 0〜3 の整数で付けよ。\n")
 	sb.WriteString("3=確実に読む(関心の中心・一次情報・技術的に深い) / 2=読む価値あり / 1=薄い(関心の周辺・二番煎じ・中身の無い体験談) / 0=無関係・宣伝・資金調達・人事・相場。\n")
 	sb.WriteString("基準は下の「関心プロファイル」と「最近『残す』にした見出しの例」。迷ったら例に似ているかで決めよ。\n")
