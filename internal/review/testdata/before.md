@@ -23,7 +23,7 @@
 | 2026-07-11 | notes/project | 消えたノート | 結論: 前回はあったが今回の走査には無い。 | repo-both/docs/notes/project/gone.md |
 | 2026-07-10 | notes/common | 共通知見A | 結論: 旧い要旨。 | repo-both/docs/notes/common/a.md |
 | 2026-07-05 | notes/old | 表だけノートF | 見出し1 / 見出し2 | repo-both/docs/notes/misc/20260705_table.md |
-| 2026-07-01 | decisions | 設計判断 | 決定2 / 決定3 / 決定4 | repo-both/docs/decisions.md |
+| 2026-07-04 | decisions | 設計判断（4 件） | 決定4 | repo-both/docs/decisions.md |
 
 ## repo-common
 | 日付 | 種別 | タイトル | 要旨 | パス |
@@ -33,7 +33,7 @@
 ## repo-dec
 | 日付 | 種別 | タイトル | 要旨 | パス |
 |---|---|---|---|---|
-| 2026-07-15 | decisions | 決定のみ | A決定 / B決定 | repo-dec/docs/decisions.md |
+| 2026-07-16 | decisions | 決定のみ（3 件） | C決定（古い決定を後から書き足した） | repo-dec/docs/decisions.md |
 
 ## repo-proj
 | 日付 | 種別 | タイトル | 要旨 | パス |
