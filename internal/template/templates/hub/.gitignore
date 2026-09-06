@@ -3,3 +3,4 @@ news/.*.json
 news/.ingested/
 news/inbox/
 news/digest_*
+news/reading.html

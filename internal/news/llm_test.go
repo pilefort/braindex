@@ -195,7 +195,7 @@ func TestDigest_翻訳とLLMの点(t *testing.T) {
 		t.Errorf("md:\n%s", md)
 	}
 	h := string(RenderHTML(rs, o))
-	if !strings.Contains(h, "訳: 見出し一") || !strings.Contains(h, "LLM") {
+	if !strings.Contains(h, `<h3 class="article-title">見出し一</h3>`) || !strings.Contains(h, "LLM") {
 		t.Errorf("html に訳か LLM の印が無い")
 	}
 }
