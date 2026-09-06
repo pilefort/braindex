@@ -22,6 +22,7 @@ import (
 
 	"github.com/pilefort/braindex/internal/catalog"
 	"github.com/pilefort/braindex/internal/config"
+	"github.com/pilefort/braindex/internal/fsutil"
 	"github.com/pilefort/braindex/internal/scan"
 )
 
@@ -115,7 +116,7 @@ func run(o options, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "braindex:", err)
 		return 1
 	}
-	if err := os.WriteFile(outPath, res.Catalog, 0o644); err != nil {
+	if err := fsutil.WriteAtomic(outPath, res.Catalog, 0o644); err != nil {
 		fmt.Fprintln(stderr, "braindex:", err)
 		return 1
 	}

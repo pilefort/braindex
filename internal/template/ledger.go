@@ -9,6 +9,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/pilefort/braindex/internal/fsutil"
 )
 
 // 台帳は「配った版のハッシュ」を持つ。update はこれと現物を突き合わせて、利用者がそのファイルを
@@ -77,5 +79,5 @@ func SaveLedger(dst string, l Ledger) error {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(p, b, 0o644)
+	return fsutil.WriteAtomic(p, b, 0o644)
 }
