@@ -107,9 +107,17 @@ func Build(in Input) (Result, error) {
 	// 前回の索引
 	before, source, prevTime, ws := previousCatalog(gp, in.HubDir, in.CatalogRel, in.Since)
 	res.Warnings = append(res.Warnings, ws...)
-	diff, err := DiffIndex(before, built.Catalog)
-	if err != nil {
-		return res, err
+	// 前回の索引が読めなくても下書きは出す。読めない理由は前回の版が違う・手で壊した等で、
+	// 増減が出せないだけで差分ファイル・放置 TODO・アーカイブ候補は作れる
+	// (設計レビュー 2026-09-06 M3c)。今回の索引が読めないのはこちらのバグなので止める。
+	var diff IndexDiff
+	indexUnavailable := ""
+	beforeEntries, perr := ParseCatalog(before)
+	if perr != nil {
+		indexUnavailable = perr.Error()
+		warn("前回の索引を読めなかった(%v)。増減は出さない", perr)
+	} else {
+		diff = diffEntries(beforeEntries, afterEntries)
 	}
 
 	// 差分ファイル(索引に載ったリポだけ)。
@@ -161,7 +169,11 @@ func Build(in Input) (Result, error) {
 	fmt.Fprintf(&b, "前回: %s（%s）\n", in.Since, in.SinceNote)
 	b.WriteString("この下書きは `braindex review` が作った。機械節（索引・差分ファイル・放置 TODO・アーカイブ候補）は埋まっている。")
 	b.WriteString("残りの節は差分ファイルの実物を読んで埋め、`braindex` で索引を再生成してから、索引と一緒にコミットする。\n\n")
-	WriteIndexSection(&b, diff, source)
+	if indexUnavailable != "" {
+		WriteIndexUnavailable(&b, indexUnavailable, source)
+	} else {
+		WriteIndexSection(&b, diff, source)
+	}
 	b.WriteString("\n")
 	WriteChangesSection(&b, ch)
 	b.WriteString("\n")

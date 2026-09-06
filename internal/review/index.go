@@ -155,3 +155,10 @@ func describe(e render.Entry) string {
 	}
 	return e.Date + "・" + e.Title
 }
+
+// WriteIndexUnavailable は前回の索引を読めなかったときの索引の節。増減の代わりに理由を 1 行書く。
+// 数を 0 件として出すと「前回 0 件 → 今回 N 件（追加 N）」になり、全件が新しくなったように読める。
+func WriteIndexUnavailable(b *strings.Builder, reason, source string) {
+	b.WriteString("## 索引（件数と増減）\n\n")
+	fmt.Fprintf(b, "前回の索引を読めなかった（%s）。増減は出さない。前回の索引: %s\n", reason, source)
+}
