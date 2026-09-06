@@ -12,6 +12,7 @@ type Settings struct {
 	WindowDays      int     `json:"window_days"`      // 直近何日を窓にするか(check の既定)。既定 14
 	Threshold       float64 `json:"threshold"`        // 訂正率の閾値(0〜1)。既定 0.08
 	BaselineWeeks   *int    `json:"baseline_weeks"`   // 窓の直前の何週を基準期間にするか。既定 8。0 で基準を使わない(閾値だけ)
+	AllProjects     bool    `json:"all_projects"`     // true なら root の外のセッションも数える。既定 false(root 配下だけ)
 	PositionBins    string  `json:"position_bins"`    // セッション内位置の区間。既定 "1-3,4-10,11-30,31-"
 	Dictionary      string  `json:"dictionary"`       // 訂正辞書のファイル。埋め込みの既定辞書の代わりに使う。空なら既定辞書
 	DictionaryExtra string  `json:"dictionary_extra"` // 追加の辞書ファイル。既定辞書(か dictionary)に足す

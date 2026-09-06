@@ -202,3 +202,52 @@ func TestRetroCheck_基準を使わない設定(t *testing.T) {
 		t.Errorf("基準なし:\n want=%q\n  got=%q", want, so)
 	}
 }
+
+// 鳴らしたのに窓の中に所見ノートが無ければ 1 行の末尾に添える。状態ファイルは持たず、
+// ノートの有無そのものを見る(設計レビュー 2026-09-06 M7)。
+func TestRetroCheck_所見ノートが無ければ添える(t *testing.T) {
+	fixUTC(t)
+	sessionsDir := t.TempDir()
+	writeSessionLog(t, sessionsDir, "recent01", time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC), 100, 20)
+	hub := t.TempDir()
+	writeFile(t, filepath.Join(hub, "braindex.json"),
+		`{"root": "..", "retro": {"sessions_dir": `+jsonString(sessionsDir)+`, "all_projects": true}}`)
+	cfg := filepath.Join(hub, "braindex.json")
+	// docs/notes/ がある hub(規約を取り込んである側)でだけ所見ノートを確かめる。
+	// 置き場ごと無い hub は docs/notes の規約を採っていないので、無いことを言わない
+	writeFile(t, filepath.Join(hub, "docs", "notes", ".gitkeep"), "")
+
+	code, so, se := execRetroCheck(t, "-config", cfg, "-date", "2026-09-01")
+	if code != 3 {
+		t.Fatalf("exit=%d want 3\nstdout=%s\nstderr=%s", code, so, se)
+	}
+	if !strings.Contains(so, "所見ノート docs/notes/retro-YYYY-MM-DD.md が窓の中に無い") {
+		t.Errorf("所見ノートが無いと言っていない: %q", so)
+	}
+
+	// 窓の外(14 日より前)のノートでは足りない
+	writeFile(t, filepath.Join(hub, "docs", "notes", "retro-2026-08-01.md"), "# 振り返り 2026-08-01\n")
+	_, so, _ = execRetroCheck(t, "-config", cfg, "-date", "2026-09-01")
+	if !strings.Contains(so, "窓の中に無い") {
+		t.Errorf("窓の外のノートを数えている: %q", so)
+	}
+
+	// 窓の中(2026-08-18 以降)のノートがあれば添えない。サブディレクトリでもよい
+	writeFile(t, filepath.Join(hub, "docs", "notes", "project", "retro-2026-08-28.md"), "# 振り返り 2026-08-28\n")
+	code, so, _ = execRetroCheck(t, "-config", cfg, "-date", "2026-09-01")
+	if code != 3 {
+		t.Fatalf("exit=%d want 3", code)
+	}
+	if strings.Contains(so, "窓の中に無い") {
+		t.Errorf("窓の中のノートを見ていない: %q", so)
+	}
+
+	// docs/notes/ ごと無い hub には言わない(規約を採っていない)
+	bare := t.TempDir()
+	writeFile(t, filepath.Join(bare, "braindex.json"),
+		`{"root": "..", "retro": {"sessions_dir": `+jsonString(sessionsDir)+`, "all_projects": true}}`)
+	_, so, _ = execRetroCheck(t, "-config", filepath.Join(bare, "braindex.json"), "-date", "2026-09-01")
+	if strings.Contains(so, "窓の中に無い") {
+		t.Errorf("置き場ごと無い hub に言っている: %q", so)
+	}
+}

@@ -25,13 +25,13 @@ var stopwordList = []string{
 	"add", "added", "adds", "remove", "removed", "change", "changed", "changes", "version", "versions", "release",
 	// コマンド・ツール・ファイル形式(セッションログの雑音)
 	"bash", "powershell", "cmd", "git", "github", "commit", "commits", "push", "pull", "merge", "branch", "rebase", "diff",
-	"grep", "sed", "awk", "cat", "ls", "cd", "mkdir", "rm", "echo", "python", "pip", "npm", "node", "go", "run", "build",
-	"claude", "code", "tool", "tools", "agent", "agents", "read", "write", "edit", "glob", "search", "file", "files",
+	"grep", "sed", "awk", "cat", "ls", "cd", "mkdir", "rm", "echo", "python", "pip", "npm", "node", "run", "build",
+	"tool", "tools", "agents", "read", "write", "edit", "glob", "file", "files",
 	"dir", "path", "paths", "md", "json", "jsonl", "yaml", "yml", "txt", "csv", "tsv", "html", "css", "xml", "png", "jpg",
 	"http", "https", "www", "com", "org", "net", "url", "urls", "localhost", "true", "false", "null", "nil", "none",
 	"string", "int", "bool", "func", "var", "const", "type", "return", "import", "package", "main", "err", "error",
 	"errors", "args", "arg", "flag", "flags", "config", "settings", "setting", "default", "defaults", "stdout", "stderr",
-	"src", "lib", "bin", "tmp", "temp", "home", "user", "users", "root", "work", "docs", "index", "output", "input",
+	"src", "lib", "bin", "tmp", "temp", "home", "user", "users", "root", "work", "docs", "output", "input",
 	// 日本語の一般語(漢字・カタカナ)。セッションと索引に頻出で関心を表さないもの
 	"場合", "必要", "確認", "実行", "追加", "設定", "修正", "変更", "対応", "作成", "以下", "以上", "可能", "問題", "方法",
 	"内容", "結果", "現在", "今回", "前回", "全部", "自分", "理由", "時間", "記録", "決定", "判断", "作業", "実装", "完了",

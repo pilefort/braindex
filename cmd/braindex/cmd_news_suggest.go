@@ -16,12 +16,13 @@ import (
 
 // newsSuggestOptions は braindex news suggest のコマンドライン。空・0 は「未指定」。
 type newsSuggestOptions struct {
-	config   string // -config。hub の位置を兼ねるので必須
-	date     string // -date。今日の固定(既定: 実行日)
-	days     int    // -days。直近の日数(既定: 設定 news.profile_days → 14)
-	sessions string // -sessions。セッションログの置き場(news profile と同じ既定)
-	top      int    // -top。出す候補数(既定 10。0 で全件)
-	json     bool   // -json
+	config      string // -config。hub の位置を兼ねるので必須
+	date        string // -date。今日の固定(既定: 実行日)
+	days        int    // -days。直近の日数(既定: 設定 news.profile_days → 14)
+	sessions    string // -sessions。セッションログの置き場(news profile と同じ既定)
+	allProjects bool   // -all-projects。root の外のセッションも数える
+	top         int    // -top。出す候補数(既定 10。0 で全件)
+	json        bool   // -json
 }
 
 // runNewsSuggest は braindex news suggest を実行する。
@@ -37,6 +38,7 @@ func runNewsSuggest(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.date, "date", "", "今日として使う日付 YYYY-MM-DD(既定: 実行日)。窓の基準")
 	fs.IntVar(&o.days, "days", 0, "直近何日の索引とセッションを見るか(既定: 設定 news.profile_days → 14)")
 	fs.StringVar(&o.sessions, "sessions", "", "セッションログの置き場(既定: news profile と同じ)")
+	fs.BoolVar(&o.allProjects, "all-projects", false, "root の外で交わしたセッションも数える(既定: root 配下だけ。設定 retro.all_projects と同じ)")
 	fs.IntVar(&o.top, "top", 10, "出す候補数(0 で全件)")
 	fs.BoolVar(&o.json, "json", false, "JSON で出す")
 	fs.Usage = func() {
@@ -86,7 +88,7 @@ func runNewsSuggest(args []string, stdout, stderr io.Writer) int {
 		return fail(fmt.Errorf("-date は YYYY-MM-DD で指定する: %q", today))
 	}
 	hubDir := filepath.Dir(cfgPath)
-	p, warnings, err := loadProfile(fc, hubDir, today, o.days, o.sessions)
+	p, warnings, err := loadProfile(fc, hubDir, today, o.days, o.sessions, o.allProjects)
 	if err != nil {
 		return fail(err)
 	}

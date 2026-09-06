@@ -2,7 +2,7 @@
 // 人間の発話とアシスタント本文を時系列に並べる。レトロスペクティブ(retro)とニュースサジェスト(news)が
 // 共有する入力層。
 //
-// 本文は返すだけで、どこにも書かず送らない。判定はすべて決定論(同じログ → 同じ結果)。
+// 本文は返すだけで、どこにも書かず送らない。判定はすべて規則ベース(同じログ → 同じ結果)。
 // 他のエージェントのログは v1 では対象外だが、読み取りは Source インターフェースの背後に置き、後から足せる形にする。
 //
 // ログの形式(2026-09-02 に version 2.1.258 の実ログで確認): 1 行 1 JSON。使う項目は type(user / assistant)・
@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -48,6 +49,9 @@ type Turn struct {
 	Time  time.Time // ログの timestamp(UTC)。無ければゼロ値
 	Text  string    // 人間: 打った本文(<system-reminder> ブロックは除く)。アシスタント: text ブロックを改行で連結
 	Tools []ToolUse // アシスタントが呼んだツール(出現順)。人間は nil
+	// Boilerplate は「同じ冒頭の発話が複数セッションに現れる」= 機械が流し込んだ指示と判定された発話。
+	// MarkBoilerplate が立てる。retro・news・learn はこの発話を数えない。
+	Boilerplate bool
 }
 
 // Session は 1 つのセッションログ。
@@ -79,6 +83,18 @@ type Options struct {
 	// 開いたセッションの発話は Since より前のものも含めて全部返す。発話単位の絞り込みは呼び出し側が Turn.Time で行う。
 	// mtime は「そのファイルに最後に書いた時刻」なので、中の timestamp がそれより後になることはない。
 	Since time.Time
+
+	// UnderRoot を指定すると、Session.Project(最初の cwd)がそのディレクトリの配下にあるセッションだけ返す。
+	// 空なら全部返す。cwd の無いセッション(置き場のディレクトリ名しか分からないもの)は、
+	// 配下かどうか判定できないので除いて件数を warning にまとめる。
+	// hub の root の外(索引に載らないリポ・OS のシステムディレクトリなど)で交わした会話が
+	// 訂正率や関心プロファイルに混ざるのを防ぐ(設計レビュー 2026-09-06 M2)。
+	UnderRoot string
+
+	// BoilerplateSessions は「同じ冒頭の発話が何セッションに出たら定型とみなすか」。
+	// 0 なら DefaultBoilerplateSessions。読み取りの最後に MarkBoilerplate を掛けるので、
+	// retro・news・learn のどこから読んでも同じ発話が定型になる。
+	BoilerplateSessions int
 }
 
 // Source はセッションログの供給元。
@@ -117,6 +133,7 @@ func (d Dir) Sessions(opts Options) ([]Session, []string, error) {
 	var out []Session
 	var warns []string
 	versions := map[string]int{} // 読んだファイルの版 → 件数
+	outside, unknownCwd := 0, 0  // UnderRoot の外・cwd が分からず除いたセッション数
 	for _, slug := range slugs {
 		if !slug.IsDir() {
 			continue
@@ -144,6 +161,16 @@ func (d Dir) Sessions(opts Options) ([]Session, []string, error) {
 			if s.UserTurns == 0 {
 				continue
 			}
+			if opts.UnderRoot != "" {
+				switch under, known := underRoot(s.Project, opts.UnderRoot); {
+				case !known:
+					unknownCwd++
+					continue
+				case !under:
+					outside++
+					continue
+				}
+			}
 			out = append(out, s)
 		}
 	}
@@ -153,6 +180,14 @@ func (d Dir) Sessions(opts Options) ([]Session, []string, error) {
 		}
 		return out[i].ID < out[j].ID
 	})
+	if outside > 0 {
+		warns = append(warns, fmt.Sprintf("%s の外のセッション %d 件を除いた(全部見るなら設定 retro.all_projects を true にする)", opts.UnderRoot, outside))
+	}
+	if unknownCwd > 0 {
+		warns = append(warns, fmt.Sprintf("作業ディレクトリが分からないセッション %d 件を除いた", unknownCwd))
+	}
+	// 定型(機械が流し込んだ指示)の印を付ける。数えるかどうかは呼び出し側が Turn.Boilerplate で決める
+	MarkBoilerplate(out, opts.BoilerplateSessions)
 	// 読んだログの版が確認済みの範囲の外なら伝える。除外規則は変えない。
 	warns = append(warns, unknownVersionWarnings(versions)...)
 	return out, warns, nil
@@ -378,6 +413,10 @@ func ExcludeReason(text string) string {
 		return "interrupt"
 	case strings.HasPrefix(t, "<task-notification>"):
 		return "task-notification"
+	case strings.HasPrefix(t, "[braindex-"):
+		// braindex 自身が claude -p で流し込んだプロンプト(news の LLM 補助など)。
+		// 人が打った発話ではないので数えない(設計レビュー 2026-09-06 M11)
+		return "braindex-tool"
 	}
 	return ""
 }
@@ -397,4 +436,36 @@ func DisplayPath(path, home string) string {
 		return "~" + rest
 	}
 	return path
+}
+
+// underRoot は project(セッションの最初の cwd)が root の配下かを返す。
+// known=false は「cwd がログに無く、置き場のディレクトリ名(slug)しか分からない」場合。
+// slug は区切りをハイフンに潰した文字列で元のパスに戻せないので、配下かどうかを判定しない。
+//
+// 大文字小文字は Windows でだけ無視する(同じディレクトリがドライブ文字の大小違いで書かれる)。
+func underRoot(project, root string) (under, known bool) {
+	// cwd がログに無いと Session.Project は置き場のディレクトリ名(slug)になる。slug は区切りを
+	// ハイフンに潰した文字列で元のパスに戻せないので、配下かどうかを判定しない。
+	// 区切りを含むかどうかで見分ける(POSIX のログを Windows で読むこともあるので filepath.IsAbs は使わない)。
+	if !strings.ContainsAny(project, `/\`) {
+		return false, false
+	}
+	rel, err := filepath.Rel(caseFold(root), caseFold(project))
+	if err != nil {
+		return false, true // 別ドライブ・別の形式のパス。root の配下ではない
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == ".." || strings.HasPrefix(rel, "../") {
+		return false, true
+	}
+	return true, true
+}
+
+// caseFold は Windows でだけ小文字に畳む。filepath.Rel はどの OS でもバイトで比べるので、
+// Windows では大文字小文字違いの同じパスが「配下でない」と判定されてしまう。
+func caseFold(p string) string {
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(p)
+	}
+	return p
 }

@@ -210,3 +210,43 @@ func TestBuild_辞書に当たった語そのものは除く(t *testing.T) {
 		}
 	}
 }
+
+// 除外語はセッションを 1 周して全部集めてから数える。数えながら足すと、後のセッションで
+// 足された語が前のセッションでは効かず、並び順で出力が変わった(設計レビュー 2026-09-06 M3c)。
+//
+// 引き金の語が辞書のパターンそのものと同じなら、パターンから作る除外語で最初から落ちる。
+// 順序が効くのは、パターンが正規表現で「当たった本文」がパターンと違うとき。
+func TestBuild_セッションの並び順で結果が変わらない(t *testing.T) {
+	in := fixture()
+	// 「直して」は当たった本文から語が出ない(ひらがな)。
+	// 「<カタカナ>ではない」は当たった本文から「ハルシネーション」が出て、そこで初めて除外語になる
+	dict, _ := retro.Parse("test", "直して\n[ァ-ヴー]+ではない\n")
+	in.Dicts = []*retro.Dictionary{dict}
+	in.Options.MinCorrections = 1
+	in.Sessions = []sessions.Session{
+		{ID: "s1", Turns: []sessions.Turn{
+			human(1, at(3, 9), "Gateway の設定"),
+			human(2, at(3, 10), "ハルシネーション を直して"), // 訂正。文脈の語に「ハルシネーション」が入る
+		}},
+		{ID: "s2", Turns: []sessions.Turn{
+			human(1, at(3, 11), "Gateway を見て"),
+			human(2, at(3, 12), "それはハルシネーションではない"), // ここで「ハルシネーション」が除外語になる
+		}},
+	}
+	forward, err := Build(in).JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev := in
+	rev.Sessions = []sessions.Session{in.Sessions[1], in.Sessions[0]}
+	backward, err := Build(rev).JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(forward) != string(backward) {
+		t.Errorf("並び順で結果が変わった:\n--- 順 ---\n%s\n--- 逆 ---\n%s", forward, backward)
+	}
+	if strings.Contains(string(forward), "ハルシネーション") {
+		t.Errorf("引き金の語が載った:\n%s", forward)
+	}
+}

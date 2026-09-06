@@ -56,7 +56,8 @@ func Judge(ss []sessions.Session, w Window, dicts ...*Dictionary) []Item {
 	var out []Item
 	for _, s := range ss {
 		for _, t := range s.HumanTurns() {
-			if !w.Contains(t.Time) {
+			// 定型(機械が流し込んだ指示)は人の発話として数えない(設計レビュー 2026-09-06 M11)
+			if t.Boilerplate || !w.Contains(t.Time) {
 				continue
 			}
 			out = append(out, Item{Time: t.Time, Project: s.Project, Session: s.ID, Index: t.Index, Hit: len(Classify(t.Text, dicts...)) > 0})

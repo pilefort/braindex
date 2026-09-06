@@ -1,4 +1,5 @@
 # braindex news の作業ファイル。keep/(選別で残した見出し)は蓄積側なので残す。
 news/.*.json
 news/.ingested/
+news/inbox/
 news/digest_*

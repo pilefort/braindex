@@ -1,4 +1,4 @@
-// Package learn は「いま学ぶと良さそうなこと」の候補を、手元の材料だけから決定論で出す。
+// Package learn は「いま学ぶと良さそうなこと」の候補を、手元の材料だけから規則ベース(LLM を使わず規則と閾値だけ)で出す。
 //
 // 材料は関心プロファイル(語ごとの出典別の数)と、セッションの人間の発話に訂正辞書を当てた結果。
 // 提案には必ず理由(どの材料の何件か)を添え、発話の本文は出力に載せない(語と件数だけ)。LLM は使わない。
@@ -24,13 +24,6 @@ type Options struct {
 	BoilerplateSessions int     // 同じ冒頭の発話がこの数以上のセッションに現れたら定型(機械実行・貼り付け)として除く(既定 3)
 	Top                 int     // 各節の件数(0 で全件)
 }
-
-// boilerplatePrefixRunes は定型の判定に使う冒頭の長さ(文字)。空白は 1 つに畳んでから切る。
-const boilerplatePrefixRunes = 120
-
-// boilerplateMinRunes より短い発話は定型の判定にかけない。「違う」「そうじゃない」のような短い同文の訂正は、
-// 何セッションで言われても定型(機械実行・貼り付け)ではなく、むしろ検出したい訂正そのものだから。
-const boilerplateMinRunes = 40
 
 func (o Options) withDefaults() Options {
 	if o.MinSessions <= 0 {
@@ -144,23 +137,34 @@ func Build(in Input) Report {
 		corrections int
 		sessions    map[string]bool
 	}
-	// 定型の検出: 同じ冒頭の発話が何セッションに現れるか(窓の中だけ)
-	prefixSessions := map[string]map[string]bool{}
+	// 定型(機械が流し込んだ指示)の印を付ける。判定は読み取り層と共有する——別々に持つと、
+	// 同じログから retro と learn で違う数が出る(設計レビュー 2026-09-06 M11)。
+	// 印は冪等なので、読み取り時に付いていても付け直してよい
+	sessions.MarkBoilerplate(in.Sessions, o.BoilerplateSessions)
+	// 1 パス目: 窓の中の訂正発話が当てた語を全部 exclude に集める。
+	// 数えながら足すと、後のセッションで足された語が前のセッションでは効かず、
+	// セッションの並び順で出力が変わる(設計レビュー 2026-09-06 M3c)。
 	for _, s := range in.Sessions {
 		for _, t := range s.HumanTurns() {
 			if !in.Window.Contains(t.Time) {
 				continue
 			}
-			k, ok := prefix(t.Text)
-			if !ok {
+			ms := retro.Classify(t.Text, dicts...)
+			if len(ms) == 0 {
 				continue
 			}
-			if prefixSessions[k] == nil {
-				prefixSessions[k] = map[string]bool{}
+			if t.Boilerplate {
+				continue // 定型は数えないので、除外語も取らない
 			}
-			prefixSessions[k][s.ID] = true
+			for _, m := range ms {
+				for _, w := range interest.Words(m.Text) {
+					exclude[w] = true
+				}
+			}
 		}
 	}
+
+	// 2 パス目: 数える。exclude はもう動かない
 	words := map[string]*acc{}
 	total, boiler := 0, 0
 	for _, s := range in.Sessions {
@@ -169,16 +173,11 @@ func Build(in Input) Report {
 			if !in.Window.Contains(t.Time) || len(retro.Classify(t.Text, dicts...)) == 0 {
 				continue
 			}
-			if k, ok := prefix(t.Text); ok && len(prefixSessions[k]) >= o.BoilerplateSessions {
+			if t.Boilerplate {
 				boiler++
 				continue
 			}
 			total++
-			for _, m := range retro.Classify(t.Text, dicts...) {
-				for _, w := range interest.Words(m.Text) {
-					exclude[w] = true
-				}
-			}
 			seen := map[string]bool{}
 			ctx := t.Text
 			if i > 0 {
@@ -214,20 +213,6 @@ func Build(in Input) Report {
 	r.Stumbles = top(r.Stumbles, o.Top)
 	r.ReadNotWritten = top(r.ReadNotWritten, o.Top)
 	return r
-}
-
-// prefix は定型の判定に使う鍵。空白を 1 つに畳み、先頭 boilerplatePrefixRunes 文字で切る。
-// boilerplateMinRunes より短い発話は判定にかけない(ok=false)。
-func prefix(text string) (string, bool) {
-	t := strings.Join(strings.Fields(text), " ")
-	rs := []rune(t)
-	if len(rs) < boilerplateMinRunes {
-		return "", false
-	}
-	if len(rs) > boilerplatePrefixRunes {
-		rs = rs[:boilerplatePrefixRunes]
-	}
-	return string(rs), true
 }
 
 func sortItems(xs []Item, key func(Item) int) {

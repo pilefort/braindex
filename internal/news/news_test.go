@@ -289,7 +289,7 @@ func TestDigest_Ranked(t *testing.T) {
 		{ID: "5", Title: "無関係 2", Link: "https://x/5"},
 		{ID: "6", Title: "無関係 3", Link: "https://x/6"},
 	}}}
-	rk := Rank(res, p)
+	rk := Rank(res, p, nil)
 	if rk["3"].Value != 3 || rk["4"].Value != 2 || rk["1"].Value != 1 || rk["2"].Value != 0 {
 		t.Fatalf("Rank: %v", rk)
 	}
@@ -317,16 +317,46 @@ func TestDigest_Ranked(t *testing.T) {
 	// 決定性: 採点からやり直しても同じバイト列。Ranking も Score.Matched も map を経由するので、
 	// 走査順が出力に漏れていれば実行のたびに揺れる(1 回だけでは捕まらないので繰り返す)
 	for i := 0; i < 5; i++ {
-		again := string(Digest(res, DigestOptions{Layer: "daily", Today: "2026-08-15", Cap: 2, Ranking: Rank(res, p), MinScore: 2}))
+		again := string(Digest(res, DigestOptions{Layer: "daily", Today: "2026-08-15", Cap: 2, Ranking: Rank(res, p, nil), MinScore: 2}))
 		if again != got {
 			t.Fatalf("%d 回目の生成が一致しない:\n%s\nwant:\n%s", i+2, again, got)
 		}
 	}
 	// 空のプロファイルは採点無し
-	if Rank(res, interest.Profile{}) != nil {
+	if Rank(res, interest.Profile{}, nil) != nil {
 		t.Error("空のプロファイルで採点した")
 	}
 	if m, l := Split(res[0].New, nil, 2); len(m) != 6 || l != nil {
 		t.Error("採点無しで分けた")
+	}
+}
+
+// 下げた取材先の記事は関心度の上限が DemotedMaxScore になる。ほかの取材先は変わらない。
+func TestRank_下げた取材先は上限が下がる(t *testing.T) {
+	p := interest.Profile{Today: "2026-09-06", Terms: []interest.Term{
+		{Word: "docker", Weight: 1.0}, {Word: "kubernetes", Weight: 1.0},
+	}}
+	res := []Result{
+		{Source: Source{Name: "よく読む"}, New: []feed.Entry{{ID: "a", Title: "docker と kubernetes の話"}}},
+		{Source: Source{Name: "不要ばかり"}, New: []feed.Entry{{ID: "b", Title: "docker と kubernetes の話"}}},
+	}
+	base := Rank(res, p, nil)
+	if base["a"].Value != base["b"].Value {
+		t.Fatalf("テストの前提: 同じ見出しは同じ点 (%d vs %d)", base["a"].Value, base["b"].Value)
+	}
+	if base["a"].Value <= DemotedMaxScore {
+		t.Fatalf("テストの前提: 下げる前の点が上限より大きい (%d)", base["a"].Value)
+	}
+
+	rk := Rank(res, p, map[string]bool{"不要ばかり": true})
+	if rk["a"].Value != base["a"].Value {
+		t.Errorf("下げていない取材先の点が変わった: %d", rk["a"].Value)
+	}
+	if rk["b"].Value != DemotedMaxScore {
+		t.Errorf("下げた取材先の点: want=%d got=%d", DemotedMaxScore, rk["b"].Value)
+	}
+	// 当たった語は残す(なぜ点が付いたかは見えるようにする)
+	if len(rk["b"].Matched) == 0 {
+		t.Error("当たった語まで消した")
 	}
 }

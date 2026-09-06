@@ -36,9 +36,9 @@ func newsProfile(t *testing.T, hub string, args ...string) (code int, so, se str
 // retro と別の日を指し、両方を定期実行に載せたときに食い違う(決定 2026-09-03)。
 func TestProfileSince_窓の起点はローカル0時(t *testing.T) {
 	loc := time.FixedZone("JST", 9*60*60)
-	old := retroLoc
-	retroLoc = loc
-	t.Cleanup(func() { retroLoc = old })
+	old := localLoc
+	localLoc = loc
+	t.Cleanup(func() { localLoc = old })
 
 	got, err := profileSince("2026-09-01", 14)
 	if err != nil {
@@ -60,7 +60,7 @@ func TestProfileSince_窓の起点はローカル0時(t *testing.T) {
 func TestNewsProfile_Sources(t *testing.T) {
 	hub := profileHub(t)
 	// testdata には JSON でない行が 1 つあり、sessions の警告で終了コード 2 になる(retro と同じ)
-	code, so, se := newsProfile(t, hub, "-sessions", retroTestdata)
+	code, so, se := newsProfile(t, hub, "-sessions", retroTestdata, "-all-projects")
 	if code != 2 || !strings.Contains(se, "JSON でない 1 行を飛ばした") {
 		t.Fatalf("exit=%d\n%s%s", code, so, se)
 	}
@@ -76,13 +76,13 @@ func TestNewsProfile_Sources(t *testing.T) {
 	}
 
 	// 決定性
-	_, so2, _ := newsProfile(t, hub, "-sessions", retroTestdata)
+	_, so2, _ := newsProfile(t, hub, "-sessions", retroTestdata, "-all-projects")
 	if so != so2 {
 		t.Error("2 回の出力が違う")
 	}
 
 	// -json
-	_, js, _ := newsProfile(t, hub, "-sessions", retroTestdata, "-json")
+	_, js, _ := newsProfile(t, hub, "-sessions", retroTestdata, "-all-projects", "-json")
 	var v struct {
 		Today string `json:"today"`
 		Terms []struct {
@@ -100,7 +100,7 @@ func TestNewsProfile_Sources(t *testing.T) {
 	}
 
 	// -top
-	_, so3, _ := newsProfile(t, hub, "-sessions", retroTestdata, "-top", "1")
+	_, so3, _ := newsProfile(t, hub, "-sessions", retroTestdata, "-all-projects", "-top", "1")
 	if !strings.Contains(so3, "（上位 1 語。残り ") {
 		t.Errorf("top:\n%s", so3)
 	}

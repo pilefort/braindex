@@ -24,12 +24,13 @@ func init() {
 }
 
 type learnOptions struct {
-	config   string // -config。hub の位置を兼ねるので必須
-	date     string // -date。今日の固定(既定: 実行日)
-	days     int    // -days。直近の日数(既定: 設定 news.profile_days → 14)
-	sessions string // -sessions。セッションログの置き場(既定: news.sessions_dir → retro.sessions_dir → ~/.claude/projects)
-	top      int    // -top。各節の件数(既定 10。0 で全件)
-	json     bool   // -json。JSON で出す
+	config      string // -config。hub の位置を兼ねるので必須
+	date        string // -date。今日の固定(既定: 実行日)
+	days        int    // -days。直近の日数(既定: 設定 news.profile_days → 14)
+	sessions    string // -sessions。セッションログの置き場(既定: news.sessions_dir → retro.sessions_dir → ~/.claude/projects)
+	allProjects bool   // -all-projects。root の外のセッションも数える
+	top         int    // -top。各節の件数(既定 10。0 で全件)
+	json        bool   // -json。JSON で出す
 }
 
 // runLearn は braindex learn を実行する。
@@ -45,6 +46,7 @@ func runLearn(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.date, "date", "", "今日として使う日付 YYYY-MM-DD(既定: 実行日)。窓の基準")
 	fs.IntVar(&o.days, "days", 0, "直近何日の索引とセッションを見るか(既定: 設定 news.profile_days → 14)")
 	fs.StringVar(&o.sessions, "sessions", "", "セッションログの置き場(既定: 設定 news.sessions_dir → retro.sessions_dir → ~/.claude/projects)")
+	fs.BoolVar(&o.allProjects, "all-projects", false, "root の外で交わしたセッションも数える(既定: root 配下だけ。設定 retro.all_projects と同じ)")
 	fs.IntVar(&o.top, "top", 10, "各節に出す件数(0 で全件)")
 	fs.BoolVar(&o.json, "json", false, "Markdown でなく JSON で出す")
 	fs.Usage = func() {
@@ -96,7 +98,7 @@ func runLearn(args []string, stdout, stderr io.Writer) int {
 		return fail(fmt.Errorf("-date は YYYY-MM-DD で指定する: %q", today))
 	}
 	hubDir := filepath.Dir(cfgPath)
-	in, warnings, err := loadProfileInput(fc, hubDir, today, o.days, o.sessions)
+	in, warnings, err := loadProfileInput(fc, hubDir, today, o.days, o.sessions, o.allProjects)
 	if err != nil {
 		return fail(err)
 	}
@@ -112,13 +114,13 @@ func runLearn(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	// 窓は interest.Build と同じ(UTC の日付で today-days 〜 today+1)。信号 1・3 と 2 が同じ材料を見るように揃える
-	day, _ := time.Parse("2006-01-02", today)
+	// 窓は interest.Build と同じものをそのまま使う。信号 1・3 と 2 が同じ材料を見るように揃える
+	// (以前はここで日付を UTC で解き直していて、ローカルとの時差の分だけ窓がずれた。設計レビュー 2026-09-06 M3b)
 	r := learn.Build(learn.Input{
 		Profile:  p,
 		Catalog:  in.Catalog,
 		Sessions: in.Sessions,
-		Window:   retro.Window{Since: day.AddDate(0, 0, -in.Days), Until: day.AddDate(0, 0, 1)},
+		Window:   retro.Window{Since: in.Since, Until: in.Until},
 		Dicts:    dicts,
 		Options:  learn.Options{Top: o.top},
 	})

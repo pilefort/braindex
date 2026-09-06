@@ -34,7 +34,7 @@ func (execRunner) Run(c schedule.Command) (string, error) {
 	return string(out), err
 }
 
-// テストが差し替える口(既存の retroLoc と同じ形)。
+// テストが差し替える口(既存の localLoc と同じ形)。
 var (
 	scheduleRunner runner = execRunner{}
 	scheduleGOOS          = runtime.GOOS

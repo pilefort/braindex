@@ -332,3 +332,38 @@ func appendKeeps(path, month string, keeps []Keep, date, layer string) error {
 	_, err = f.WriteString(KeepMarkdown(fresh, date, layer))
 	return err
 }
+
+// 不要ばかり付く取材先を主要表示から下ろす条件(決定 2026-09-06)。
+const (
+	// DemoteMinJudged は減点の判定に必要な「残す／不要を選んだ数」。これ未満は材料不足として下げない。
+	DemoteMinJudged = 10
+	// DemoteDropRate はこれを超える不要率の取材先を下げる。
+	DemoteDropRate = 0.8
+	// DemotedMaxScore は下げた取材先の点の上限(interest.MaxScore の半分)。
+	DemotedMaxScore = 1
+)
+
+// DemotedFeeds は不要率の高い取材先の名前を返す。
+//
+// 不要率 = 不要 ÷ (残す ＋ 不要 ＋ 救済)。「見た数」でなく「選んだ数」で割るのは、
+// 折りたたみに入って目に入らなかった記事を不要と数えないため。
+//
+// 代償を承知で入れている: いったん下がると折りたたみ側に回って keep に入らないので、
+// 不要率が下がる機会も減る(下がりっぱなしになりうる)。間引き候補(PruneCandidates)と違って
+// 人の手を待たずに効くので、効果は試用して見る。
+func DemotedFeeds(totals map[string]FeedStats) map[string]bool {
+	out := map[string]bool{}
+	for name, d := range totals {
+		judged := d.Kept + d.Dropped + d.Rescued
+		if judged < DemoteMinJudged {
+			continue
+		}
+		if float64(d.Dropped)/float64(judged) > DemoteDropRate {
+			out[name] = true
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
