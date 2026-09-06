@@ -342,3 +342,29 @@ func TestIngest_feedStatsは名前一覧が無ければ照合しない(t *testin
 		t.Errorf("統計: %+v", snap)
 	}
 }
+
+// 不要ばかり付く取材先は点の上限を下げて主要表示から下ろす(決定 2026-09-06)。
+// 不要率は「見た数」でなく「選んだ数」で割る——折りたたみに入って目に入らなかった記事を
+// 不要と数えないため。
+func TestDemotedFeeds(t *testing.T) {
+	got := DemotedFeeds(map[string]FeedStats{
+		"下げる":          {Shown: 40, Kept: 1, Dropped: 9},              // 判定 10・不要率 0.9
+		"境界(0.8 ちょうど)": {Shown: 40, Kept: 2, Dropped: 8},              // 0.8 は「超え」でないので下げない
+		"材料不足":         {Shown: 40, Kept: 0, Dropped: 9},              // 判定 9
+		"救済を数える":       {Shown: 40, Kept: 0, Dropped: 9, Rescued: 1},  // 判定 10・不要率 0.9
+		"見ただけ":         {Shown: 100, Hidden: 100},                     // 判定 0
+		"読んでいる":        {Shown: 40, Kept: 20, Dropped: 5, Rescued: 2}, // 不要率 0.19
+	})
+	want := map[string]bool{"下げる": true, "救済を数える": true}
+	if len(got) != len(want) {
+		t.Fatalf("下げた取材先: %v", got)
+	}
+	for name := range want {
+		if !got[name] {
+			t.Errorf("%s が下がっていない: %v", name, got)
+		}
+	}
+	if DemotedFeeds(nil) != nil {
+		t.Error("材料が無ければ nil")
+	}
+}

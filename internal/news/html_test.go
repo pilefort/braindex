@@ -21,7 +21,7 @@ func TestRenderHTML(t *testing.T) {
 		{Source: Source{Name: "C"}, New: nil},
 		{Source: Source{Name: "D"}, New: []feed.Entry{{ID: "d", Title: "分類なし", Link: "https://x/d"}}},
 	}
-	o := DigestOptions{Layer: "daily", Today: "2026-08-15", Cap: 1, Ranking: Rank(res, p), MinScore: 2}
+	o := DigestOptions{Layer: "daily", Today: "2026-08-15", Cap: 1, Ranking: Rank(res, p, nil), MinScore: 2}
 	h := string(RenderHTML(res, o))
 	for _, s := range []string{
 		"<!doctype html>", "<title>ニュースダイジェスト 2026-08-15（daily 層・新着 4 件・主要 1 件）</title>", // 主要は表示した件数(A の 1 件。D は関心度 0)

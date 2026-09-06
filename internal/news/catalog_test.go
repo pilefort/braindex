@@ -28,7 +28,7 @@ func TestParseCatalog_Rejects(t *testing.T) {
 	cases := map[string]string{
 		"照合語なし":       `[{"genre":"g","name":"a","url":"https://x/","tags":["t"],"keywords":[]}]`,
 		"ストップワード":     `[{"genre":"g","name":"a","url":"https://x/","tags":["t"],"keywords":["github"]}]`,
-		"2 文字":        `[{"genre":"g","name":"a","url":"https://x/","tags":["t"],"keywords":["go"]}]`,
+		"2 文字":        `[{"genre":"g","name":"a","url":"https://x/","tags":["t"],"keywords":["fn"]}]`, // 許可リスト(go・ai・ci・ui・db)の外
 		"大文字":         `[{"genre":"g","name":"a","url":"https://x/","tags":["t"],"keywords":["Docker"]}]`,
 		"name 重複":     `[{"genre":"g","name":"a","url":"https://x/","tags":["t"],"keywords":["docker"]},{"genre":"g","name":"a","url":"https://y/","tags":["t"],"keywords":["docker"]}]`,
 		"url 重複(末尾/)": `[{"genre":"g","name":"a","url":"https://x/","tags":["t"],"keywords":["docker"]},{"genre":"g","name":"b","url":"https://x","tags":["t"],"keywords":["docker"]}]`,

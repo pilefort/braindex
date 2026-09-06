@@ -240,9 +240,14 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "braindex news fetch: 警告:", w)
 		}
 		profileWarnings = len(ws)
-		ranking = news.Rank(results, p)
+		// 不要ばかり付く取材先は点の上限を下げて主要表示から下ろす(決定 2026-09-06)
+		demoted := news.DemotedFeeds(stats.Totals())
+		ranking = news.Rank(results, p, demoted)
 		if ranking == nil {
 			fmt.Fprintln(stdout, "関心プロファイルが空なので採点なし(全件を主要表示)")
+		} else if len(demoted) > 0 {
+			fmt.Fprintf(stdout, "不要が多い取材先 %d 本は関心度の上限を %d に下げた(残す／不要 %d 件以上・不要率 %.0f%% 超)\n",
+				len(demoted), news.DemotedMaxScore, news.DemoteMinJudged, news.DemoteDropRate*100)
 		}
 		for _, t := range p.Terms {
 			profileTerms = append(profileTerms, t.Word)
