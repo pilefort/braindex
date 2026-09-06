@@ -34,24 +34,25 @@ var todoLine = regexp.MustCompile(`^\s*[-*+]\s+\[ \]\s+(.*\S)\s*$`)
 // TodoFile は各リポの TODO の置き場(リポ相対)。
 const TodoFile = "work/TODO.md"
 
-// StaleTodos は root 直下の各ディレクトリの work/TODO.md を読み、未チェック項目のうち、その行が最後に変わった日が
-// cutoff(YYYY-MM-DD)以前のものを集める。行の日付は g が nil でなく、ファイルが git 管理下なら git blame の author-time、
-// それ以外はファイルの mtime(Approx)。work/TODO.md が無いディレクトリは飛ばす(正常)。読めないものは warnings に積む。
-func StaleTodos(root string, g *Git, cutoff string) (repos []RepoTodos, warnings []string, err error) {
-	des, err := os.ReadDir(root)
+// StaleTodos は各リポ(cfg.Root の repo_depth 段下のディレクトリ。索引と同じ scan.ListRepos の規則)の work/TODO.md を読み、
+// 未チェック項目のうち、その行が最後に変わった日が cutoff(YYYY-MM-DD)以前のものを集める。
+// 行の日付は g が nil でなく、ファイルが git 管理下なら git blame の author-time、それ以外はファイルの mtime(Approx)。
+// work/TODO.md が無いリポは飛ばす(正常)。読めないもの・列挙できなかった group は warnings に積む。
+func StaleTodos(cfg scan.Config, g *Git, cutoff string) (repos []RepoTodos, warnings []string, err error) {
+	list, gaps, err := scan.ListRepos(cfg.Root, cfg.Depth())
 	if err != nil {
-		return nil, nil, fmt.Errorf("root を読めない: %w", err)
+		return nil, nil, err
 	}
-	for _, de := range des {
-		if !de.IsDir() || strings.HasPrefix(de.Name(), ".") {
-			continue
-		}
-		repoDir := filepath.Join(root, de.Name())
+	for _, gap := range gaps {
+		warnings = append(warnings, fmt.Sprintf("%s: %s", gap.Rel, gap.Reason))
+	}
+	for _, r := range list {
+		repoDir := r.Dir
 		todoPath := filepath.Join(repoDir, filepath.FromSlash(TodoFile))
 		content, err := os.ReadFile(todoPath)
 		if err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
-				warnings = append(warnings, fmt.Sprintf("%s/%s: %s", de.Name(), TodoFile, describeErr(err)))
+				warnings = append(warnings, fmt.Sprintf("%s/%s: %s", r.Name, TodoFile, describeErr(err)))
 			}
 			continue
 		}
@@ -81,7 +82,7 @@ func StaleTodos(root string, g *Git, cutoff string) (repos []RepoTodos, warnings
 			}
 			return items[a].Line < items[b].Line
 		})
-		repos = append(repos, RepoTodos{Repo: de.Name(), Items: items})
+		repos = append(repos, RepoTodos{Repo: r.Name, Items: items})
 	}
 	sort.Slice(repos, func(i, j int) bool { return repos[i].Repo < repos[j].Repo })
 	return repos, warnings, nil

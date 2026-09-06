@@ -6,7 +6,43 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/pilefort/braindex/internal/scan"
 )
+
+// repo_depth 2 では root/<group>/<name> の work/TODO.md を読み、リポ名は group/name。
+// 1 段目の配置(flat/work/TODO.md)は見ない(索引と同じ scan.ListRepos の規則)。
+func TestStaleTodos_RepoDepth2(t *testing.T) {
+	root := t.TempDir()
+	old := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	for _, rel := range []string{"g/alpha/work/TODO.md", "flat/work/TODO.md"} {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("- [ ] p\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repos, warnings, err := StaleTodos(scan.Config{Root: root, RepoDepth: 2}, nil, "2026-08-05")
+	if err != nil || len(warnings) != 0 {
+		t.Fatalf("err=%v warnings=%q", err, warnings)
+	}
+	if len(repos) != 1 || repos[0].Repo != "g/alpha" || len(repos[0].Items) != 1 {
+		t.Errorf("g/alpha だけのはず: %+v", repos)
+	}
+	// 既定(1 段)なら flat だけ
+	repos, _, err = StaleTodos(scan.Config{Root: root}, nil, "2026-08-05")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 1 || repos[0].Repo != "flat" {
+		t.Errorf("既定は 1 段で flat だけのはず: %+v", repos)
+	}
+}
 
 // root 直下に 3 ディレクトリ: alpha(git・TODO を 2 回コミット)、beta(git 管理外・TODO の mtime を古くする)、
 // gamma(TODO 無し)。cutoff 2026-08-05 で、alpha の 07-01 の行と beta の全行(mtime 06-01)だけが残る。
@@ -38,7 +74,7 @@ func TestStaleTodos(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	repos, warnings, err := StaleTodos(root, &r.git, "2026-08-05")
+	repos, warnings, err := StaleTodos(scan.Config{Root: root}, &r.git, "2026-08-05")
 	if err != nil {
 		t.Fatalf("StaleTodos: %v", err)
 	}
@@ -58,7 +94,7 @@ func TestStaleTodos(t *testing.T) {
 	}
 
 	// git を使わなければ alpha も mtime(今日)になり、放置には数えない
-	repos, _, err = StaleTodos(root, nil, "2026-08-05")
+	repos, _, err = StaleTodos(scan.Config{Root: root}, nil, "2026-08-05")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,14 +103,14 @@ func TestStaleTodos(t *testing.T) {
 	}
 
 	// 閾値ちょうどの日は含む(節の文言「cutoff 以前から」)。1 日前を閾値にすれば外れる
-	repos, _, err = StaleTodos(root, &r.git, "2026-07-01")
+	repos, _, err = StaleTodos(scan.Config{Root: root}, &r.git, "2026-07-01")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(repos) != 2 || repos[0].Repo != "alpha" || len(repos[0].Items) != 1 {
 		t.Errorf("閾値ちょうど: %+v", repos)
 	}
-	repos, _, err = StaleTodos(root, &r.git, "2026-06-30")
+	repos, _, err = StaleTodos(scan.Config{Root: root}, &r.git, "2026-06-30")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +133,7 @@ func TestStaleTodos_CRLF(t *testing.T) {
 	r.commit("2026-07-01", "crlf")
 	r.write("work/TODO.md", "- [ ] a\r\n  - [ ] sub\r\n* [ ] b\r\n")
 	r.commit("2026-08-25", "crlf2")
-	repos, warnings, err := StaleTodos(root, &r.git, "2026-08-05")
+	repos, warnings, err := StaleTodos(scan.Config{Root: root}, &r.git, "2026-08-05")
 	if err != nil || len(warnings) != 0 {
 		t.Fatalf("err=%v warnings=%q", err, warnings)
 	}
