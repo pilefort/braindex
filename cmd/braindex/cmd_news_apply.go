@@ -27,12 +27,13 @@ func selectionDirs(newsDir, inbox string) ([]string, error) {
 }
 
 // ingestSelections は選別 JSON を取り込み、結果を stdout に書く(news apply と news fetch の冒頭が共有)。
-func ingestSelections(newsDir, inbox string, stdout io.Writer) error {
+// known は feeds.json の取材先の名前。選別 JSON の feed_stats をこの名前で照合する(nil なら照合しない)。
+func ingestSelections(newsDir string, known map[string]bool, inbox string, stdout io.Writer) error {
 	dirs, err := selectionDirs(newsDir, inbox)
 	if err != nil {
 		return err
 	}
-	msgs, err := news.Ingest(newsDir, dirs)
+	msgs, err := news.Ingest(newsDir, dirs, known)
 	for _, m := range msgs {
 		fmt.Fprintln(stdout, "news:", m)
 	}
@@ -83,8 +84,16 @@ func runNewsApply(args []string, stdout, stderr io.Writer) int {
 		return fail(fmt.Errorf("設定ファイルが無い: %s(hub のルートで実行するか、-config で指定する)", cfgPath))
 	}
 	s := fc.News.WithDefaults()
-	newsDir := filepath.Join(filepath.Dir(cfgPath), filepath.FromSlash(s.Dir))
-	if err := ingestSelections(newsDir, inbox, stdout); err != nil {
+	hubDir := filepath.Dir(cfgPath)
+	newsDir := filepath.Join(hubDir, filepath.FromSlash(s.Dir))
+	// feed_stats の照合に取材先の名前が要る。読めなくても取り込みは続ける(名前の照合だけ落ちる)。
+	var known map[string]bool
+	if srcs, ferr := news.LoadFeeds(filepath.Join(hubDir, filepath.FromSlash(s.Feeds))); ferr != nil {
+		fmt.Fprintf(stderr, "braindex news apply: 警告: %v(feed_stats の取材先名は照合しない)\n", ferr)
+	} else {
+		known = news.FeedNames(srcs)
+	}
+	if err := ingestSelections(newsDir, known, inbox, stdout); err != nil {
 		return fail(err)
 	}
 	fmt.Fprintln(stdout, "news apply 完了")

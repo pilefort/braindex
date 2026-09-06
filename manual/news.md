@@ -72,6 +72,11 @@ CLI が無い・`llm_timeout_sec` を超えた・応答が JSON でないとき�
 `-no-open` なのは、cron・schtasks から起動したプロセスがログイン中のデスクトップにウィンドウを出せないため。朝に `news/digest_<日付>_daily.html` を自分で開く。
 選別を書き出した JSON は次回の `fetch` か `braindex news apply` が拾う。
 
+**取り込みは中身を検査する**: 選別 JSON はブラウザのダウンロード先（誰でも置ける場所）から拾うので、そのまま信じない。
+`date` が `YYYY-MM-DD` の形でないファイルは取り込まず、`.ingested/` へも移さない（中を見て消せるように元の場所に残す）
+——`date` は `news/keep/YYYY-MM.md` のパスの一部になるため。`feed_stats` は `feeds.json` にある取材先の名前で、数が 0 以上の項目だけを数え、
+外れた項目は落として 1 行で伝える。1 件も取り込めなかった回は `.stats.json` を触らない。
+
 **取材先の候補（`braindex news suggest`）**: 何を `feeds.json` に書けばよいか分からないとき、直近の会話で使っている技術から取材先を探す。
 同梱の目録の各取材先が持つ照合語（例: Docker Blog → `docker` `dockerfile` `compose` `コンテナ`）と関心プロファイルの語を手元で突き合わせ、
 当たった語の重みの和が大きい順に出す。照合は手元だけで、通信も LLM もしない。出力は当たった語と数だけで発話の本文は載せない。
