@@ -25,7 +25,7 @@ func testConfig() Config {
 }
 
 func TestScan_FoundSet(t *testing.T) {
-	files, _, err := Scan(testConfig())
+	files, err := scanFiles(testConfig())
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestScan_FoundSet(t *testing.T) {
 }
 
 func TestScan_Exclusions(t *testing.T) {
-	files, _, err := Scan(testConfig())
+	files, err := scanFiles(testConfig())
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestScan_Exclusions(t *testing.T) {
 // notes_dirs を [wiki] にすると、docs/notes でなく wiki/ を走査し、種別ラベルは末尾セグメント(wiki)になる。
 // docs/decisions.md は notes_dirs と無関係に拾う。archive は従来どおり除外。
 func TestScan_NotesDir(t *testing.T) {
-	files, _, err := Scan(Config{Root: "testdata/root-wiki", NotesDirs: []string{"wiki"}})
+	files, err := scanFiles(Config{Root: "testdata/root-wiki", NotesDirs: []string{"wiki"}})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestScan_NotesDir(t *testing.T) {
 
 // notes_dirs に複数を並べると、それぞれを走査し、ラベルは各ディレクトリの末尾セグメントになる。
 func TestScan_NotesDirs_Multiple(t *testing.T) {
-	files, _, err := Scan(Config{Root: "testdata/root-wiki", NotesDirs: []string{"wiki", "docs/notes"}})
+	files, err := scanFiles(Config{Root: "testdata/root-wiki", NotesDirs: []string{"wiki", "docs/notes"}})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestScan_NotesDirs_Multiple(t *testing.T) {
 // (docs 起点なら docs/notes/ignored.md は "docs/notes"。後の docs/notes 起点なら "notes" になるはずのもの)。
 // docs/decisions.md は notes_dirs に含まれていても種別 decisions のまま。
 func TestScan_NotesDirs_Dedupe(t *testing.T) {
-	files, _, err := Scan(Config{Root: "testdata/root-wiki", NotesDirs: []string{"docs", "docs/notes"}})
+	files, err := scanFiles(Config{Root: "testdata/root-wiki", NotesDirs: []string{"docs", "docs/notes"}})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -177,10 +177,11 @@ func TestScan_NotesDirs_Dedupe(t *testing.T) {
 // 存在しない extra の起点は警告(エラーにも無言スキップにもしない)。root が空・存在しなければエラー。
 func TestScan_WarningsAndErrors(t *testing.T) {
 	cfg := Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: "no-such-dir", Kind: "x"}}}
-	files, warns, err := Scan(cfg)
+	res, err := Scan(cfg)
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
+	files, warns := res.Files, res.Warnings
 	if len(files) == 0 {
 		t.Errorf("警告があっても自動規則の結果は返すべき")
 	}
@@ -188,10 +189,10 @@ func TestScan_WarningsAndErrors(t *testing.T) {
 		t.Errorf("警告 1 件「extra ext/no-such-dir: 存在しない」(パスを繰り返さない・OS の文言を出さない)を期待: %q", warns)
 	}
 
-	if _, _, err := Scan(Config{Root: ""}); err == nil || strings.Contains(err.Error(), "-root") {
+	if _, err := Scan(Config{Root: ""}); err == nil || strings.Contains(err.Error(), "-root") {
 		t.Errorf("root 空はエラーで、ライブラリの文に CLI のフラグ名を含めない: %v", err)
 	}
-	if _, _, err := Scan(Config{Root: "testdata/no-such-root"}); err == nil {
+	if _, err := Scan(Config{Root: "testdata/no-such-root"}); err == nil {
 		t.Errorf("root 不在でエラーになっていない")
 	}
 }
@@ -199,7 +200,7 @@ func TestScan_WarningsAndErrors(t *testing.T) {
 // archive の判定はルート相対パスに掛ける。root 自体が archive という名前のディレクトリの下にあっても、
 // その中のノートは索引に載る(原型は絶対パス全体で判定していたので全件除外されていた)。
 func TestScan_ArchiveJudgedOnRootRelativePath(t *testing.T) {
-	files, _, err := Scan(Config{Root: "testdata/archive/root"})
+	files, err := scanFiles(Config{Root: "testdata/archive/root"})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -244,7 +245,7 @@ func TestScan_ExtraExcludeGlob(t *testing.T) {
 		{"完全一致(従来どおり)", []string{"a.md"}, []string{"r/x/b.draft.md", "r/x/sub/c.md", "r/x/sub/d.draft.md"}},
 	}
 	for _, c := range cases {
-		files, _, err := Scan(Config{Root: root, Extra: []ExtraRule{{Repo: "r", Path: "x", Recursive: true, Kind: "x", Exclude: c.exclude}}})
+		files, err := scanFiles(Config{Root: root, Extra: []ExtraRule{{Repo: "r", Path: "x", Recursive: true, Kind: "x", Exclude: c.exclude}}})
 		if err != nil {
 			t.Fatalf("[%s] Scan: %v", c.desc, err)
 		}
@@ -260,7 +261,7 @@ func TestScan_ExtraExcludeGlob(t *testing.T) {
 
 	// 不正なパターンは設定の誤りなのでエラー(無言で文字列比較に落とさない)。
 	// 文言には「どの extra の」「どのパターンが」を出す(設定を直す手掛かりになる)
-	_, _, err := Scan(Config{Root: root, Extra: []ExtraRule{{Repo: "r", Path: "x", Kind: "x", Exclude: []string{"["}}}})
+	_, err := Scan(Config{Root: root, Extra: []ExtraRule{{Repo: "r", Path: "x", Kind: "x", Exclude: []string{"["}}}})
 	if err == nil {
 		t.Fatalf("不正なグロブでエラーになっていない")
 	}
@@ -292,10 +293,11 @@ func TestScan_ExtraUnderArchiveWarns(t *testing.T) {
 		{"リポ名が archive", ExtraRule{Repo: "archive", Path: "notes", Kind: "n"}},
 	}
 	for _, c := range cases {
-		files, warnings, err := Scan(Config{Root: root, Extra: []ExtraRule{c.rule}})
+		res, err := Scan(Config{Root: root, Extra: []ExtraRule{c.rule}})
 		if err != nil {
 			t.Fatalf("[%s] Scan: %v", c.desc, err)
 		}
+		files, warnings := res.Files, res.Warnings
 		if len(files) != 0 {
 			t.Errorf("[%s] archive 配下なのに拾っている: %v", c.desc, files)
 		}
@@ -332,10 +334,11 @@ func TestScan_DecisionsStatErrorWarns(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(docs, 0o755) })
-	_, warns, err := Scan(Config{Root: root})
+	res, err := Scan(Config{Root: root})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
+	warns := res.Warnings
 	if !containsSub(warns, "r/docs/decisions.md") {
 		t.Errorf("decisions.md の警告が無い: %q", warns)
 	}
@@ -351,10 +354,11 @@ func TestScan_NotesDirIsFileWarns(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(docs, "notes"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, warns, err := Scan(Config{Root: root})
+	res, err := Scan(Config{Root: root})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
+	warns := res.Warnings
 	if len(warns) != 1 || warns[0] != "r/docs/notes: ディレクトリではない" {
 		t.Errorf("警告 1 件「r/docs/notes: ディレクトリではない」を期待: %q", warns)
 	}
@@ -387,7 +391,7 @@ func containsSub(ss []string, sub string) bool {
 // 自動規則で拾ったファイルを extra が重ねて指しても、索引には 1 回だけ載る(先に拾った自動規則のラベルが勝つ)。
 func TestScan_ExtraDoesNotDuplicateAutoFiles(t *testing.T) {
 	cfg := Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: "docs", Recursive: true, Kind: "x"}}}
-	files, _, err := Scan(cfg)
+	files, err := scanFiles(cfg)
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -412,7 +416,7 @@ func TestScan_ExtraDoesNotDuplicateAutoFiles(t *testing.T) {
 // (notes_dirs の入れ子と同じく decisions が勝つ。TestScan_NotesDirs_Dedupe の extra 版)。
 func TestScan_ExtraDoesNotDuplicateDecisions(t *testing.T) {
 	cfg := Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "repo-both", Path: "docs", Recursive: true, Kind: "x"}}}
-	files, _, err := Scan(cfg)
+	files, err := scanFiles(cfg)
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -451,7 +455,7 @@ func TestScan_RejectsEscapingPaths(t *testing.T) {
 		{"extra.repo が ..", Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "..", Path: ".", Kind: "x"}}}, `extra: repo は root 直下のディレクトリ名だけを書く: ".."`},
 	}
 	for _, c := range cases {
-		_, _, err := Scan(c.cfg)
+		_, err := Scan(c.cfg)
 		if err == nil {
 			t.Errorf("[%s] エラーになっていない", c.desc)
 			continue
@@ -461,10 +465,10 @@ func TestScan_RejectsEscapingPaths(t *testing.T) {
 		}
 	}
 	// "." と "" はリポ直下の意味で許す
-	if _, _, err := Scan(Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: ".", Kind: "x"}}}); err != nil {
+	if _, err := Scan(Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: ".", Kind: "x"}}}); err != nil {
 		t.Errorf("extra.path \".\" が拒否された: %v", err)
 	}
-	if _, _, err := Scan(Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: "", Kind: "x"}}}); err != nil {
+	if _, err := Scan(Config{Root: "testdata/root", Extra: []ExtraRule{{Repo: "ext", Path: "", Kind: "x"}}}); err != nil {
 		t.Errorf("extra.path \"\" が拒否された: %v", err)
 	}
 }
@@ -497,7 +501,7 @@ func TestScan_ExtraExcludeDir(t *testing.T) {
 		{"起点のディレクトリ名は対象外", []string{"x"}, []string{"r/x/a.md", "r/x/drafts/deep/q.md", "r/x/drafts/p.md", "r/x/keep/z.md"}},
 	}
 	for _, c := range cases {
-		files, _, err := Scan(Config{Root: root, Extra: []ExtraRule{{Repo: "r", Path: "x", Recursive: true, Kind: "x", Exclude: c.exclude}}})
+		files, err := scanFiles(Config{Root: root, Extra: []ExtraRule{{Repo: "r", Path: "x", Recursive: true, Kind: "x", Exclude: c.exclude}}})
 		if err != nil {
 			t.Fatalf("[%s] Scan: %v", c.desc, err)
 		}

@@ -26,7 +26,8 @@ func TestBuildRecordsMatchSavedCatalog(t *testing.T) {
 	if result.Entries != len(got) || !reflect.DeepEqual(got, parsed) {
 		t.Fatalf("records=%+v parsed=%+v count=%d", got, parsed, result.Entries)
 	}
-	if string(render.Render(result.Records, "2026-08-07")) != string(result.Catalog) {
+	// 索引 = レコードの描画 + 走査の記録。記録を足しても表は変わらない
+	if string(withCoverage(render.Render(result.Records, "2026-08-07"), result.Coverage)) != string(result.Catalog) {
 		t.Fatal("レコードの再描画で索引が変わった")
 	}
 }

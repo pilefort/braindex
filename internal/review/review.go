@@ -115,7 +115,18 @@ func Build(in Input) (Result, error) {
 		indexUnavailable = perr.Error()
 		warn("前回の索引を読めなかった(%v)。増減は出さない", perr)
 	} else {
-		diff = diffEntries(beforeEntries, afterEntries)
+		// 前回にあって今回無い行を、今回の走査で読めなかった範囲(確認不能)と今の設定が見に行かない場所(対象外)に
+		// 振り分けてから、残りを削除にする(設計レビュー補足 2026-09-06)
+		prevCov, cerr := catalog.ParseCoverage(before)
+		if cerr != nil {
+			warn("前回の索引の走査の記録を読めない(%v)。記録なしとして扱う", cerr)
+			prevCov = catalog.Coverage{}
+		}
+		diff = diffEntries(beforeEntries, afterEntries, judge{
+			cov:    built.Coverage,
+			prev:   prevCov,
+			covers: func(rel string) bool { return scan.Covers(in.Cfg, rel) },
+		})
 	}
 
 	// 差分ファイル(索引に載ったリポだけ)。
@@ -168,7 +179,7 @@ func Build(in Input) (Result, error) {
 	b.WriteString("この下書きは `braindex review` が作った。機械節（索引・差分ファイル・放置 TODO・アーカイブ候補）は埋まっている。")
 	b.WriteString("残りの節は差分ファイルの実物を読んで埋め、`braindex` で索引を再生成してから、索引と一緒にコミットする。\n\n")
 	if indexUnavailable != "" {
-		WriteIndexUnavailable(&b, indexUnavailable, source)
+		WriteIndexUnavailable(&b, indexUnavailable, source, built.Coverage)
 	} else {
 		WriteIndexSection(&b, diff, source)
 	}
@@ -178,6 +189,11 @@ func Build(in Input) (Result, error) {
 	WriteTodoSection(&b, todos, s.StaleTodoWeeks, todoCutoff)
 	b.WriteString("\n")
 	WriteArchiveSection(&b, arch, s.ArchiveMonths, archiveCutoff)
+	// 読めなかった範囲のノートは今回の索引に無いので候補にも出ない。有無を確認できていないものに
+	// アーカイブという否定的な判断を付けない旨を、候補の節に断る
+	if n := len(built.Coverage.Gaps); n > 0 {
+		fmt.Fprintf(&b, "\n読めなかった範囲（%d 件・索引の節を見る）のノートは候補に入っていない。有無を確認できていないので、アーカイブの判断もしない。\n", n)
+	}
 	b.WriteString("\n## 今週の差分ダイジェスト（リポ別）\n\n（差分ファイルを実物で読み、リポごとに 1〜3 行。索引の要旨だけで書かない）\n")
 	b.WriteString("\n## アーカイブ（実施・見送りと理由）\n\n（候補ごとに 実施／見送り と理由。移動は承認の後）\n")
 	b.WriteString("\n## 次アクション\n\n（1〜3 件）\n")

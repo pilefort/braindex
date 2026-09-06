@@ -11,6 +11,10 @@
 // 例外規則(braindex.json の extra): 指定リポの起点から *.md を収集(リポ直下・research/・projects/ 等の規約外の置き場)。
 //
 //	再帰 extra の種別は kind/<起点直下のサブディレクトリ>(2026-08-27)。
+//
+// 読めなかった範囲(権限エラー等で列挙・参照に失敗したディレクトリやファイル)は警告するだけでなく Result.Gaps に
+// 構造化して返す。その範囲にノートが「無い」のか「読めなかった」のかは分からないので、索引に無いことを
+// 削除の根拠にしない(設計レビュー補足 2026-09-06)。存在しない・設定の誤りは確認できた事実なので Gaps には入れない。
 package scan
 
 import (
@@ -20,6 +24,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -47,16 +52,41 @@ type File struct {
 	Abs  string // 読み込み用の絶対パス
 }
 
+// Gap は走査で確認できなかった範囲。
+// 走査は続けたが、この範囲にノートが「無い」のか「読めなかった」のかは分からない。
+// 索引にこの範囲の行が無くても、削除と断定してはいけない。
+type Gap struct {
+	Rel    string // root 相対・スラッシュ区切り(ファイルかディレクトリ。末尾に "/" は付けない)
+	Dir    bool   // true ならディレクトリ(列挙に失敗。配下すべてが確認不能)
+	Reason string // 短い理由(DescribeErr の文言)
+}
+
+// Covers は rel(root 相対・スラッシュ区切り)がこの範囲に入るかを返す。ディレクトリなら配下も含む。
+func (g Gap) Covers(rel string) bool {
+	if rel == g.Rel {
+		return true
+	}
+	return g.Dir && strings.HasPrefix(rel, g.Rel+"/")
+}
+
+// Result は Scan の結果。
+type Result struct {
+	Files    []File   // 見つけたファイル(走査順)
+	Gaps     []Gap    // 読めなかった範囲(Rel 昇順・重複なし)。空なら、走査した範囲は全部確認できた
+	Warnings []string // 飛ばしたものの説明(Gaps の分も含む)。無言スキップにしない
+}
+
 // DefaultNotesDir は notes_dirs 未指定時のノート置き場。
 const DefaultNotesDir = "docs/notes"
 
 // Scan は cfg に従って対象ファイルを発見する。
 //
-// 戻り値の warnings は「飛ばしたもの」の説明(読めないディレクトリ・存在しない extra の起点など)。
+// 戻り値の Warnings は「飛ばしたもの」の説明(読めないディレクトリ・存在しない extra の起点など)。
 // 無言でスキップせず呼び出し側に伝え、走査自体は続ける。root が空・読めない場合は error。
-func Scan(cfg Config) (files []File, warnings []string, err error) {
+// 読めなかった範囲は Gaps にも構造化して返す(警告の文言だけでは後から機械で突き合わせられない)。
+func Scan(cfg Config) (Result, error) {
 	if cfg.Root == "" {
-		return nil, nil, errors.New("root が空")
+		return Result{}, errors.New("root が空")
 	}
 	notesDirs := cfg.NotesDirs
 	if len(notesDirs) == 0 {
@@ -64,36 +94,35 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 	}
 	rootAbs, err := filepath.Abs(cfg.Root)
 	if err != nil {
-		return nil, nil, err
+		return Result{}, err
 	}
 	for _, nd := range notesDirs {
 		if err := checkRepoRelative("notes_dirs", nd); err != nil {
-			return nil, nil, err
+			return Result{}, err
 		}
 	}
 	for _, ex := range cfg.Extra {
 		if ex.Repo == "" || strings.ContainsAny(ex.Repo, `/\\`) || ex.Repo == "." || ex.Repo == ".." {
-			return nil, nil, fmt.Errorf("extra: repo は root 直下のディレクトリ名だけを書く: %q", ex.Repo)
+			return Result{}, fmt.Errorf("extra: repo は root 直下のディレクトリ名だけを書く: %q", ex.Repo)
 		}
 		// ラベルは「extra <repo> の path」。他の文言の "extra <repo>/<path>" と並んだとき /path が値に見えないように
 		if err := checkRepoRelative("extra "+ex.Repo+" の path", ex.Path); err != nil {
-			return nil, nil, err
+			return Result{}, err
 		}
 		for _, pat := range ex.Exclude {
 			if _, err := path.Match(pat, ""); err != nil {
-				return nil, nil, fmt.Errorf("extra %s/%s: exclude のパターンが不正: %q", ex.Repo, ex.Path, pat)
+				return Result{}, fmt.Errorf("extra %s/%s: exclude のパターンが不正: %q", ex.Repo, ex.Path, pat)
 			}
 		}
 	}
-	warn := func(format string, a ...any) {
-		warnings = append(warnings, fmt.Sprintf(format, a...))
-	}
+	c := &collector{rootAbs: rootAbs}
+	var files []File
 	seen := map[string]bool{} // 同一ファイルの重複排除(絶対パス)。先に拾った方(自動規則 → extra の順)のラベルが勝つ
 
 	// 自動規則: root 直下の各ディレクトリを走査
 	entries, err := os.ReadDir(rootAbs)
 	if err != nil {
-		return nil, nil, fmt.Errorf("root を読めない: %w", err)
+		return Result{}, fmt.Errorf("root を読めない: %w", err)
 	}
 	for _, de := range entries {
 		if !de.IsDir() {
@@ -109,7 +138,7 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 		decPath := filepath.Join(repoDir, "docs", "decisions.md")
 		if fi, err := os.Stat(decPath); err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
-				warn("%s: %s", relSlash(rootAbs, decPath), DescribeErr(err)) // 無いのは正常、読めないのは警告
+				c.gap(decPath, false, err) // 無いのは正常、読めないのは警告して確認不能に
 			}
 		} else if !fi.IsDir() {
 			if f := mkFile(rootAbs, name, "decisions", decPath); !hasArchiveSeg(f.Rel) {
@@ -126,7 +155,7 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 			}
 			// 種別ラベルは各ディレクトリの末尾セグメント(docs/notes → notes、wiki → wiki)。既定の挙動は従来どおり
 			label := path.Base(nd)
-			notes := collectNotes(rootAbs, name, filepath.Join(repoDir, filepath.FromSlash(nd)), label, warn)
+			notes := collectNotes(rootAbs, name, filepath.Join(repoDir, filepath.FromSlash(nd)), label, c)
 			for _, f := range notes {
 				if seen[f.Abs] {
 					continue
@@ -139,7 +168,7 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 
 	// 例外規則。自動規則で拾い済みのファイルは載せない(重複排除)
 	for _, ex := range cfg.Extra {
-		for _, f := range collectExtra(rootAbs, ex, warn) {
+		for _, f := range collectExtra(rootAbs, ex, c) {
 			if seen[f.Abs] {
 				continue
 			}
@@ -148,11 +177,123 @@ func Scan(cfg Config) (files []File, warnings []string, err error) {
 		}
 	}
 
-	return files, warnings, nil
+	return Result{Files: files, Gaps: SortGaps(c.gaps), Warnings: c.warnings}, nil
 }
 
-// warnFunc は走査中に飛ばしたものを報告する。
-type warnFunc func(format string, a ...any)
+// collector は走査中の警告と読めなかった範囲を集める。
+type collector struct {
+	rootAbs  string
+	warnings []string
+	gaps     []Gap
+}
+
+// warn は飛ばしたものを警告として記録する(確認できた事実。設定の誤り・存在しない起点など)。
+func (c *collector) warn(format string, a ...any) {
+	c.warnings = append(c.warnings, fmt.Sprintf(format, a...))
+}
+
+// gap は確認できなかった範囲(権限エラー等)を記録する。警告にも同じ内容を 1 行出す(従来の文言を保つ)。
+func (c *collector) gap(abs string, dir bool, err error) {
+	rel := relSlash(c.rootAbs, abs)
+	reason := DescribeErr(err)
+	c.gaps = append(c.gaps, Gap{Rel: rel, Dir: dir, Reason: reason})
+	c.warn("%s: %s", rel, reason)
+}
+
+// SortGaps は読めなかった範囲を Rel 昇順に並べ、同じ Rel の重複を落として返す(出力の決定性のため)。
+func SortGaps(gaps []Gap) []Gap {
+	if len(gaps) == 0 {
+		return nil
+	}
+	out := make([]Gap, len(gaps))
+	copy(out, gaps)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Rel < out[j].Rel })
+	w := 0
+	for i, g := range out {
+		if i > 0 && g.Rel == out[w-1].Rel {
+			continue
+		}
+		out[w] = g
+		w++
+	}
+	return out[:w]
+}
+
+// Covers は cfg の走査規則が rel(root 相対・スラッシュ区切り)を対象に含むかを返す。ファイルの有無は見ない。
+//
+// 前回の索引にあって今回無い行を「削除」と呼ぶ前に、今の設定がそのパスをそもそも見に行くかを確かめるのに使う。
+// notes_dirs や extra を設定から外した・exclude を足した・archive の下へ移した行は「対象外」であって削除ではない。
+// 判定は Scan と同じ規則(ドットで始まるリポは見ない・archive セグメントは除外・拡張子は .md・extra の exclude は
+// ファイル名とディレクトリの枝に掛かる)を、ファイルシステムを見ずにパスだけで再現する。
+func Covers(cfg Config, rel string) bool {
+	rel = strings.Trim(filepath.ToSlash(rel), "/")
+	if rel == "" || !isMarkdown(rel) || hasArchiveSeg(rel) {
+		return false
+	}
+	repo, inRepo, ok := strings.Cut(rel, "/")
+	if !ok || repo == "" || strings.HasPrefix(repo, ".") || inRepo == "" {
+		return false
+	}
+	for _, seg := range strings.Split(inRepo, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return false
+		}
+	}
+	if inRepo == "docs/decisions.md" {
+		return true
+	}
+	notesDirs := cfg.NotesDirs
+	if len(notesDirs) == 0 {
+		notesDirs = []string{DefaultNotesDir}
+	}
+	for _, nd := range notesDirs {
+		nd = strings.Trim(filepath.ToSlash(nd), "/")
+		switch {
+		case nd == "":
+			continue
+		case nd == ".": // リポ直下を置き場にする指定。リポ内の全部が対象
+			return true
+		case strings.HasPrefix(inRepo, nd+"/"):
+			return true
+		}
+	}
+	for _, ex := range cfg.Extra {
+		if ex.Repo != repo {
+			continue
+		}
+		base := strings.Trim(filepath.ToSlash(ex.Path), "/")
+		if base == "." {
+			base = ""
+		}
+		fromBase := inRepo
+		if base != "" {
+			if !strings.HasPrefix(inRepo, base+"/") {
+				continue
+			}
+			fromBase = inRepo[len(base)+1:]
+		}
+		parts := strings.Split(fromBase, "/")
+		if !ex.Recursive && len(parts) != 1 {
+			continue
+		}
+		if excluded(parts[len(parts)-1], fromBase, ex.Exclude) {
+			continue
+		}
+		// 再帰 extra は途中のディレクトリにも exclude が掛かり、当たった枝は丸ごと落ちる(collectExtra と同じ)
+		blocked := false
+		for i := 1; i < len(parts); i++ {
+			if excluded(parts[i-1], strings.Join(parts[:i], "/"), ex.Exclude) {
+				blocked = true
+				break
+			}
+		}
+		if blocked {
+			continue
+		}
+		return true
+	}
+	return false
+}
 
 // checkRepoRelative は設定のパス(notes_dirs・extra.path)がリポ内の相対パスであることを確かめる。
 // ".." セグメントはリポの外へ出てしまい、root 相対でない行が索引に載る。絶対パスは filepath.Join が
@@ -175,23 +316,24 @@ func checkRepoRelative(what, p string) error {
 
 // collectNotes は notesDir 以下の *.md を再帰収集する。archive セグメントは除外。
 // label は直下の種別ラベル(サブディレクトリ配下は label/<先頭セグメント>)。
-// notesDir が無いのは「そのリポにノートが無い」だけなので警告しない。読めない場合は警告する。
-func collectNotes(rootAbs, repo, notesDir, label string, warn warnFunc) []File {
+// notesDir が無いのは「そのリポにノートが無い」だけなので警告しない。読めない場合は警告して確認不能にする。
+func collectNotes(rootAbs, repo, notesDir, label string, c *collector) []File {
 	var out []File
 	info, err := os.Stat(notesDir)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
-			warn("%s: %s", relSlash(rootAbs, notesDir), DescribeErr(err))
+			c.gap(notesDir, true, err)
 		}
 		return out
 	}
 	if !info.IsDir() {
-		warn("%s: ディレクトリではない", relSlash(rootAbs, notesDir))
+		c.warn("%s: ディレクトリではない", relSlash(rootAbs, notesDir))
 		return out
 	}
 	filepath.WalkDir(notesDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			warn("%s: %s", relSlash(rootAbs, path), DescribeErr(err)) // 読めないものは警告して飛ばす
+			// WalkDir がここに err を渡すのはディレクトリを列挙できなかったとき(配下は確認不能)。警告して飛ばす
+			c.gap(path, true, err)
 			return nil
 		}
 		if d.IsDir() {
@@ -205,7 +347,7 @@ func collectNotes(rootAbs, repo, notesDir, label string, warn warnFunc) []File {
 		}
 		rel, err := filepath.Rel(notesDir, path)
 		if err != nil {
-			warn("%s: %s", relSlash(rootAbs, path), DescribeErr(err))
+			c.warn("%s: %s", relSlash(rootAbs, path), DescribeErr(err))
 			return nil
 		}
 		if f := mkFile(rootAbs, repo, kindFromRel(rel, label), path); !hasArchiveSeg(f.Rel) {
@@ -217,20 +359,25 @@ func collectNotes(rootAbs, repo, notesDir, label string, warn warnFunc) []File {
 }
 
 // collectExtra は例外規則に従ってファイルを収集する。
-// 起点が無い・読めない・archive の下にあるのは設定の誤りなので警告する(自動規則の notesDir 不在とは違う)。
-func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
+// 起点が無い・archive の下にあるのは設定の誤りなので警告する(自動規則の notesDir 不在とは違う)。
+// 起点を読めないのは確認不能。
+func collectExtra(rootAbs string, ex ExtraRule, c *collector) []File {
 	base := filepath.Join(rootAbs, ex.Repo, filepath.FromSlash(ex.Path))
 	var out []File
 	// 起点自体が archive セグメントの下なら、archive の除外規則で全件落ちる。設定の誤りなので無言にしない
 	if hasArchiveSeg(path.Join(ex.Repo, ex.Path)) {
-		warn("extra %s/%s: パスに archive を含むので全件除外(載せるなら archive の外に置く)", ex.Repo, ex.Path)
+		c.warn("extra %s/%s: パスに archive を含むので全件除外(載せるなら archive の外に置く)", ex.Repo, ex.Path)
 		return out
 	}
 	if info, err := os.Stat(base); err != nil {
-		warn("extra %s/%s: %s", ex.Repo, ex.Path, DescribeErr(err))
+		if errors.Is(err, fs.ErrNotExist) {
+			c.warn("extra %s/%s: %s", ex.Repo, ex.Path, DescribeErr(err))
+		} else {
+			c.gap(base, true, err)
+		}
 		return out
 	} else if !info.IsDir() {
-		warn("extra %s/%s: ディレクトリではない", ex.Repo, ex.Path)
+		c.warn("extra %s/%s: ディレクトリではない", ex.Repo, ex.Path)
 		return out
 	}
 
@@ -247,7 +394,7 @@ func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 	if ex.Recursive {
 		filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
-				warn("%s: %s", relSlash(rootAbs, path), DescribeErr(err))
+				c.gap(path, true, err)
 				return nil
 			}
 			if d.IsDir() {
@@ -259,7 +406,7 @@ func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 				if path != base {
 					rel, err := filepath.Rel(base, path)
 					if err != nil {
-						warn("%s: %v", path, err)
+						c.warn("%s: %v", path, err)
 						return nil
 					}
 					if excluded(d.Name(), filepath.ToSlash(rel), ex.Exclude) {
@@ -270,7 +417,7 @@ func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 			}
 			rel, err := filepath.Rel(base, path)
 			if err != nil {
-				warn("%s: %v", path, err)
+				c.warn("%s: %v", path, err)
 				return nil
 			}
 			add(path, d.Name(), filepath.ToSlash(rel), extraKind(ex.Kind, base, path))
@@ -281,7 +428,7 @@ func collectExtra(rootAbs string, ex ExtraRule, warn warnFunc) []File {
 
 	des, err := os.ReadDir(base)
 	if err != nil {
-		warn("%s: %s", relSlash(rootAbs, base), DescribeErr(err))
+		c.gap(base, true, err)
 		return out
 	}
 	for _, de := range des {
