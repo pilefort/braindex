@@ -63,13 +63,14 @@ type Snapshot struct {
 	Content []byte
 	Commit  string // 短いハッシュ
 	Date    string // コミット日 YYYY-MM-DD
+	Time    string // コミット時刻 ISO8601(%cI)。差分ファイルの起点に使う
 }
 
 // FileAt は dir の rel(dir 相対・スラッシュ区切り)について、until(YYYY-MM-DD)の終わりまでに入った
 // 最後のコミット時点の内容を返す。そのコミットが無い(初回・まだコミットしていない)なら ok=false。
 // git 管理外なら error。
 func (g Git) FileAt(dir, rel, until string) (s Snapshot, ok bool, err error) {
-	out, err := g.run(dir, "log", "-1", "--format=%h %as", "--until="+until+" 23:59:59", "--", rel)
+	out, err := g.run(dir, "log", "-1", "--format=%h %as %cI", "--until="+until+" 23:59:59", "--", rel)
 	if err != nil {
 		if g.noCommits(dir) {
 			return s, false, nil
@@ -80,13 +81,14 @@ func (g Git) FileAt(dir, rel, until string) (s Snapshot, ok bool, err error) {
 	if line == "" {
 		return s, false, nil
 	}
-	hash, date, _ := strings.Cut(line, " ")
+	hash, rest, _ := strings.Cut(line, " ")
+	date, iso, _ := strings.Cut(rest, " ")
 	// <hash>:./<rel> の ./ は -C のディレクトリ基準(リポのルート基準ではない)
 	content, err := g.run(dir, "show", hash+":./"+rel)
 	if err != nil {
 		return s, false, err
 	}
-	return Snapshot{Content: []byte(content), Commit: hash, Date: date}, true, nil
+	return Snapshot{Content: []byte(content), Commit: hash, Date: date, Time: iso}, true, nil
 }
 
 // ChangedFile は前回日以降のコミットで触られた 1 ファイル(リポ相対・スラッシュ区切り)。
@@ -105,13 +107,14 @@ type RepoChanges struct {
 // hashLine は --format=%H のコミット行。SHA-1 なら 40 桁、SHA-256 のリポ(--object-format=sha256)なら 64 桁。
 var hashLine = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 
-// ChangedSince は dir で since(YYYY-MM-DD。その日を含む)以降のコミットが pathspecs の範囲で触ったファイルを集める。
+// ChangedSince は dir で since 以降のコミットが pathspecs の範囲で触ったファイルを集める。
+// since は git が読める時刻の文字列(ISO8601 か "YYYY-MM-DD HH:MM:SS")。git の --since はその時刻ちょうどの
+// コミットを含む(2026-09-06 実測 → docs/notes/common/git-since-boundary.md)。
 // 同じファイルが複数のコミットに現れたら 1 行にまとめ、前回日の時点と今の有無で 追加／変更／削除 を決める。
 // 窓の中で作られて消えたファイルは載せない(前回にも今にも無い)。リネームは旧パスを削除・新パスを追加として扱う。
 // パスは dir 相対(--relative)。dir の外のファイルは含まれない。
 func (g Git) ChangedSince(dir, since string, pathspecs []string) (RepoChanges, error) {
-	// 時刻を明示する。日付だけだと git は「その日の今の時刻」と解釈し、0 時〜実行時刻のコミットが落ちる
-	args := []string{"log", "--since=" + since + " 00:00:00", "--name-status", "--relative", "--format=%H", "--"}
+	args := []string{"log", "--since=" + startOfDayIfDate(since), "--name-status", "--relative", "--format=%H", "--"}
 	args = append(args, pathspecs...)
 	out, err := g.run(dir, args...)
 	if err != nil {
@@ -196,4 +199,17 @@ func parseNameStatus(out string) RepoChanges {
 	}
 	sort.Slice(rc.Files, func(i, j int) bool { return rc.Files[i].Path < rc.Files[j].Path })
 	return rc
+}
+
+// dateOnly は YYYY-MM-DD だけの文字列。
+var dateOnly = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+// startOfDayIfDate は日付だけの since に 00:00:00 を足す。
+// git は日付だけの --since を「その日の今の時刻」と解釈するので、時刻を明示しないと
+// その日の 0 時〜実行時刻のコミットが、実行する時刻しだいで落ちる。
+func startOfDayIfDate(since string) string {
+	if dateOnly.MatchString(since) {
+		return since + " 00:00:00"
+	}
+	return since
 }

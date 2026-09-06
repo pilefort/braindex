@@ -112,13 +112,13 @@ func runLearn(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	// 窓は interest.Build と同じ(UTC の日付で today-days 〜 today+1)。信号 1・3 と 2 が同じ材料を見るように揃える
-	day, _ := time.Parse("2006-01-02", today)
+	// 窓は interest.Build と同じものをそのまま使う。信号 1・3 と 2 が同じ材料を見るように揃える
+	// (以前はここで日付を UTC で解き直していて、ローカルとの時差の分だけ窓がずれた。設計レビュー 2026-09-06 M3b)
 	r := learn.Build(learn.Input{
 		Profile:  p,
 		Catalog:  in.Catalog,
 		Sessions: in.Sessions,
-		Window:   retro.Window{Since: day.AddDate(0, 0, -in.Days), Until: day.AddDate(0, 0, 1)},
+		Window:   retro.Window{Since: in.Since, Until: in.Until},
 		Dicts:    dicts,
 		Options:  learn.Options{Top: o.top},
 	})

@@ -141,7 +141,13 @@ func loadProfileInput(fc config.Config, hubDir, today string, days int, sessions
 	if days <= 0 {
 		days = s.ProfileDays
 	}
-	in := interest.Input{Today: today, Days: days}
+	// 窓はローカルの 0 時起点。retro と揃える(決定 2026-09-03)。
+	// 起点も終端もここで作って渡す——interest 側で日付から作ると UTC の 0 時になる(設計レビュー 2026-09-06 M3b)。
+	since, err := profileSince(today, days)
+	if err != nil {
+		return interest.Input{}, nil, err
+	}
+	in := interest.Input{Today: today, Days: days, Since: since, Until: since.AddDate(0, 0, days+1)}
 
 	// 出典 1: 索引
 	catalogPath := filepath.Join(hubDir, filepath.FromSlash(defaultOut))
@@ -169,10 +175,6 @@ func loadProfileInput(fc config.Config, hubDir, today string, days int, sessions
 		if sessDir, err = sessions.DefaultDir(); err != nil {
 			return interest.Input{}, nil, err
 		}
-	}
-	since, err := profileSince(today, days)
-	if err != nil {
-		return interest.Input{}, nil, err
 	}
 	if _, err := os.Stat(sessDir); errors.Is(err, iofs.ErrNotExist) {
 		warn("セッションログの置き場 %s が無いので飛ばした", sessDir)
@@ -204,10 +206,10 @@ func loadProfileInput(fc config.Config, hubDir, today string, days int, sessions
 
 // profileSince は関心プロファイルが見る窓の起点(today の days 日前)を返す。
 //
-// 起点は retro と同じ「ローカル(retroLoc)の 0 時」にする(決定 2026-09-03)。UTC の 0 時にすると、
+// 起点は retro と同じ「ローカル(localLoc)の 0 時」にする(決定 2026-09-03)。UTC の 0 時にすると、
 // 同じ「N 日前から」が retro と別の日を指し、両方を定期実行に載せたときに食い違う。
 func profileSince(today string, days int) (time.Time, error) {
-	t, err := time.ParseInLocation("2006-01-02", today, retroLoc)
+	t, err := localMidnight(today)
 	if err != nil {
 		return time.Time{}, err
 	}

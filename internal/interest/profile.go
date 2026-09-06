@@ -49,8 +49,13 @@ func (p Profile) Weight(word string) float64 {
 
 // Input は Build の材料。日付の窓による絞り込みは Build が行う。
 type Input struct {
-	Today      string             // YYYY-MM-DD
-	Days       int                // 直近何日を窓にするか(index と sessions)。keep は KeepMonths か月
+	Today string // YYYY-MM-DD
+	Days  int    // 直近何日を窓にするか(index と sessions)。keep は KeepMonths か月
+	// Since と Until はセッションの発話を絞る時刻の窓 [Since, Until)。呼び出し側がローカルの 0 時で作る
+	// (retro と同じ起点。決定 2026-09-03)。ここで日付から作ると UTC の 0 時になり、retro と別の日を指した
+	// (設計レビュー 2026-09-06 M3b)。
+	Since      time.Time
+	Until      time.Time
 	KeepMonths int                // keep 履歴を遡る月数。0 なら 3
 	Catalog    []render.Entry     // 索引の全行(Date が窓の外なら使わない)
 	Sessions   []sessions.Session // セッション(Turn.Time が窓の外の発話は使わない)
@@ -73,6 +78,9 @@ func Build(in Input) (Profile, error) {
 	today, err := time.Parse("2006-01-02", in.Today)
 	if err != nil {
 		return Profile{}, fmt.Errorf("today は YYYY-MM-DD: %q", in.Today)
+	}
+	if in.Since.IsZero() || in.Until.IsZero() {
+		return Profile{}, fmt.Errorf("Since と Until は必須(窓の起点は呼び出し側がローカルの 0 時で作る)")
 	}
 	days := in.Days
 	if days <= 0 {
@@ -113,7 +121,7 @@ func Build(in Input) (Profile, error) {
 	for _, s := range in.Sessions {
 		var sb strings.Builder
 		for _, t := range s.Turns {
-			if t.Time.IsZero() || t.Time.Before(since) || t.Time.After(today.AddDate(0, 0, 1)) {
+			if t.Time.IsZero() || t.Time.Before(in.Since) || !t.Time.Before(in.Until) {
 				continue
 			}
 			sb.WriteString(t.Text)

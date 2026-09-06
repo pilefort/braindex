@@ -36,9 +36,9 @@ func newsProfile(t *testing.T, hub string, args ...string) (code int, so, se str
 // retro と別の日を指し、両方を定期実行に載せたときに食い違う(決定 2026-09-03)。
 func TestProfileSince_窓の起点はローカル0時(t *testing.T) {
 	loc := time.FixedZone("JST", 9*60*60)
-	old := retroLoc
-	retroLoc = loc
-	t.Cleanup(func() { retroLoc = old })
+	old := localLoc
+	localLoc = loc
+	t.Cleanup(func() { localLoc = old })
 
 	got, err := profileSince("2026-09-01", 14)
 	if err != nil {

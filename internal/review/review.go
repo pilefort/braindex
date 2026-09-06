@@ -105,14 +105,21 @@ func Build(in Input) (Result, error) {
 	}
 
 	// 前回の索引
-	before, source, ws := previousCatalog(gp, in.HubDir, in.CatalogRel, in.Since)
+	before, source, prevTime, ws := previousCatalog(gp, in.HubDir, in.CatalogRel, in.Since)
 	res.Warnings = append(res.Warnings, ws...)
 	diff, err := DiffIndex(before, built.Catalog)
 	if err != nil {
 		return res, err
 	}
 
-	// 差分ファイル(索引に載ったリポだけ)
+	// 差分ファイル(索引に載ったリポだけ)。
+	// 起点は「前回の索引を取ったコミットの時刻」。前回日の 0 時にすると、その日のうち索引を取る前に
+	// 入った変更を前回と今回で二重に数える(設計レビュー 2026-09-06 M3b)。
+	// 前回の索引がコミットから取れなかったときだけ、従来どおり前回日の 0 時にする。
+	changeSince := in.Since + " 00:00:00"
+	if prevTime != "" {
+		changeSince = prevTime
+	}
 	ch := Changes{Since: in.Since, Pathspecs: pathspecs(in.Cfg), GitMissing: !hasGit}
 	if !hasGit {
 		warn("git が見つからないので差分ファイルの節を飛ばした")
@@ -124,7 +131,7 @@ func Build(in Input) (Result, error) {
 				warn("%s: git 管理外なので差分ファイルを飛ばした", repo)
 				continue
 			}
-			rc, err := g.ChangedSince(dir, in.Since, ch.Pathspecs)
+			rc, err := g.ChangedSince(dir, changeSince, ch.Pathspecs)
 			if err != nil {
 				ch.Skipped = append(ch.Skipped, repo)
 				warn("%s: %v", repo, err)
@@ -170,7 +177,8 @@ func Build(in Input) (Result, error) {
 
 // previousCatalog は「前回の索引」を決める。hub が git 管理下で前回日以前のコミットがあればその時点の内容、
 // 無ければディスク上の索引、それも無ければ空(全件が追加)。どれを使ったかを source で返す。
-func previousCatalog(g *Git, hubDir, rel, since string) (content []byte, source string, warnings []string) {
+// commitTime は前回の索引を取ったコミットの時刻(ISO8601)。コミットから取れなかったときは空。
+func previousCatalog(g *Git, hubDir, rel, since string) (content []byte, source, commitTime string, warnings []string) {
 	reason := "hub が git 管理外"
 	if g != nil && g.InRepo(hubDir) {
 		snap, ok, err := g.FileAt(hubDir, rel, since)
@@ -179,7 +187,7 @@ func previousCatalog(g *Git, hubDir, rel, since string) (content []byte, source 
 			warnings = append(warnings, fmt.Sprintf("前回の索引を git から取れない: %v", err))
 			reason = "git から取れなかった"
 		case ok:
-			return snap.Content, fmt.Sprintf("%s（コミット %s・%s）", rel, snap.Commit, snap.Date), nil
+			return snap.Content, fmt.Sprintf("%s（コミット %s・%s）", rel, snap.Commit, snap.Date), snap.Time, nil
 		default:
 			reason = "前回日以前のコミットが無い"
 		}
@@ -191,9 +199,9 @@ func previousCatalog(g *Git, hubDir, rel, since string) (content []byte, source 
 		if !errors.Is(err, fs.ErrNotExist) {
 			warnings = append(warnings, fmt.Sprintf("%s: %s", rel, describeErr(err)))
 		}
-		return nil, "なし（初回。全件を追加として数える）", warnings
+		return nil, "なし（初回。全件を追加として数える）", "", warnings
 	}
-	return b, fmt.Sprintf("%s（ディスク。%s）", rel, reason), warnings
+	return b, fmt.Sprintf("%s（ディスク。%s）", rel, reason), "", warnings
 }
 
 // pathspecs は差分ファイルを見る範囲(notes_dirs と docs/decisions.md)。
