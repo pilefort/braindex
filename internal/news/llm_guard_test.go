@@ -3,6 +3,8 @@ package news
 import (
 	"strings"
 	"testing"
+
+	"github.com/pilefort/braindex/internal/sessions"
 )
 
 // claude CLI の起動引数はツールを全部禁止する(--tools "")。フィード本文は他人が書いたもので、
@@ -46,5 +48,18 @@ func TestBuildAnnotationPrompt_本文を隔離し指示に従わないと明示�
 	}
 	if !strings.Contains(p[:open], "他人が書いた") {
 		t.Errorf("区切りより前に「他人が書いた本文」の説明が無い:\n%s", p[:open])
+	}
+}
+
+// claude -p のプロンプトは相手側のセッションログに人間の発話として残る。braindex 自身の
+// 呼び出しだと分かる印を先頭に置き、sessions.ExcludeReason が除けるようにする
+// (設計レビュー 2026-09-06 M11)。印が無いと、自分で作った発話を訂正率や関心に数えてしまう。
+func TestBuildAnnotationPrompt_先頭にbraindexの印がある(t *testing.T) {
+	p := BuildAnnotationPrompt([]annotationItem{{ID: "a", Title: "Go 1.26 released", Lang: "en"}}, []string{"go"}, nil)
+	if !strings.HasPrefix(p, NewsPromptMark+"\n") {
+		t.Errorf("先頭に印が無い:\n%s", firstLine(p))
+	}
+	if sessions.ExcludeReason(p) != "braindex-tool" {
+		t.Errorf("読み取り層が除かない: %q", sessions.ExcludeReason(p))
 	}
 }

@@ -21,7 +21,7 @@ func TestRenderHTML(t *testing.T) {
 		{Source: Source{Name: "C"}, New: nil},
 		{Source: Source{Name: "D"}, New: []feed.Entry{{ID: "d", Title: "分類なし", Link: "https://x/d"}}},
 	}
-	o := DigestOptions{Layer: "daily", Today: "2026-08-15", Cap: 1, Ranking: Rank(res, p), MinScore: 2}
+	o := DigestOptions{Layer: "daily", Today: "2026-08-15", Cap: 1, Ranking: Rank(res, p, nil), MinScore: 2}
 	h := string(RenderHTML(res, o))
 	for _, s := range []string{
 		"<!doctype html>", "<title>ニュースダイジェスト 2026-08-15（daily 層・新着 4 件・主要 1 件）</title>", // 主要は表示した件数(A の 1 件。D は関心度 0)
@@ -31,7 +31,9 @@ func TestRenderHTML(t *testing.T) {
 		"<summary>関心外と判定 2 件", `<li class="item low" data-id="2"`, "…他 1 件は省略</small>",
 		"<h3>D（新着 1 件・主要 0 件）</h3>", `data-id="d"`,
 		"新着なし: C", `<b class="prune">取得失敗:</b> B: HTTP 404`, "生成: 2026-08-15 / braindex news fetch", "2 以上を主要表示",
-		`const META={date:"2026-08-15",layer:"daily"};`, `type:"braindex-news-selection"`, `a.download="braindex-news-selection_"`,
+		`const META={date:"2026-08-15",layer:"daily"};`, `type:"braindex-news-selection"`,
+		// 保存ダイアログ(File System Access API)と、非対応ブラウザ向けのダウンロードの両方が入っている
+		`window.showSaveFilePicker`, `id:"braindex-news-inbox"`, `a.download=name`,
 	} {
 		if !strings.Contains(h, s) {
 			t.Errorf("HTML に %q が無い", s)

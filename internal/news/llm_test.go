@@ -253,20 +253,20 @@ func TestParseAnnotationResponse_角括弧と空白(t *testing.T) {
 	}
 }
 
-// レビュー #91-6: 脚注の LLM の記述は、実際に LLM の点が適用された記事があるときだけ。無ければ「決定論」のまま。
+// レビュー #91-6: 脚注の LLM の記述は、実際に LLM の点が適用された記事があるときだけ。無ければ「規則ベース」のまま。
 func TestRenderHTML_脚注のLLM表記(t *testing.T) {
 	rs := []Result{{Source: Source{Name: "A"}, New: []feed.Entry{{ID: "a1", Title: "T"}}}}
 	rk := Ranking{"a1": {Value: 2, Matched: []string{"x"}}}
 	o := DigestOptions{Layer: "d", Today: "2026-08-15", Cap: 10, Ranking: rk, MinScore: 2, Annotations: Annotations{"other": {Score: intp(3)}}}
 	h := string(RenderHTML(rs, o))
-	if strings.Contains(h, "LLM 補助") || !strings.Contains(h, "採点は決定論") {
-		t.Errorf("適用 0 件なのに LLM の記述がある/決定論が消えた")
+	if strings.Contains(h, "LLM 補助") || !strings.Contains(h, "採点は規則ベース") {
+		t.Errorf("適用 0 件なのに LLM の記述がある/規則ベースが消えた")
 	}
 	ann := Annotations{"a1": {Score: intp(3)}}
 	o.Annotations = ann
 	o.Ranking = ApplyAnnotations(rk, rs, ann)
 	h = string(RenderHTML(rs, o))
-	if !strings.Contains(h, "LLM 補助") || strings.Contains(h, "採点は決定論") {
-		t.Errorf("適用ありなのに LLM の記述が無い/決定論が残っている")
+	if !strings.Contains(h, "LLM 補助") || strings.Contains(h, "採点は規則ベース") {
+		t.Errorf("適用ありなのに LLM の記述が無い/規則ベースが残っている")
 	}
 }

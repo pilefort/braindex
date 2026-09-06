@@ -3,9 +3,37 @@ package main
 import (
 	"bytes"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// 登録済みのサブコマンドは README のコマンドの表と manual/README.md の目次に全部載っている。
+// コマンドを足したときに共有文書を書き忘れると、利用者は -h でしかその存在を知れない
+// (2026-09-06 の統合で search・diagnose の 2 つを後から書いた)。
+func TestCommands_文書に載っている(t *testing.T) {
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manual, err := os.ReadFile(filepath.Join("..", "..", "manual", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range commandNames() {
+		if strings.HasPrefix(name, "zz-") { // 他のテストが一時的に登録する名前
+			continue
+		}
+		if !bytes.Contains(readme, []byte("| `braindex "+name+"` |")) {
+			t.Errorf("README.md のコマンドの表に `braindex %s` の行が無い", name)
+		}
+		// manual の目次は「`braindex approvals`・`answer`・`verify`」のように 2 つ目以降を短く書く
+		if !bytes.Contains(manual, []byte("`braindex "+name+"`")) && !bytes.Contains(manual, []byte("`"+name+"`")) {
+			t.Errorf("manual/README.md の目次に %s が無い", name)
+		}
+	}
+}
 
 // 一覧は名前の長さが違っても説明の開始位置を揃える(桁を固定していると長い名前の行だけずれる)。
 func TestPrintCommands_桁が揃う(t *testing.T) {

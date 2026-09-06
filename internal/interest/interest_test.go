@@ -12,8 +12,8 @@ import (
 
 func TestWords(t *testing.T) {
 	cases := map[string][]string{
-		"Go の encoding/xml で RSS を読む":                  {"encoding", "rss"},              // go は 2 文字・xml はストップワード・小文字に畳む
-		"ベクトルDBは入れない。埋め込みも同じ":                          {"ベクトル"},                         // カタカナ連続。「埋め込み」は漢字が連続しないので語にならない
+		"Go の encoding/xml で RSS を読む":                  {"go", "encoding", "rss"},        // go は 2 文字の許可リスト・xml はストップワード・小文字に畳む
+		"ベクトルDBは入れない。埋め込みも同じ":                          {"db", "ベクトル"},                   // db は 2 文字の許可リスト。「埋め込み」は漢字が連続しないので語にならない
 		"設計判断記録日本語版 という長い複合語":                          {"複合語"},                          // 漢字 9 連続は捨てる。「長い」は 1 文字
 		"ラテン文字とカタカナ・混在-abc_def-":                       {"abc_def", "ラテン", "カタカナ", "混在"}, // 中黒で切る・前後の記号を落とす。「文字」はストップワード
 		"123 456 a1 ab1 abc1":                          {"ab1", "abc1"},                  // 数字だけ・先頭数字・2 文字は除く
@@ -41,9 +41,19 @@ func day(s string) time.Time {
 	return d.Add(12 * time.Hour)
 }
 
+// window は today の days 日前 0 時から today の翌日 0 時まで(本番では呼び出し側がローカルの 0 時で作る)。
+func window(today string, days int) (time.Time, time.Time) {
+	t, err := time.Parse("2006-01-02", today)
+	if err != nil {
+		panic(err)
+	}
+	return t.AddDate(0, 0, -days), t.AddDate(0, 0, 1)
+}
+
 func TestBuild(t *testing.T) {
+	since, until := window("2026-09-03", 14)
 	in := Input{
-		Today: "2026-09-03", Days: 14,
+		Today: "2026-09-03", Days: 14, Since: since, Until: until,
 		Catalog: []render.Entry{
 			{Repo: "repo-a", Date: "2026-09-03", Kind: "note", Title: "フィード の パース"}, // 今日: 係数 2
 			{Repo: "repo-a", Date: "2026-08-20", Kind: "note", Title: "フィード の 既読"},  // 窓の端: 係数 1
@@ -115,14 +125,15 @@ func TestBuild(t *testing.T) {
 }
 
 func TestBuild_EmptyAndErrors(t *testing.T) {
-	p, err := Build(Input{Today: "2026-09-03"})
+	since, until := window("2026-09-03", 14)
+	p, err := Build(Input{Today: "2026-09-03", Since: since, Until: until})
 	if err != nil || len(p.Terms) != 0 || p.Days != 14 {
 		t.Errorf("空: err=%v %+v", err, p)
 	}
 	if !strings.Contains(string(p.Marshal(0)), "語 0") {
 		t.Error("空の表")
 	}
-	if _, err := Build(Input{Today: "2026/09/03"}); err == nil {
+	if _, err := Build(Input{Today: "2026/09/03", Since: since, Until: until}); err == nil {
 		t.Error("日付の誤りがエラーにならない")
 	}
 }
@@ -139,7 +150,8 @@ func TestParseKeep(t *testing.T) {
 // 補助ファイル(extra)の 1 行は、語の規則に通してから語にする(記事の側と同じ規則でないと照合できない)。
 // 1 行から複数語が出ても材料の数は 1 行。規則で語にならない行は行そのものを小文字で語にする。
 func TestBuild_ExtraLines(t *testing.T) {
-	p, err := Build(Input{Today: "2026-09-03", Extra: []string{"Rust の パース", "# コメント", "", "  ai  "}})
+	since, until := window("2026-09-03", 14)
+	p, err := Build(Input{Today: "2026-09-03", Since: since, Until: until, Extra: []string{"Rust の パース", "# コメント", "", "  ai  "}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,11 +175,58 @@ func TestBOM(t *testing.T) {
 	if want := []Keep{{"2026-08", "見出し"}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("keep の 1 行目: %v", got)
 	}
-	p, err := Build(Input{Today: "2026-09-03", Extra: []string{"\uFEFFRust"}})
+	since, until := window("2026-09-03", 14)
+	p, err := Build(Input{Today: "2026-09-03", Since: since, Until: until, Extra: []string{"\uFEFFRust"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(p.Terms) != 1 || p.Terms[0].Word != "rust" {
 		t.Errorf("補助の 1 行目: %+v", p.Terms)
+	}
+}
+
+// 窓は呼び出し側が渡した時刻で切る。Build の中で日付から作ると UTC の 0 時になり、
+// retro(ローカルの 0 時)と別の日を指した(設計レビュー 2026-09-06 M3b)。
+func TestBuild_窓は渡された時刻で切る(t *testing.T) {
+	jst := time.FixedZone("JST", 9*60*60)
+	// JST の 2026-09-03 0 時 = UTC の 2026-09-02 15 時。
+	// この発話は UTC の日付では 09-02 だが、JST では 09-03 なので窓に入る
+	turn := time.Date(2026, 9, 2, 16, 0, 0, 0, time.UTC)
+	ss := []sessions.Session{{ID: "s", Turns: []sessions.Turn{{Role: sessions.User, Time: turn, Text: "ゴルーチン"}}}}
+
+	since := time.Date(2026, 9, 3, 0, 0, 0, 0, jst)
+	in := Input{Today: "2026-09-03", Days: 1, Since: since, Until: since.AddDate(0, 0, 1), Sessions: ss}
+	p, err := Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Weight("ゴルーチン") == 0 {
+		t.Error("JST の窓に入るはずの発話が入っていない")
+	}
+
+	// UTC の 0 時を起点にすると同じ発話が窓の外になる(これが直した食い違い)
+	inUTC := in
+	inUTC.Since = time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC)
+	inUTC.Until = inUTC.Since.AddDate(0, 0, 1)
+	p, err = Build(inUTC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Weight("ゴルーチン") != 0 {
+		t.Error("UTC の窓では外れるはず(テストの前提が崩れている)")
+	}
+
+	// Until はその時刻を含まない
+	inEdge := in
+	inEdge.Until = turn
+	p, _ = Build(inEdge)
+	if p.Weight("ゴルーチン") != 0 {
+		t.Error("Until ちょうどの発話を含めている")
+	}
+}
+
+func TestBuild_窓が無ければエラー(t *testing.T) {
+	if _, err := Build(Input{Today: "2026-09-03"}); err == nil {
+		t.Error("Since と Until が無いのにエラーにならない")
 	}
 }

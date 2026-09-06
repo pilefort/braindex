@@ -6,12 +6,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/pilefort/braindex/internal/render"
 	"github.com/pilefort/braindex/internal/scan"
+	"github.com/pilefort/braindex/internal/scan/scantest"
 )
 
 var update = flag.Bool("update", false, "ゴールデンファイルを更新する")
@@ -27,17 +29,25 @@ func e2eConfig() scan.Config {
 	}
 }
 
+// golden.md は表の形式(render の出力)の正本で、indexdata と review の往復テスト(Parse → Render で元に戻る)も読む。
+// Build が先頭に足す走査の記録は render の外なので golden には含めず、ここで「golden + 記録 = Build の出力」を確かめる。
 func TestBuild_E2EGolden(t *testing.T) {
 	res, err := Build(e2eConfig(), "2026-08-07")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	got := res.Catalog
+	got := render.Render(res.Records, "2026-08-07")
 	if res.Entries != 12 {
 		t.Errorf("件数: want=12 got=%d", res.Entries)
 	}
 	if len(res.Warnings) != 0 {
 		t.Errorf("警告なしを期待: %q", res.Warnings)
+	}
+	if !res.Coverage.Complete() {
+		t.Errorf("全件読めたので走査の記録は完全のはず: %+v", res.Coverage)
+	}
+	if string(res.Catalog) != string(withCoverage(got, res.Coverage)) || !strings.Contains(string(res.Catalog), "\n走査: 読めなかった範囲なし\n\n## ext\n") {
+		t.Errorf("Build の出力が「表 + 走査の記録」でない:\n%s", res.Catalog)
 	}
 
 	golden := filepath.Join("testdata", "golden.md")
@@ -61,10 +71,8 @@ func TestBuild_E2EGolden(t *testing.T) {
 }
 
 // 読めないファイルは警告にして飛ばし、残りは索引に載せる(無言スキップにしない)。
+// 飛ばした範囲は走査の記録(Coverage)に「ファイル」として残り、索引の先頭にも書かれる。
 func TestBuild_UnreadableFileWarns(t *testing.T) {
-	if runtime.GOOS == "windows" || os.Getuid() == 0 {
-		t.Skip("chmod 000 で読めなくする方法が使えない環境")
-	}
 	root := t.TempDir()
 	notes := filepath.Join(root, "r", "docs", "notes")
 	if err := os.MkdirAll(notes, 0o755); err != nil {
@@ -74,9 +82,10 @@ func TestBuild_UnreadableFileWarns(t *testing.T) {
 		t.Fatal(err)
 	}
 	bad := filepath.Join(notes, "bad.md")
-	if err := os.WriteFile(bad, []byte("# bad\n"), 0o000); err != nil {
+	if err := os.WriteFile(bad, []byte("# bad\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	scantest.MakeUnreadable(t, bad)
 	res, err := Build(scan.Config{Root: root}, "2026-08-07")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
@@ -86,6 +95,51 @@ func TestBuild_UnreadableFileWarns(t *testing.T) {
 	}
 	if len(res.Warnings) != 1 || !strings.HasPrefix(res.Warnings[0], "r/docs/notes/bad.md: ") || strings.Count(res.Warnings[0], "bad.md") != 1 {
 		t.Errorf("警告 1 件「r/docs/notes/bad.md: <理由>」(パスを繰り返さない)を期待: %q", res.Warnings)
+	}
+	if len(res.Coverage.Gaps) != 1 || res.Coverage.Gaps[0].Rel != "r/docs/notes/bad.md" || res.Coverage.Gaps[0].Dir || res.Coverage.Gaps[0].Reason == "" {
+		t.Fatalf("走査の記録に {r/docs/notes/bad.md, ファイル, 理由} の 1 件を期待: %+v", res.Coverage)
+	}
+	if !strings.Contains(string(res.Catalog), "\n走査: 読めなかった範囲 1 件") ||
+		!strings.Contains(string(res.Catalog), "\n- 読めなかった: r/docs/notes/bad.md — "+res.Coverage.Gaps[0].Reason+"\n") {
+		t.Errorf("索引の先頭に読めなかった範囲が無い:\n%s", res.Catalog)
+	}
+	cov, err := ParseCoverage(res.Catalog)
+	if err != nil || !reflect.DeepEqual(cov, res.Coverage) {
+		t.Errorf("索引から読み戻した記録が違う: %+v %v", cov, err)
+	}
+}
+
+// 列挙できないディレクトリは走査の記録に「ディレクトリ」として残る(配下のノートの有無は分からない)。
+// 同じ状態から 2 回作ればバイト一致する(決定性)。
+func TestBuild_UnreadableDirIsGap(t *testing.T) {
+	root := t.TempDir()
+	notes := filepath.Join(root, "r", "docs", "notes")
+	for _, rel := range []string{"ok.md", "locked/x.md"} {
+		p := filepath.Join(notes, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("# "+rel+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scantest.MakeUnreadable(t, filepath.Join(notes, "locked"))
+	a, err := Build(scan.Config{Root: root}, "2026-08-07")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if a.Entries != 1 || len(a.Coverage.Gaps) != 1 || a.Coverage.Gaps[0].Rel != "r/docs/notes/locked" || !a.Coverage.Gaps[0].Dir {
+		t.Fatalf("entries=%d coverage=%+v", a.Entries, a.Coverage)
+	}
+	if !strings.Contains(string(a.Catalog), "\n- 読めなかった: r/docs/notes/locked/ — ") {
+		t.Errorf("索引の先頭にディレクトリの範囲(末尾 /)が無い:\n%s", a.Catalog)
+	}
+	b, err := Build(scan.Config{Root: root}, "2026-08-07")
+	if err != nil {
+		t.Fatalf("Build(2 回目): %v", err)
+	}
+	if !bytes.Equal(a.Catalog, b.Catalog) {
+		t.Errorf("読めない範囲があるときに 2 回生成でバイト不一致(決定性違反)")
 	}
 }
 
@@ -100,6 +154,62 @@ func TestBuild_Deterministic(t *testing.T) {
 	}
 	if string(a.Catalog) != string(b.Catalog) {
 		t.Errorf("2 回生成でバイト不一致(決定性違反)")
+	}
+}
+
+// repo_depth 2 の root(internal/scan/testdata/root-depth2)を索引化する設定。extra の repo も group/name。
+func e2eDepth2Config() scan.Config {
+	return scan.Config{
+		Root:      filepath.Join("..", "scan", "testdata", "root-depth2"),
+		RepoDepth: 2,
+		Extra:     []scan.ExtraRule{{Repo: "group-b/repo-z", Path: "research", Recursive: true, Kind: "research"}},
+	}
+}
+
+// repo_depth 2 では索引の H2 見出しが group/name になる。表は golden-depth2.md と一致し、2 回生成でバイト一致する。
+// 1 段目の配置(stray/docs/notes)は載らない。
+func TestBuild_E2EGolden_RepoDepth2(t *testing.T) {
+	res, err := Build(e2eDepth2Config(), "2026-08-07")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if res.Entries != 7 {
+		t.Errorf("件数: want=7 got=%d", res.Entries)
+	}
+	if len(res.Warnings) != 0 || !res.Coverage.Complete() {
+		t.Errorf("警告なし・走査の記録は完全のはず: %q %+v", res.Warnings, res.Coverage)
+	}
+	cat := string(res.Catalog)
+	for _, h := range []string{"\n## group-a/repo-x\n", "\n## group-a/repo-y\n", "\n## group-b/repo-z\n"} {
+		if !strings.Contains(cat, h) {
+			t.Errorf("見出し %q が無い:\n%s", strings.TrimSpace(h), cat)
+		}
+	}
+	if strings.Contains(cat, "stray") {
+		t.Errorf("1 段目の配置が載っている:\n%s", cat)
+	}
+	got := render.Render(res.Records, "2026-08-07")
+	golden := filepath.Join("testdata", "golden-depth2.md")
+	if *update {
+		if err := os.WriteFile(golden, got, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("golden 更新: %s", golden)
+		return
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatalf("golden 読み込み: %v (先に `go test ./internal/catalog/ -update` で生成)", err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("catalog が golden と不一致:\n--- got ---\n%s", got)
+	}
+	again, err := Build(e2eDepth2Config(), "2026-08-07")
+	if err != nil {
+		t.Fatalf("Build(2 回目): %v", err)
+	}
+	if !bytes.Equal(res.Catalog, again.Catalog) {
+		t.Errorf("repo_depth 2 で 2 回生成するとバイト不一致(決定性違反)")
 	}
 }
 

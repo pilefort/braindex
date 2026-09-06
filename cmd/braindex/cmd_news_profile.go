@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pilefort/braindex/internal/changehistory"
 	"github.com/pilefort/braindex/internal/config"
 	"github.com/pilefort/braindex/internal/interest"
 	"github.com/pilefort/braindex/internal/news"
@@ -22,12 +23,13 @@ import (
 
 // newsProfileOptions は braindex news profile のコマンドライン。空・0 は「未指定」。
 type newsProfileOptions struct {
-	config   string // -config。hub の位置を兼ねるので必須
-	date     string // -date。今日の固定(既定: 実行日)
-	days     int    // -days。直近の日数(既定: 設定 news.profile_days → 14)
-	sessions string // -sessions。セッションログの置き場(既定: news.sessions_dir → retro.sessions_dir → ~/.claude/projects)
-	top      int    // -top。表に出す語数(既定 100。0 で全件)
-	json     bool   // -json。JSON で出す
+	config      string // -config。hub の位置を兼ねるので必須
+	date        string // -date。今日の固定(既定: 実行日)
+	days        int    // -days。直近の日数(既定: 設定 news.profile_days → 14)
+	sessions    string // -sessions。セッションログの置き場(既定: news.sessions_dir → retro.sessions_dir → ~/.claude/projects)
+	allProjects bool   // -all-projects。root の外のセッションも数える
+	top         int    // -top。表に出す語数(既定 100。0 で全件)
+	json        bool   // -json。JSON で出す
 }
 
 var keepFileName = regexp.MustCompile(`^(\d{4}-\d{2})\.md$`)
@@ -45,14 +47,16 @@ func runNewsProfile(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.date, "date", "", "今日として使う日付 YYYY-MM-DD(既定: 実行日)。窓の基準")
 	fs.IntVar(&o.days, "days", 0, "直近何日の索引とセッションを見るか(既定: 設定 news.profile_days → 14)")
 	fs.StringVar(&o.sessions, "sessions", "", "セッションログの置き場(既定: 設定 news.sessions_dir → retro.sessions_dir → ~/.claude/projects)")
+	fs.BoolVar(&o.allProjects, "all-projects", false, "root の外で交わしたセッションも数える(既定: root 配下だけ。設定 retro.all_projects と同じ)")
 	fs.IntVar(&o.top, "top", 100, "表に出す語数(0 で全件)")
 	fs.BoolVar(&o.json, "json", false, "JSON で出す(全件)")
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方: braindex news profile [-config braindex.json] [-date YYYY-MM-DD] [-days N] [-sessions DIR] [-top N] [-json]")
-		fmt.Fprintln(stderr, "  関心プロファイル(語 → 重み・出典)を標準出力に書く。出典は 索引の直近差分(index/catalog.md)・直近のセッション内容・")
-		fmt.Fprintln(stderr, "  選別で残した見出し(news/keep/YYYY-MM.md)・補助の関心ファイル(news/interests.md・1 行 1 語)。")
-		fmt.Fprintln(stderr, "  重みは出典ごとに最大を 1 に正規化した値の和。決定論で、LLM は使わない。セッション本文は読むだけで送らない。")
-		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗 / 2 警告つきで完了(索引やセッションの置き場が無く、その出典を飛ばした)")
+		fmt.Fprintln(stderr, "  関心プロファイル(語 → 重み・出典)を標準出力に書く。出典は 索引の直近差分(index/catalog.md。隣の changes.json があれば")
+		fmt.Fprintln(stderr, "  本文だけ直したノートも観測日で数える)・直近のセッション内容・選別で残した見出し(news/keep/YYYY-MM.md)・")
+		fmt.Fprintln(stderr, "  補助の関心ファイル(news/interests.md・1 行 1 語)。")
+		fmt.Fprintln(stderr, "  重みは出典ごとに最大を 1 に正規化した値の和。規則ベースで、LLM は使わない。セッション本文は読むだけで送らない。")
+		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗 / 2 警告つきで完了(索引やセッションの置き場が無く、その出典を飛ばした。本文の変更の記録が壊れていて読めない)")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
 		fs.PrintDefaults()
@@ -90,7 +94,7 @@ func runNewsProfile(args []string, stdout, stderr io.Writer) int {
 	} else if _, perr := time.Parse("2006-01-02", today); perr != nil {
 		return fail(fmt.Errorf("-date は YYYY-MM-DD で指定する: %q", today))
 	}
-	p, warnings, err := loadProfile(fc, filepath.Dir(cfgPath), today, o.days, o.sessions)
+	p, warnings, err := loadProfile(fc, filepath.Dir(cfgPath), today, o.days, o.sessions, o.allProjects)
 	if err != nil {
 		return fail(err)
 	}
@@ -119,8 +123,8 @@ func runNewsProfile(args []string, stdout, stderr io.Writer) int {
 // loadProfile は 4 つの出典を読んで関心プロファイルを作る(news profile と news fetch が共有)。
 // days <= 0 なら設定 news.profile_days。sessionsDir が空なら news.sessions_dir → retro.sessions_dir → ~/.claude/projects。
 // 索引やセッションの置き場が無ければ警告にして飛ばす(エラーにしない)。
-func loadProfile(fc config.Config, hubDir, today string, days int, sessionsDir string) (interest.Profile, []string, error) {
-	in, warnings, err := loadProfileInput(fc, hubDir, today, days, sessionsDir)
+func loadProfile(fc config.Config, hubDir, today string, days int, sessionsDir string, allProjects bool) (interest.Profile, []string, error) {
+	in, warnings, err := loadProfileInput(fc, hubDir, today, days, sessionsDir, allProjects)
 	if err != nil {
 		return interest.Profile{}, nil, err
 	}
@@ -131,9 +135,9 @@ func loadProfile(fc config.Config, hubDir, today string, days int, sessionsDir s
 	return p, warnings, nil
 }
 
-// loadProfileInput は関心プロファイルの材料(索引・セッション・keep・補助)を読む。プロファイルにせず材料のまま返すので、
-// 同じ材料をほかの目的(braindex learn の訂正の文脈)にも使える。警告の扱いは loadProfile と同じ。
-func loadProfileInput(fc config.Config, hubDir, today string, days int, sessionsDir string) (interest.Input, []string, error) {
+// loadProfileInput は関心プロファイルの材料(索引と本文の変更の記録・セッション・keep・補助)を読む。プロファイルにせず
+// 材料のまま返すので、同じ材料をほかの目的(braindex learn の訂正の文脈)にも使える。警告の扱いは loadProfile と同じ。
+func loadProfileInput(fc config.Config, hubDir, today string, days int, sessionsDir string, allProjects bool) (interest.Input, []string, error) {
 	var warnings []string
 	warn := func(format string, a ...any) { warnings = append(warnings, fmt.Sprintf(format, a...)) }
 	s := fc.News.WithDefaults()
@@ -141,7 +145,19 @@ func loadProfileInput(fc config.Config, hubDir, today string, days int, sessions
 	if days <= 0 {
 		days = s.ProfileDays
 	}
-	in := interest.Input{Today: today, Days: days}
+	// 窓はローカルの 0 時起点。retro と揃える(決定 2026-09-03)。
+	// 起点も終端もここで作って渡す——interest 側で日付から作ると UTC の 0 時になる(設計レビュー 2026-09-06 M3b)。
+	since, err := profileSince(today, days)
+	if err != nil {
+		return interest.Input{}, nil, err
+	}
+	in := interest.Input{Today: today, Days: days, Since: since, Until: since.AddDate(0, 0, days+1)}
+	// セッションは hub の root 配下で交わしたものだけ数える(設計レビュー 2026-09-06 M2)。
+	// 全部見るなら設定 retro.all_projects を true にする(retro と同じ設定を使う)
+	underRoot, why := sessionRoot(fc.Config.Root, hubDir, fc.Retro.AllProjects || allProjects, true)
+	if why != "" {
+		warn("%s", why)
+	}
 
 	// 出典 1: 索引
 	catalogPath := filepath.Join(hubDir, filepath.FromSlash(defaultOut))
@@ -149,6 +165,13 @@ func loadProfileInput(fc config.Config, hubDir, today string, days int, sessions
 		in.Catalog, err = review.ParseCatalog(b)
 		if err != nil {
 			return interest.Input{}, nil, fmt.Errorf("%s: %w", catalogPath, err)
+		}
+		// 索引の隣の本文の変更の記録(changes.json)。記録日が窓の外でも本文を直したノートを観測日で数える。
+		// 記録が無い hub は今までどおり記録日だけで決まる。壊れていれば警告して本文だけの変更は数えない
+		if h, err := changehistory.Load(filepath.Join(filepath.Dir(catalogPath), changehistory.FileName)); err != nil {
+			warn("本文の変更の記録を読めない: %v(本文だけの変更は数えない)", err)
+		} else if h.Known() {
+			in.Changes = h.Notes
 		}
 	} else if errors.Is(err, iofs.ErrNotExist) {
 		warn("索引 %s が無いので飛ばした(braindex で生成する)", catalogPath)
@@ -170,16 +193,12 @@ func loadProfileInput(fc config.Config, hubDir, today string, days int, sessions
 			return interest.Input{}, nil, err
 		}
 	}
-	since, err := profileSince(today, days)
-	if err != nil {
-		return interest.Input{}, nil, err
-	}
 	if _, err := os.Stat(sessDir); errors.Is(err, iofs.ErrNotExist) {
 		warn("セッションログの置き場 %s が無いので飛ばした", sessDir)
 	} else if err != nil {
 		return interest.Input{}, nil, err
 	} else {
-		ss, ws, err := sessions.Dir{Path: sessDir}.Sessions(sessions.Options{Since: since})
+		ss, ws, err := sessions.Dir{Path: sessDir}.Sessions(sessions.Options{Since: since, UnderRoot: underRoot})
 		if err != nil {
 			return interest.Input{}, nil, err
 		}
@@ -204,10 +223,10 @@ func loadProfileInput(fc config.Config, hubDir, today string, days int, sessions
 
 // profileSince は関心プロファイルが見る窓の起点(today の days 日前)を返す。
 //
-// 起点は retro と同じ「ローカル(retroLoc)の 0 時」にする(決定 2026-09-03)。UTC の 0 時にすると、
+// 起点は retro と同じ「ローカル(localLoc)の 0 時」にする(決定 2026-09-03)。UTC の 0 時にすると、
 // 同じ「N 日前から」が retro と別の日を指し、両方を定期実行に載せたときに食い違う。
 func profileSince(today string, days int) (time.Time, error) {
-	t, err := time.ParseInLocation("2006-01-02", today, retroLoc)
+	t, err := localMidnight(today)
 	if err != nil {
 		return time.Time{}, err
 	}

@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/pilefort/braindex/internal/fsutil"
 )
 
 // NewSuffix は、利用者が編集したファイルの隣に置く「今の版」の拡張子。
@@ -77,6 +79,17 @@ func Update(dst string, kind Kind, opt UpdateOptions) (UpdateResult, error) {
 		return UpdateResult{}, err
 	}
 
+	// 書いた分は都度台帳に残す。最後にまとめて保存すると、途中で失敗したときに
+	// 「書いたのに台帳に無い」ファイルができ、次の update がそれを「利用者が編集した」と見て
+	// .new を置いてしまう(設計レビュー 2026-09-06 M8)。
+	record := func(path string, content []byte) error {
+		led.Files[path] = Hash(content)
+		if opt.DryRun {
+			return nil
+		}
+		return SaveLedger(dst, led)
+	}
+
 	for _, f := range files {
 		target := filepath.Join(dst, filepath.FromSlash(f.Path))
 		cur, err := os.ReadFile(target)
@@ -88,7 +101,9 @@ func Update(dst string, kind Kind, opt UpdateOptions) (UpdateResult, error) {
 		case bytes.Equal(cur, f.Content):
 			// 既に今の版。書く必要は無いが、台帳は追いつかせる
 			res.Unchanged = append(res.Unchanged, f.Path)
-			led.Files[f.Path] = Hash(f.Content)
+			if err := record(f.Path, f.Content); err != nil {
+				return res, err
+			}
 			continue
 		case (f.Path == ConfigPath || f.Path == GitignorePath) && !(led.Files[f.Path] == Hash(cur)):
 			// 利用者が編集した設定と .gitignore は、-force でも無い節・行を足すだけ(root や利用者の行を消さない)。
@@ -146,7 +161,9 @@ func Update(dst string, kind Kind, opt UpdateOptions) (UpdateResult, error) {
 				return res, err
 			}
 		}
-		led.Files[f.Path] = Hash(f.Content)
+		if err := record(f.Path, f.Content); err != nil {
+			return res, err
+		}
 	}
 	if !opt.DryRun {
 		if err := SaveLedger(dst, led); err != nil {
@@ -229,10 +246,15 @@ func InferFeatures(dst string) ([]Feature, error) {
 	return out, nil
 }
 
-// writeFile は親ディレクトリを作ってから書く。
-func writeFile(path string, b []byte) error {
+// writeFile はテストで差し替える(途中で書き込みが失敗する状況を再現するため)。
+var writeFile = writeFileToDisk
+
+// writeFileToDisk は親ディレクトリを作ってから書く。書き切ってから置き換える(fsutil.WriteAtomic)ので、
+// 途中で失敗しても半端なファイルは残らない。台帳は配ったファイルのハッシュを覚えているので、
+// 半端なファイルは次の update で「利用者が編集した」と誤認される(設計レビュー 2026-09-06 M14)。
+func writeFileToDisk(path string, b []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0o644)
+	return fsutil.WriteAtomic(path, b, 0o644)
 }

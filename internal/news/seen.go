@@ -37,11 +37,12 @@ func LoadSeen(path string) (Seen, error) {
 }
 
 // Save は既読ファイルを書く。キーを昇順に 1 行 1 件で書くので、同じ内容なら同じバイト列になる。
+// 書き込みは原子的(途中で止まっても前回の既読が残る。半端な JSON は LoadSeen が読めず、全件が新着に戻ってしまう)。
 func (s Seen) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, s.Marshal(), 0o644)
+	return writeAtomic(path, s.Marshal(), 0o644)
 }
 
 // Marshal は Save が書くバイト列。

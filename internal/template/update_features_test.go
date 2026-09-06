@@ -290,7 +290,7 @@ func TestMissingConfigKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s := strings.Join(got, ","); s != "retro.position_bins,retro.window_days" {
+	if s := strings.Join(got, ","); s != "retro.baseline_weeks,retro.position_bins,retro.window_days" {
 		t.Errorf("missing=%s", s)
 	}
 	full, _, err := BuildConfig(nil, []Feature{FeatureAll})

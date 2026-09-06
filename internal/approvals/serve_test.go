@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -233,6 +234,64 @@ func TestServe_SavesReplyBeforeResponding(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("回答後に Serve が終わらない")
 	}
+}
+
+// 置き換えに失敗しても、前回の回答は壊れない(半端な JSON で上書きしない)。
+// 回答 JSON は apply が読むので、途中まで書けたファイルは黙って読めない・取り込めないになる(設計レビュー 2026-09-06 M14)。
+func TestWriteReply_置き換えに失敗しても前回の回答は壊れない(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "approvals-x.reply.json")
+	if err := WriteReply(path, Reply{Nonce: "n0", Items: []ReplyItem{{N: 1, Choice: "A"}}}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blockReplace(t, path)
+
+	if err := WriteReply(path, Reply{Nonce: "n1", Items: []ReplyItem{{N: 1, Choice: "B"}}}); err == nil {
+		t.Fatal("エラーにならない")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("前回の回答が変わった:\n before=%s\n after=%s", before, after)
+	}
+	des, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, de := range des {
+		if strings.HasPrefix(de.Name(), ".") {
+			t.Errorf("一時ファイルが残った: %s", de.Name())
+		}
+	}
+}
+
+// blockReplace は path を「原子的には書き換えられない」状態にする。path そのものは書けるので、
+// 切り詰めてから書く os.WriteFile は成功して前回の内容を失い、一時ファイル経由の置き換えは失敗して前回の内容が残る。
+// Windows: path を開いたままにする(Go の os.Open は FILE_SHARE_DELETE を付けないので、置き換えと削除が失敗する)。
+// それ以外: 親ディレクトリの書き込み権限を外す(一時ファイルを作れない。root は権限を無視するので skip)。
+func blockReplace(t *testing.T, path string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		f, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { f.Close() })
+		return
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root は権限を無視するので、書けない置き場を作れない")
+	}
+	dir := filepath.Dir(path)
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
 }
 
 // 書けなかったら 200 を返さない。ブラウザ側は既存の失敗表示(JSON を貼り付ける)に落ちる。

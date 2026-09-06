@@ -44,8 +44,8 @@ func isIssuePath(p string) bool {
 }
 
 // runLint は braindex lint [フラグ] [パス ...] を実行する。
-// パスを渡せばそのファイル(ディレクトリなら直下の ISSUE-*.md。-kind note なら直下の *.md)を、渡さなければ root 直下の
-// 各リポの work/ISSUE-*.md を検査する。ISSUE-*.md は形の検査、それ以外の .md はノートの曖昧さ検査(-kind で固定できる)。
+// パスを渡せばそのファイル(ディレクトリなら直下の ISSUE-*.md。-kind note なら直下の *.md)を、渡さなければ root の
+// 各リポ(repo_depth 段下。既定は直下)の work/ISSUE-*.md を検査する。ISSUE-*.md は形の検査、それ以外の .md はノートの曖昧さ検査(-kind で固定できる)。
 // 指摘は stdout に「パス:行: 内容」(ノート検査は内容の先頭に「[種別]」)で出す。-json なら指摘の配列を JSON で出す。
 // 終了コード: 0 指摘なし / 1 失敗(フラグ・root・パスの誤り) / 2 指摘あり。
 func runLint(args []string, stdout, stderr io.Writer) int {
@@ -56,7 +56,7 @@ func runLint(args []string, stdout, stderr io.Writer) int {
 	var noGit, asJSON bool
 	var kind, glossary string
 	fs.StringVar(&o.config, "config", "", "設定ファイルのパス(既定: カレントの braindex.json)。パスを渡さないときの root の取得に使う")
-	fs.StringVar(&o.root, "root", "", "走査のルート。直下の各リポの work/ISSUE-*.md を検査する(設定ファイルの root より優先)")
+	fs.StringVar(&o.root, "root", "", "走査のルート。各リポ(設定の repo_depth 段下。既定は直下)の work/ISSUE-*.md を検査する(設定ファイルの root より優先)")
 	fs.StringVar(&o.date, "date", "", "基準日 YYYY-MM-DD(既定: 今日)。最終更新の未来判定と経過日数に使う")
 	fs.IntVar(&staleDays, "stale-days", 0, "最終更新からこの日数以上たった ISSUE を指摘する(0 で見ない)")
 	fs.BoolVar(&noGit, "no-git", false, "git HEAD との比較(チェック項目の消失・最終更新の据え置き)をしない")
@@ -65,8 +65,8 @@ func runLint(args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&asJSON, "json", false, "指摘を JSON の配列で出す(path・line・msg・kind・severity)")
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方: braindex lint [フラグ] [パス ...]")
-		fmt.Fprintln(stderr, "  パスを渡せばそのファイル(ディレクトリなら直下の ISSUE-*.md。-kind note なら直下の *.md)を、渡さなければ root 直下の各リポの")
-		fmt.Fprintln(stderr, "  work/ISSUE-*.md を検査する。ISSUE-*.md は規約の形を、それ以外の .md は曖昧さ(数量詞・日付なし・出典なき数字・裸のヘッジ・")
+		fmt.Fprintln(stderr, "  パスを渡せばそのファイル(ディレクトリなら直下の ISSUE-*.md。-kind note なら直下の *.md)を、渡さなければ root の各リポ")
+		fmt.Fprintln(stderr, "  (設定の repo_depth 段下。既定は直下)の work/ISSUE-*.md を検査する。ISSUE-*.md は規約の形を、それ以外の .md は曖昧さ(数量詞・日付なし・出典なき数字・裸のヘッジ・")
 		fmt.Fprintln(stderr, "  なぜ欠落・根拠欠落・未定義用語)を見る。指摘は stdout に「パス:行: 内容」で出す。終了コード: 0 指摘なし / 1 失敗 / 2 指摘あり")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
@@ -101,7 +101,11 @@ func runLint(args []string, stdout, stderr io.Writer) int {
 	if fs.NArg() > 0 {
 		targets, err = lintTargetsFromPaths(fs.Args(), kind == kindNote)
 	} else {
-		targets, err = lintTargetsFromRoot(o)
+		var ws []string
+		targets, ws, err = lintTargetsFromRoot(o)
+		for _, w := range ws {
+			fmt.Fprintln(stderr, "braindex lint:", w)
+		}
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "braindex lint:", err)
@@ -216,28 +220,28 @@ func lintTargetsFromPaths(paths []string, notes bool) ([]lintTarget, error) {
 	return ts, nil
 }
 
-// lintTargetsFromRoot は索引と同じ規則で root を決め、直下の各リポ(. で始まるものは除く)の work/ISSUE-*.md を対象にする。
-// 表示パスは root 相対(<リポ>/work/ISSUE-x.md)。
-func lintTargetsFromRoot(o options) ([]lintTarget, error) {
+// lintTargetsFromRoot は索引と同じ規則で root とリポを決め(scan.ListRepos。repo_depth 段下・. で始まるものは除く)、
+// 各リポの work/ISSUE-*.md を対象にする。表示パスは root 相対(<リポ>/work/ISSUE-x.md)。
+// 列挙できなかった group は warnings に積む(そこにリポが無いのか読めなかったのかは分からないので、無言にしない)。
+func lintTargetsFromRoot(o options) (ts []lintTarget, warnings []string, err error) {
 	cfg, _, _, err := resolve(o)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	entries, err := os.ReadDir(cfg.Root)
+	repos, gaps, err := scan.ListRepos(cfg.Root, cfg.Depth())
 	if err != nil {
-		return nil, fmt.Errorf("root を読めない: %w", err)
+		return nil, nil, err
 	}
-	var ts []lintTarget
-	for _, de := range entries {
-		if !de.IsDir() || strings.HasPrefix(de.Name(), ".") {
-			continue
-		}
-		matches, _ := filepath.Glob(filepath.Join(cfg.Root, de.Name(), "work", "ISSUE-*.md"))
+	for _, g := range gaps {
+		warnings = append(warnings, fmt.Sprintf("%s: %s", g.Rel, g.Reason))
+	}
+	for _, r := range repos {
+		matches, _ := filepath.Glob(filepath.Join(r.Dir, "work", "ISSUE-*.md"))
 		for _, m := range matches {
-			ts = append(ts, lintTarget{display: de.Name() + "/work/" + filepath.Base(m), path: m})
+			ts = append(ts, lintTarget{display: r.Name + "/work/" + filepath.Base(m), path: m})
 		}
 	}
-	return ts, nil
+	return ts, warnings, nil
 }
 
 // findGlossary は dir から親へさかのぼり、最初に見つかった docs/glossary.md のパスを返す(ノートのあるリポの用語集)。

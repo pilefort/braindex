@@ -23,11 +23,11 @@ func human(idx int, t time.Time, text string) sessions.Turn {
 func fixture() Input {
 	p := interest.Profile{Today: "2026-09-05", Days: 14, Sources: map[string]int{"index": 3, "sessions": 50, "keep": 2},
 		Terms: []interest.Term{
-			{Word: "kubernetes", Weight: 1.0, Counts: map[string]float64{"sessions": 4}},            // 触れているがノートに無い
-			{Word: "terraform", Weight: 0.9, Counts: map[string]float64{"sessions": 3, "index": 1}}, // ノートにある → 出ない
+			{Word: "kubernetes", Weight: 1.0, Counts: map[string]float64{"sessions": 4}},            // 触れているが索引に無い
+			{Word: "terraform", Weight: 0.9, Counts: map[string]float64{"sessions": 3, "index": 1}}, // 索引にある → 出ない
 			{Word: "grpc", Weight: 0.5, Counts: map[string]float64{"sessions": 2}},                  // 閾値未満
-			{Word: "webassembly", Weight: 0.4, Counts: map[string]float64{"keep": 2}},               // 残した記事にあるがノートに無い
-			{Word: "rust", Weight: 0.4, Counts: map[string]float64{"keep": 1, "index": 2}},          // ノートにある → 出ない
+			{Word: "webassembly", Weight: 0.4, Counts: map[string]float64{"keep": 2}},               // 残した記事にあるが索引に無い
+			{Word: "rust", Weight: 0.4, Counts: map[string]float64{"keep": 1, "index": 2}},          // 索引にある → 出ない
 		}}
 	ss := []sessions.Session{
 		{ID: "s1", Project: "/p/a", Turns: []sessions.Turn{
@@ -50,14 +50,14 @@ func fixture() Input {
 func TestBuild_信号3つ(t *testing.T) {
 	r := Build(fixture())
 	if len(r.Unsettled) != 1 || r.Unsettled[0].Word != "kubernetes" || r.Unsettled[0].Sessions != 4 {
-		t.Errorf("触れているがノートに無い: %+v", r.Unsettled)
+		t.Errorf("触れているが索引に無い: %+v", r.Unsettled)
 	}
 	// Ingress は訂正 2 発話（s1・s2）の直前の発話に出る。Gateway は 1 発話だけ → 出ない
 	if len(r.Stumbles) != 1 || r.Stumbles[0].Word != "ingress" || r.Stumbles[0].Corrections != 2 || r.Stumbles[0].Sessions != 2 {
 		t.Errorf("訂正の文脈: %+v", r.Stumbles)
 	}
 	if len(r.ReadNotWritten) != 1 || r.ReadNotWritten[0].Word != "webassembly" || r.ReadNotWritten[0].Keeps != 2 {
-		t.Errorf("残した記事にあるがノートに無い: %+v", r.ReadNotWritten)
+		t.Errorf("残した記事にあるが索引に無い: %+v", r.ReadNotWritten)
 	}
 	if r.Sources["corrections"] != 2 {
 		t.Errorf("訂正発話数: %d", r.Sources["corrections"])
@@ -80,7 +80,7 @@ func TestBuild_Deterministic(t *testing.T) {
 		t.Fatalf("同じ材料でバイト列が違う:\n%s\n---\n%s", a, b)
 	}
 	s := string(a)
-	for _, want := range []string{"# 学習の提案 2026-09-05（直近 14 日）", "材料: ノート 3・セッション 50・訂正 2 発話・keep 2", "## 触れているがノートに無い", "kubernetes", "## 訂正の文脈に繰り返し出る", "ingress", "## 残した記事にあるがノートに無い", "webassembly"} {
+	for _, want := range []string{"# 学習の提案 2026-09-05（直近 14 日）", "材料: ノート 3・セッション 50・訂正 2 発話・keep 2", "本文照合: なし（", "## 触れているが索引に無い", "kubernetes", "## 訂正の文脈に繰り返し出る", "ingress", "## 残した記事にあるが索引に無い", "webassembly"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("出力に %q が無い:\n%s", want, s)
 		}
@@ -150,7 +150,7 @@ func TestBuild_全セッションに出る汎用語は除く(t *testing.T) {
 
 func TestBuild_窓の外のノートも索引として見る(t *testing.T) {
 	in := fixture()
-	// kubernetes は窓内の索引には無い(idx=0)が、古いノートのタイトルにある → 「ノートに無い」に載せない
+	// kubernetes は窓内の索引には無い(idx=0)が、古いノートのタイトルにある → 「索引に無い」に載せない
 	in.Catalog = []render.Entry{{Date: "2026-07-01", Title: "Kubernetes の Ingress 入門"}}
 	r := Build(in)
 	for _, it := range r.Unsettled {
@@ -208,5 +208,45 @@ func TestBuild_辞書に当たった語そのものは除く(t *testing.T) {
 		if it.Word == "ハルシネーション" {
 			t.Errorf("引き金の語が載った: %+v", r.Stumbles)
 		}
+	}
+}
+
+// 除外語はセッションを 1 周して全部集めてから数える。数えながら足すと、後のセッションで
+// 足された語が前のセッションでは効かず、並び順で出力が変わった(設計レビュー 2026-09-06 M3c)。
+//
+// 引き金の語が辞書のパターンそのものと同じなら、パターンから作る除外語で最初から落ちる。
+// 順序が効くのは、パターンが正規表現で「当たった本文」がパターンと違うとき。
+func TestBuild_セッションの並び順で結果が変わらない(t *testing.T) {
+	in := fixture()
+	// 「直して」は当たった本文から語が出ない(ひらがな)。
+	// 「<カタカナ>ではない」は当たった本文から「ハルシネーション」が出て、そこで初めて除外語になる
+	dict, _ := retro.Parse("test", "直して\n[ァ-ヴー]+ではない\n")
+	in.Dicts = []*retro.Dictionary{dict}
+	in.Options.MinCorrections = 1
+	in.Sessions = []sessions.Session{
+		{ID: "s1", Turns: []sessions.Turn{
+			human(1, at(3, 9), "Gateway の設定"),
+			human(2, at(3, 10), "ハルシネーション を直して"), // 訂正。文脈の語に「ハルシネーション」が入る
+		}},
+		{ID: "s2", Turns: []sessions.Turn{
+			human(1, at(3, 11), "Gateway を見て"),
+			human(2, at(3, 12), "それはハルシネーションではない"), // ここで「ハルシネーション」が除外語になる
+		}},
+	}
+	forward, err := Build(in).JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev := in
+	rev.Sessions = []sessions.Session{in.Sessions[1], in.Sessions[0]}
+	backward, err := Build(rev).JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(forward) != string(backward) {
+		t.Errorf("並び順で結果が変わった:\n--- 順 ---\n%s\n--- 逆 ---\n%s", forward, backward)
+	}
+	if strings.Contains(string(forward), "ハルシネーション") {
+		t.Errorf("引き金の語が載った:\n%s", forward)
 	}
 }

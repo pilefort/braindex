@@ -2,6 +2,7 @@ package news
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -92,7 +93,7 @@ func TestIngest_keepに載せるのはhttpのみ(t *testing.T) {
 	os.WriteFile(filepath.Join(inbox, "braindex-news-selection_2026-08-15_daily_1.json"),
 		[]byte(selectionJSON("2026-08-15", "daily", keeps, `"F1": {"shown": 2, "kept": 2}`)), 0o644)
 
-	if _, err := Ingest(newsDir, []string{inbox}); err != nil {
+	if _, err := Ingest(newsDir, []string{inbox}, nil); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(filepath.Join(newsDir, "keep", "2026-08.md"))
@@ -117,7 +118,7 @@ func TestIngest(t *testing.T) {
 	os.WriteFile(filepath.Join(inbox, "braindex-news-selection_bad.json"), []byte(`{"type": "other"}`), 0o644)
 	os.WriteFile(filepath.Join(inbox, "unrelated.json"), []byte(`{}`), 0o644)
 
-	msgs, err := Ingest(newsDir, []string{inbox, filepath.Join(newsDir, "no-such-dir")})
+	msgs, err := Ingest(newsDir, []string{inbox, filepath.Join(newsDir, "no-such-dir")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +149,7 @@ func TestIngest(t *testing.T) {
 	os.WriteFile(filepath.Join(inbox, "braindex-news-selection_2026-08-15_daily_2.json"),
 		[]byte(selectionJSON("2026-08-15", "daily", keeps+`, {"id": "b", "title": "追加", "link": "https://x/more", "feed": "F1", "rescued": true}`,
 			`"F1": {"shown": 10, "kept": 2, "dropped": 6, "hidden": 5, "rescued": 1}`)), 0o644)
-	if _, err := Ingest(newsDir, []string{inbox}); err != nil {
+	if _, err := Ingest(newsDir, []string{inbox}, nil); err != nil {
 		t.Fatal(err)
 	}
 	keepMD, _ = os.ReadFile(filepath.Join(newsDir, "keep", "2026-08.md"))
@@ -162,7 +163,7 @@ func TestIngest(t *testing.T) {
 
 	// 何も無ければ何もしない(統計ファイルも作らない)
 	empty := filepath.Join(t.TempDir(), "news")
-	if msgs, err := Ingest(empty, []string{filepath.Join(empty, "inbox")}); err != nil || msgs != nil {
+	if msgs, err := Ingest(empty, []string{filepath.Join(empty, "inbox")}, nil); err != nil || msgs != nil {
 		t.Errorf("空: %v %v", msgs, err)
 	}
 	if _, err := os.Stat(filepath.Join(empty, StatsFile)); err == nil {
@@ -189,7 +190,7 @@ func TestIngest_CrossDevice(t *testing.T) {
 	}
 	t.Cleanup(func() { osRename = orig })
 
-	msgs, err := Ingest(newsDir, []string{inbox})
+	msgs, err := Ingest(newsDir, []string{inbox}, nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -222,7 +223,7 @@ func TestIngest_DirNameWithGlobMeta(t *testing.T) {
 		t.Fatal(err)
 	}
 	newsDir := filepath.Join(base, "news")
-	msgs, err := Ingest(newsDir, []string{filepath.Join(base, "no-such-dir"), inbox})
+	msgs, err := Ingest(newsDir, []string{filepath.Join(base, "no-such-dir"), inbox}, nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -231,5 +232,199 @@ func TestIngest_DirNameWithGlobMeta(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(newsDir, IngestedDir, name)); err != nil {
 		t.Errorf("取り込み済みに無い: %v", err)
+	}
+}
+
+// 選別 JSON は信用境界の外(ブラウザのダウンロード先)から拾うので、date は
+// keep ファイルのパスの一部になる前に形を検査する(設計レビュー 2026-09-06 H4)。
+func TestIngest_dateの形が違う選別JSONは取り込まない(t *testing.T) {
+	base := t.TempDir()
+	newsDir := filepath.Join(base, "hub", "news")
+	inbox := filepath.Join(newsDir, "inbox")
+	if err := os.MkdirAll(inbox, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	keeps := `{"id": "a", "title": "残す記事", "link": "https://x/keep", "feed": "F1"}`
+	for i, date := range []string{"../../escape", "2026-8-15", "", "2026-08-15 ", "20260815"} {
+		name := fmt.Sprintf("%s%d.json", SelectionPrefix, i)
+		if err := os.WriteFile(filepath.Join(inbox, name),
+			[]byte(selectionJSON(date, "daily", keeps, `"F1": {"shown": 1, "kept": 1}`)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	msgs, err := Ingest(newsDir, []string{inbox}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 5 {
+		t.Fatalf("msgs の数: %d %q", len(msgs), msgs)
+	}
+	for _, m := range msgs {
+		if !strings.Contains(m, "が YYYY-MM-DD でない") || !strings.Contains(m, "取り込まない") {
+			t.Errorf("警告の文面: %q", m)
+		}
+	}
+	// keep ファイルは 1 つもできない(置き場の外にも中にも)
+	if err := filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(p, ".md") {
+			t.Errorf("keep ファイルができた: %s", p)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// 統計にも入らない・取り込み済みへも移さない(人が中を見て消せるように元の場所に残す)
+	if _, err := os.Stat(filepath.Join(newsDir, StatsFile)); err == nil {
+		t.Error("統計ファイルを作った")
+	}
+	des, _ := os.ReadDir(inbox)
+	if len(des) != 5 {
+		t.Errorf("元の場所に残っていない: %d 件", len(des))
+	}
+	if _, err := os.Stat(filepath.Join(newsDir, IngestedDir)); err == nil {
+		t.Error("取り込み済みへ移した")
+	}
+}
+
+// feed_stats は feeds.json にある名前で数が 0 以上のものだけ数える。
+// 外れた項目は落として 1 行にまとめて伝える(記事ごとに警告を出さない)。
+func TestIngest_feedStatsの検査(t *testing.T) {
+	newsDir := filepath.Join(t.TempDir(), "news")
+	inbox := filepath.Join(newsDir, "inbox")
+	if err := os.MkdirAll(inbox, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stats := `"F1": {"shown": 10, "kept": 1}, "知らない取材先": {"shown": 5, "kept": 5}, "F2": {"shown": -3, "kept": 1}`
+	if err := os.WriteFile(filepath.Join(inbox, SelectionPrefix+"1.json"),
+		[]byte(selectionJSON("2026-08-15", "daily", `{"id": "a", "title": "T", "link": "https://x/1", "feed": "F1"}`, stats)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	known := map[string]bool{"F1": true, "F2": true}
+	msgs, err := Ingest(newsDir, []string{inbox}, known)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 || !strings.Contains(msgs[0], "feed_stats") || !strings.Contains(msgs[0], "2 項目") {
+		t.Errorf("msgs: %q", msgs)
+	}
+	st, _ := LoadStats(filepath.Join(newsDir, StatsFile))
+	snap := st.Digests["2026-08-15_daily"]
+	if len(snap) != 1 || snap["F1"].Shown != 10 {
+		t.Errorf("統計に外れた項目が入った: %+v", snap)
+	}
+	// 検査に落ちても取り込み自体は続ける(keep は入る)
+	keepMD, err := os.ReadFile(filepath.Join(newsDir, "keep", "2026-08.md"))
+	if err != nil || !strings.Contains(string(keepMD), "https://x/1") {
+		t.Errorf("keep: err=%v\n%s", err, keepMD)
+	}
+}
+
+// known が nil(feeds.json を読めなかった)ときは名前を照合しない。負の数の検査だけ残る。
+func TestIngest_feedStatsは名前一覧が無ければ照合しない(t *testing.T) {
+	newsDir := filepath.Join(t.TempDir(), "news")
+	inbox := filepath.Join(newsDir, "inbox")
+	if err := os.MkdirAll(inbox, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(inbox, SelectionPrefix+"1.json"),
+		[]byte(selectionJSON("2026-08-15", "daily", ``, `"知らない取材先": {"shown": 5}, "F2": {"kept": -1}`)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := Ingest(newsDir, []string{inbox}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 || !strings.Contains(msgs[0], "1 項目") {
+		t.Errorf("msgs: %q", msgs)
+	}
+	st, _ := LoadStats(filepath.Join(newsDir, StatsFile))
+	if snap := st.Digests["2026-08-15_daily"]; len(snap) != 1 || snap["知らない取材先"].Shown != 5 {
+		t.Errorf("統計: %+v", snap)
+	}
+}
+
+// 統計を書けずに止まっても(保存だけを失敗させて再現)、再実行で keep を重複させずに統計と取り込み済みを揃える。
+// 取り込み済みへ移すのは統計を書いた後なので、その前に止まれば選別 JSON は置き場に残り、次回また拾える
+// (設計レビュー補足 2026-09-06「処理単位の復旧」)。移した後に統計を書けずに止まると、その選別の数は二度と拾えない。
+func TestIngest_統計を書けずに止まっても再実行で揃う(t *testing.T) {
+	newsDir := filepath.Join(t.TempDir(), "news")
+	inbox := filepath.Join(newsDir, "inbox")
+	if err := os.MkdirAll(inbox, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	name := SelectionPrefix + "2026-08-15_daily_1.json"
+	keeps := `{"id": "a", "title": "残す記事", "link": "https://x/keep", "feed": "F1"}`
+	if err := os.WriteFile(filepath.Join(inbox, name),
+		[]byte(selectionJSON("2026-08-15", "daily", keeps, `"F1": {"shown": 3, "kept": 1}`)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	statsPath := filepath.Join(newsDir, StatsFile)
+	orig := writeAtomic
+	writeAtomic = func(path string, data []byte, perm fs.FileMode) error {
+		if filepath.Base(path) == StatsFile { // 統計の保存だけ失敗させる(ディスクが一杯・電源断の代わり)
+			return errors.New("統計を書けない(注入)")
+		}
+		return orig(path, data, perm)
+	}
+	t.Cleanup(func() { writeAtomic = orig })
+	if _, err := Ingest(newsDir, []string{inbox}, nil); err == nil {
+		t.Fatal("統計を書けないのに成功した")
+	}
+	// 止まった時点: keep は書けていてよいが、選別 JSON は置き場に残っている(取り込み済みへ移していない)
+	if _, err := os.Stat(filepath.Join(inbox, name)); err != nil {
+		t.Errorf("統計を書けなかったのに選別 JSON を置き場から動かした: %v", err)
+	}
+	writeAtomic = orig
+
+	// 再実行: 揃う
+	msgs, err := Ingest(newsDir, []string{inbox}, nil)
+	if err != nil {
+		t.Fatalf("再実行: %v", err)
+	}
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "取り込み: "+name) {
+		t.Errorf("再実行の msgs: %q", msgs)
+	}
+	keepMD, err := os.ReadFile(filepath.Join(newsDir, KeepDir, "2026-08.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(keepMD), "https://x/keep"); n != 1 {
+		t.Errorf("keep に %d 回(1 回だけのはず):\n%s", n, keepMD)
+	}
+	st, err := LoadStats(statsPath)
+	if err != nil || st.Digests["2026-08-15_daily"]["F1"].Kept != 1 {
+		t.Errorf("再実行後の統計: err=%v %+v", err, st.Digests)
+	}
+	if _, err := os.Stat(filepath.Join(newsDir, IngestedDir, name)); err != nil {
+		t.Errorf("再実行後も取り込み済みに無い: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(inbox, name)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("再実行後も置き場に残っている: %v", err)
+	}
+}
+
+// 不要ばかり付く取材先は点の上限を下げて主要表示から下ろす(決定 2026-09-06)。
+// 不要率は「見た数」でなく「選んだ数」で割る——折りたたみに入って目に入らなかった記事を
+// 不要と数えないため。
+func TestDemotedFeeds(t *testing.T) {
+	got := DemotedFeeds(map[string]FeedStats{
+		"下げる":          {Shown: 40, Kept: 1, Dropped: 9},              // 判定 10・不要率 0.9
+		"境界(0.8 ちょうど)": {Shown: 40, Kept: 2, Dropped: 8},              // 0.8 は「超え」でないので下げない
+		"材料不足":         {Shown: 40, Kept: 0, Dropped: 9},              // 判定 9
+		"救済を数える":       {Shown: 40, Kept: 0, Dropped: 9, Rescued: 1},  // 判定 10・不要率 0.9
+		"見ただけ":         {Shown: 100, Hidden: 100},                     // 判定 0
+		"読んでいる":        {Shown: 40, Kept: 20, Dropped: 5, Rescued: 2}, // 不要率 0.19
+	})
+	want := map[string]bool{"下げる": true, "救済を数える": true}
+	if len(got) != len(want) {
+		t.Fatalf("下げた取材先: %v", got)
+	}
+	for name := range want {
+		if !got[name] {
+			t.Errorf("%s が下がっていない: %v", name, got)
+		}
+	}
+	if DemotedFeeds(nil) != nil {
+		t.Error("材料が無ければ nil")
 	}
 }

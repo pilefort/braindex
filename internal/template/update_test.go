@@ -1,8 +1,11 @@
 package template
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -227,4 +230,109 @@ func TestUpdate_DryRunWritesNothing(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(dst, "docs")); err == nil {
 		t.Error("dry-run なのにファイルを作っている")
 	}
+}
+
+// 書いた分は都度台帳に残す。最後にまとめて保存すると、途中で失敗したときに
+// 「書いたのに台帳に無い」ファイルができ、次の update がそれを「利用者が編集した」と見て
+// .new を置いてしまう(設計レビュー 2026-09-06 M8)。
+func TestUpdate_途中で失敗しても書いた分は台帳に残る(t *testing.T) {
+	dst := t.TempDir()
+	if _, err := Install(dst, KindRepo); err != nil {
+		t.Fatal(err)
+	}
+	// 配ったファイルを全部消して、update が作り直す状況にする
+	files, err := Files(KindRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) < 2 {
+		t.Fatalf("テストの前提: 2 ファイル以上 (%d)", len(files))
+	}
+	for _, f := range files {
+		if err := os.Remove(filepath.Join(dst, filepath.FromSlash(f.Path))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 台帳も空にして、全ファイルが「作成」になるようにする
+	if err := SaveLedger(dst, Ledger{Kind: string(KindRepo), Files: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2 ファイル目の書き込みで失敗させる
+	orig := writeFile
+	n := 0
+	writeFile = func(path string, b []byte) error {
+		n++
+		if n == 2 {
+			return errors.New("書き込みに失敗した")
+		}
+		return orig(path, b)
+	}
+	t.Cleanup(func() { writeFile = orig })
+
+	if _, err := Update(dst, KindRepo, UpdateOptions{}); err == nil {
+		t.Fatal("エラーにならない")
+	}
+
+	led, _, err := LoadLedger(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(led.Files) != 1 {
+		t.Errorf("1 ファイル目だけが台帳に残るはず: %v", led.Files)
+	}
+	if led.Files[files[0].Path] != Hash(files[0].Content) {
+		t.Errorf("1 ファイル目の記録が違う: %v", led.Files)
+	}
+}
+
+// 配布するファイルの書き込みは、置き換えに失敗しても元のファイルを壊さない(半端な内容で上書きしない)。
+// 台帳は配ったファイルのハッシュを覚えているので、半端なファイルは次の update で「利用者が編集した」と
+// 誤認されて .new が置かれる(設計レビュー 2026-09-06 M14)。
+func TestWriteFileToDisk_置き換えに失敗しても元のファイルは壊れない(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sub", "README.md")
+	if err := writeFileToDisk(path, []byte("前回の内容\n")); err != nil {
+		t.Fatal(err)
+	}
+	blockReplace(t, path)
+
+	if err := writeFileToDisk(path, []byte("新しい内容\n")); err == nil {
+		t.Fatal("エラーにならない")
+	}
+	if b, _ := os.ReadFile(path); string(b) != "前回の内容\n" {
+		t.Errorf("元のファイルが変わった: %q", b)
+	}
+	des, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, de := range des {
+		if strings.HasPrefix(de.Name(), ".") {
+			t.Errorf("一時ファイルが残った: %s", de.Name())
+		}
+	}
+}
+
+// blockReplace は path を「原子的には書き換えられない」状態にする。path そのものは書けるので、
+// 切り詰めてから書く os.WriteFile は成功して前回の内容を失い、一時ファイル経由の置き換えは失敗して前回の内容が残る。
+// Windows: path を開いたままにする(Go の os.Open は FILE_SHARE_DELETE を付けないので、置き換えと削除が失敗する)。
+// それ以外: 親ディレクトリの書き込み権限を外す(一時ファイルを作れない。root は権限を無視するので skip)。
+func blockReplace(t *testing.T, path string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		f, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { f.Close() })
+		return
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root は権限を無視するので、書けない置き場を作れない")
+	}
+	dir := filepath.Dir(path)
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
 }

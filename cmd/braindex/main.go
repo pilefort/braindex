@@ -21,7 +21,9 @@ import (
 	"time"
 
 	"github.com/pilefort/braindex/internal/catalog"
+	"github.com/pilefort/braindex/internal/changehistory"
 	"github.com/pilefort/braindex/internal/config"
+	"github.com/pilefort/braindex/internal/fsutil"
 	"github.com/pilefort/braindex/internal/scan"
 )
 
@@ -32,10 +34,11 @@ const (
 
 // options は索引生成のコマンドラインで与える値。空は「未指定」。
 type options struct {
-	config string // -config。未指定なら既定 braindex.json(無くてもよい)
-	root   string // -root。設定ファイルの root より優先
-	out    string // -out。未指定なら設定ファイルと同じディレクトリの index/catalog.md
-	date   string // -date。未指定なら今日
+	config  string // -config。未指定なら既定 braindex.json(無くてもよい)
+	root    string // -root。設定ファイルの root より優先
+	out     string // -out。未指定なら設定ファイルと同じディレクトリの index/catalog.md
+	date    string // -date。未指定なら今日
+	version bool   // -version。版を 1 行出して終わる
 }
 
 func main() {
@@ -54,6 +57,10 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 	if done {
 		return code
 	}
+	if o.version {
+		fmt.Fprintln(stdout, versionLine())
+		return 0
+	}
 	return run(o, stdout, stderr)
 }
 
@@ -69,6 +76,7 @@ func parseArgs(args []string, stderr io.Writer) (o options, code int, done bool)
 	fs.StringVar(&o.root, "root", "", "走査のルート。直下の各ディレクトリを 1 リポとみなす(設定ファイルの root より優先)")
 	fs.StringVar(&o.out, "out", "", "索引の出力先(既定: 設定ファイルと同じディレクトリの index/catalog.md)")
 	fs.StringVar(&o.date, "date", "", "先頭行に載せる生成日 YYYY-MM-DD(既定: 今日)。再現可能な出力が要るときに使う")
+	fs.BoolVar(&o.version, "version", false, "入っている braindex の版を 1 行出して終わる")
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方:")
 		fmt.Fprintln(stderr, "  braindex [フラグ]              索引(index/catalog.md)を生成する")
@@ -97,6 +105,11 @@ func parseArgs(args []string, stderr io.Writer) (o options, code int, done bool)
 }
 
 // run は索引を生成し、終了コードを返す。メッセージは stdout / stderr に書く(テストから差し替えられるように引数で受ける)。
+//
+// 索引と一緒に、本文の変更の記録(索引と同じディレクトリの changes.json)も更新する。索引の行は本文の後半だけの
+// 変更では変わらないので、本文のハッシュと観測日を別に持つ(changehistory)。記録が読めない(壊れている)ときは
+// 警告して記録を触らず、索引だけ書く——黙って作り直すと前回の観測を失うため。記録を書けなかったときも警告に
+// とどめる(索引は書けているので失敗にしない。観測は次の生成で追いつく)。どちらも終了コード 2。
 func run(o options, stdout, stderr io.Writer) int {
 	cfg, outPath, genDate, err := resolve(o)
 	if err != nil {
@@ -108,23 +121,64 @@ func run(o options, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "braindex:", err)
 		return 1
 	}
+	warnings := res.Warnings
+	warn := func(format string, a ...any) {
+		w := fmt.Sprintf(format, a...)
+		warnings = append(warnings, w)
+		fmt.Fprintln(stderr, "braindex: 警告:", w)
+	}
 	for _, w := range res.Warnings {
 		fmt.Fprintln(stderr, "braindex: 警告:", w)
+	}
+	// 記録は索引を書く前に読む(壊れていれば、索引は書くが記録は据え置く)
+	histPath := filepath.Join(filepath.Dir(outPath), changehistory.FileName)
+	prev, herr := changehistory.Load(histPath)
+	if herr != nil {
+		warn("本文の変更の記録を読めない: %v(記録は更新しない。直すか、ファイルごと消して観測をやり直す)", herr)
 	}
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
 		fmt.Fprintln(stderr, "braindex:", err)
 		return 1
 	}
-	if err := os.WriteFile(outPath, res.Catalog, 0o644); err != nil {
+	if err := fsutil.WriteAtomic(outPath, res.Catalog, 0o644); err != nil {
 		fmt.Fprintln(stderr, "braindex:", err)
 		return 1
 	}
 	fmt.Fprintf(stdout, "catalog 生成: %d 件 → %s\n", res.Entries, outPath)
-	if len(res.Warnings) > 0 {
-		fmt.Fprintf(stderr, "braindex: 警告 %d 件(終了コード 2)\n", len(res.Warnings))
+	if herr == nil {
+		next, rep := changehistory.Update(prev, res.Notes, res.Coverage.Gaps, genDate)
+		if err := changehistory.Save(histPath, next); err != nil {
+			warn("本文の変更の記録を書けない: %v(次の生成で観測し直す)", err)
+		} else {
+			fmt.Fprintln(stdout, describeChanges(rep, histPath))
+		}
+	}
+	if len(warnings) > 0 {
+		fmt.Fprintf(stderr, "braindex: 警告 %d 件(終了コード 2)\n", len(warnings))
 		return 2
 	}
 	return 0
+}
+
+// describeChanges は本文の変更の記録を更新した結果を 1 行にする。
+func describeChanges(rep changehistory.Report, path string) string {
+	if rep.Initial {
+		return fmt.Sprintf("本文の観測を開始: %d 件を記録(いつ変わったかは不明)→ %s", rep.Total, path)
+	}
+	var b strings.Builder
+	if rep.New+rep.Changed+rep.Reappeared+rep.Missing == 0 {
+		b.WriteString("本文の変更: なし")
+	} else {
+		fmt.Fprintf(&b, "本文の変更: 変更 %d・新規 %d・見当たらない %d", rep.Changed, rep.New, rep.Missing)
+		if rep.Reappeared > 0 {
+			fmt.Fprintf(&b, "・再出現 %d", rep.Reappeared)
+		}
+	}
+	if rep.Held > 0 {
+		fmt.Fprintf(&b, "(読めなかった範囲の %d 件は前回のまま)", rep.Held)
+	}
+	fmt.Fprintf(&b, " → %s", path)
+	return b.String()
 }
 
 // resolve はフラグと設定ファイルを合成して、走査設定・出力先・生成日を決める。

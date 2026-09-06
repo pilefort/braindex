@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pilefort/braindex/internal/changehistory"
 	"github.com/pilefort/braindex/internal/render"
 	"github.com/pilefort/braindex/internal/sessions"
 )
@@ -34,6 +35,7 @@ type Profile struct {
 	Today   string         `json:"today"`
 	Days    int            `json:"days"`
 	Sources map[string]int `json:"sources"` // 出典 → 材料の数(index: 窓内のノート数、sessions: 窓内のセッション数、keep: 見出し数、extra: 補助ファイルの行数)
+	Changed int            `json:"changed"` // index のうち、記録日は窓の外だが本文の変更(Input.Changes の観測日)が窓の中にあるので数えたノート数
 	Terms   []Term         `json:"terms"`
 }
 
@@ -49,13 +51,23 @@ func (p Profile) Weight(word string) float64 {
 
 // Input は Build の材料。日付の窓による絞り込みは Build が行う。
 type Input struct {
-	Today      string             // YYYY-MM-DD
-	Days       int                // 直近何日を窓にするか(index と sessions)。keep は KeepMonths か月
+	Today string // YYYY-MM-DD
+	Days  int    // 直近何日を窓にするか(index と sessions)。keep は KeepMonths か月
+	// Since と Until はセッションの発話を絞る時刻の窓 [Since, Until)。呼び出し側がローカルの 0 時で作る
+	// (retro と同じ起点。決定 2026-09-03)。ここで日付から作ると UTC の 0 時になり、retro と別の日を指した
+	// (設計レビュー 2026-09-06 M3b)。
+	Since      time.Time
+	Until      time.Time
 	KeepMonths int                // keep 履歴を遡る月数。0 なら 3
 	Catalog    []render.Entry     // 索引の全行(Date が窓の外なら使わない)
 	Sessions   []sessions.Session // セッション(Turn.Time が窓の外の発話は使わない)
 	Keeps      []Keep             // keep 履歴の見出し
 	Extra      []string           // 補助ファイルの行
+	// Changes は本文の変更の記録(索引の隣の changes.json の notes)。索引の行が変わらない本文だけの更新を index の
+	// 材料に加える: 観測日(その本文を最初に見た日)が記録日より新しければ観測日で窓と係数を決めるので、記録日が
+	// 窓の外の古いノートでも本文を直せば数える。観測日が空(記録を始めた時点で既にあった)・見当たらない(missing)
+	// 記録は使わない。nil なら本文の変更は数えない(記録の無い hub と同じ挙動)。
+	Changes []changehistory.Entry
 }
 
 // Keep は keep 履歴の見出し 1 件。Month はファイル名の YYYY-MM。
@@ -73,6 +85,9 @@ func Build(in Input) (Profile, error) {
 	today, err := time.Parse("2006-01-02", in.Today)
 	if err != nil {
 		return Profile{}, fmt.Errorf("today は YYYY-MM-DD: %q", in.Today)
+	}
+	if in.Since.IsZero() || in.Until.IsZero() {
+		return Profile{}, fmt.Errorf("Since と Until は必須(窓の起点は呼び出し側がローカルの 0 時で作る)")
 	}
 	days := in.Days
 	if days <= 0 {
@@ -92,18 +107,32 @@ func Build(in Input) (Profile, error) {
 	}
 	p := Profile{Today: in.Today, Days: days, Sources: map[string]int{}}
 
-	// index: 窓内のノート。語は タイトル・種別・リポ名 から。新しいほど係数が高い
+	// index: 窓内のノート。語は タイトル・種別・リポ名 から。新しいほど係数が高い。
+	// 本文の変更の観測日が記録日より新しければ、観測日を「そのノートの日」として使う(本文だけの更新を拾う)
+	observed := make(map[string]string, len(in.Changes))
+	for _, c := range in.Changes {
+		if c.Observed != "" && c.Missing == "" {
+			observed[c.Path] = c.Observed
+		}
+	}
 	for _, e := range in.Catalog {
-		if e.Date < sinceDate || e.Date > in.Today {
+		date := e.Date
+		if o, ok := observed[e.Path]; ok && o > date {
+			date = o
+		}
+		if date < sinceDate || date > in.Today {
 			continue
 		}
-		d, err := time.Parse("2006-01-02", e.Date)
+		d, err := time.Parse("2006-01-02", date)
 		if err != nil {
 			continue
 		}
 		age := today.Sub(d).Hours() / 24
 		coef := 1 + (float64(days)-age)/float64(days) // 1〜2
 		p.Sources[SourceIndex]++
+		if date != e.Date && (e.Date < sinceDate || e.Date > in.Today) {
+			p.Changed++
+		}
 		for _, w := range Words(strings.Join([]string{e.Title, e.Kind, e.Repo}, " ")) {
 			counts[SourceIndex][w] += coef
 		}
@@ -113,7 +142,8 @@ func Build(in Input) (Profile, error) {
 	for _, s := range in.Sessions {
 		var sb strings.Builder
 		for _, t := range s.Turns {
-			if t.Time.IsZero() || t.Time.Before(since) || t.Time.After(today.AddDate(0, 0, 1)) {
+			// 定型(機械が流し込んだ指示)は関心の材料にしない(設計レビュー 2026-09-06 M11)
+			if t.Boilerplate || t.Time.IsZero() || t.Time.Before(in.Since) || !t.Time.Before(in.Until) {
 				continue
 			}
 			sb.WriteString(t.Text)
@@ -200,8 +230,12 @@ func round3(f float64) float64 {
 func (p Profile) Marshal(top int) []byte {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# 関心プロファイル %s（直近 %d 日）\n\n", p.Today, p.Days)
-	fmt.Fprintf(&sb, "材料: ノート %d・セッション %d・keep %d・補助 %d ／ 語 %d\n\n",
-		p.Sources[SourceIndex], p.Sources[SourceSessions], p.Sources[SourceKeep], p.Sources[SourceExtra], len(p.Terms))
+	notes := fmt.Sprintf("%d", p.Sources[SourceIndex])
+	if p.Changed > 0 {
+		notes += fmt.Sprintf("（うち %d は本文の変更で数えた）", p.Changed)
+	}
+	fmt.Fprintf(&sb, "材料: ノート %s・セッション %d・keep %d・補助 %d ／ 語 %d\n\n",
+		notes, p.Sources[SourceSessions], p.Sources[SourceKeep], p.Sources[SourceExtra], len(p.Terms))
 	sb.WriteString("| 語 | 重み | index | sessions | keep | extra |\n|---|---:|---:|---:|---:|---:|\n")
 	for i, t := range p.Terms {
 		if top > 0 && i >= top {

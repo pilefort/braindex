@@ -36,9 +36,9 @@ func newsProfile(t *testing.T, hub string, args ...string) (code int, so, se str
 // retro と別の日を指し、両方を定期実行に載せたときに食い違う(決定 2026-09-03)。
 func TestProfileSince_窓の起点はローカル0時(t *testing.T) {
 	loc := time.FixedZone("JST", 9*60*60)
-	old := retroLoc
-	retroLoc = loc
-	t.Cleanup(func() { retroLoc = old })
+	old := localLoc
+	localLoc = loc
+	t.Cleanup(func() { localLoc = old })
 
 	got, err := profileSince("2026-09-01", 14)
 	if err != nil {
@@ -60,7 +60,7 @@ func TestProfileSince_窓の起点はローカル0時(t *testing.T) {
 func TestNewsProfile_Sources(t *testing.T) {
 	hub := profileHub(t)
 	// testdata には JSON でない行が 1 つあり、sessions の警告で終了コード 2 になる(retro と同じ)
-	code, so, se := newsProfile(t, hub, "-sessions", retroTestdata)
+	code, so, se := newsProfile(t, hub, "-sessions", retroTestdata, "-all-projects")
 	if code != 2 || !strings.Contains(se, "JSON でない 1 行を飛ばした") {
 		t.Fatalf("exit=%d\n%s%s", code, so, se)
 	}
@@ -76,13 +76,13 @@ func TestNewsProfile_Sources(t *testing.T) {
 	}
 
 	// 決定性
-	_, so2, _ := newsProfile(t, hub, "-sessions", retroTestdata)
+	_, so2, _ := newsProfile(t, hub, "-sessions", retroTestdata, "-all-projects")
 	if so != so2 {
 		t.Error("2 回の出力が違う")
 	}
 
 	// -json
-	_, js, _ := newsProfile(t, hub, "-sessions", retroTestdata, "-json")
+	_, js, _ := newsProfile(t, hub, "-sessions", retroTestdata, "-all-projects", "-json")
 	var v struct {
 		Today string `json:"today"`
 		Terms []struct {
@@ -100,7 +100,7 @@ func TestNewsProfile_Sources(t *testing.T) {
 	}
 
 	// -top
-	_, so3, _ := newsProfile(t, hub, "-sessions", retroTestdata, "-top", "1")
+	_, so3, _ := newsProfile(t, hub, "-sessions", retroTestdata, "-all-projects", "-top", "1")
 	if !strings.Contains(so3, "（上位 1 語。残り ") {
 		t.Errorf("top:\n%s", so3)
 	}
@@ -153,5 +153,48 @@ func TestNewsProfile_Errors(t *testing.T) {
 	se.Reset()
 	if code := dispatch([]string{"news", "profile", "-config", filepath.Join(hub, "nope.json")}, &so, &se); code != 1 || !strings.Contains(se.String(), "設定ファイルが無い") {
 		t.Errorf("config: exit=%d %s", code, se.String())
+	}
+}
+
+// 索引の隣の changes.json(本文の変更の記録)を読み、記録日が窓の外でも本文を直したノートを index の材料に数える。
+// 記録が壊れていれば警告して(終了コード 2)、本文だけの変更は数えずに残りで作る。
+func TestNewsProfile_本文の変更の記録を読む(t *testing.T) {
+	parent, hub := hubWithRepo(t)
+	note := filepath.Join(parent, "repo-a", "docs", "notes", "tf.md")
+	writeFile(t, note, "# Terraform の書き方\n\n結論: x\n記録日: 2026-01-02\n")
+	cfg := filepath.Join(hub, "braindex.json")
+	index := func(date string) {
+		t.Helper()
+		var so, se bytes.Buffer
+		if code := dispatch([]string{"-config", cfg, "-date", date}, &so, &se); code != 0 {
+			t.Fatalf("index exit=%d\n%s", code, se.String())
+		}
+	}
+	// 1 回目: 記録を開始(観測日は不明)。記録日 2026-01-02 は窓(2026-08-18〜)の外なので数えない
+	index("2026-08-20")
+	noSessions := filepath.Join(hub, "no-such-dir")
+	_, so, _ := newsProfile(t, hub, "-sessions", noSessions)
+	if strings.Contains(so, "| terraform |") || !strings.Contains(so, "材料: ノート 0・") {
+		t.Fatalf("記録の前に数えている:\n%s", so)
+	}
+
+	// 本文だけ直して再生成: 観測日 2026-08-28 が窓の中なので index の材料に数える(索引の行は変わらない)
+	writeFile(t, note, "# Terraform の書き方\n\n結論: x\n記録日: 2026-01-02\n\n本文を書き足した\n")
+	index("2026-08-28")
+	code, so, se := newsProfile(t, hub, "-sessions", noSessions)
+	// 一時ディレクトリの名前にテスト名が入るので、警告の有無は本文(「読めない」)で見る
+	if code != 2 || strings.Contains(se, "本文の変更の記録を読めない") {
+		t.Fatalf("exit=%d(セッションの置き場が無い警告だけで 2 のはず)\n%s", code, se)
+	}
+	mustContain(t, "stdout", so, "| terraform |", "材料: ノート 1（うち 1 は本文の変更で数えた）・")
+
+	// 記録が壊れていれば警告して、本文だけの変更は数えずに残りで作る
+	writeFile(t, filepath.Join(hub, "index", "changes.json"), "{ broken")
+	code, so, se = newsProfile(t, hub, "-sessions", noSessions)
+	if code != 2 || !strings.Contains(se, "本文の変更の記録を読めない") {
+		t.Fatalf("exit=%d\n%s", code, se)
+	}
+	if strings.Contains(so, "| terraform |") || !strings.Contains(so, "材料: ノート 0・") {
+		t.Errorf("壊れた記録で数えている:\n%s", so)
 	}
 }

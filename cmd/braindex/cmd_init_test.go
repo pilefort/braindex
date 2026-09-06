@@ -173,11 +173,12 @@ func TestInit_ThenRetroCheck(t *testing.T) {
 	if code := dispatch([]string{"init", "-add", "retro", hub}, &so, &se); code != 0 {
 		t.Fatalf("init exit=%d\n%s", code, se.String())
 	}
-	code, out, errs := execRetroCheck(t, "-config", filepath.Join(hub, "braindex.json"), "-sessions", retroTestdata, "-date", "2026-09-01")
+	// -all-projects: fixture のセッションの cwd は hub の root の外にあるので、絞りを外して数える
+	code, out, errs := execRetroCheck(t, "-config", filepath.Join(hub, "braindex.json"), "-sessions", retroTestdata, "-date", "2026-09-01", "-all-projects")
 	if code != 3 {
 		t.Fatalf("exit=%d want 3\nstdout=%s\nstderr=%s", code, out, errs)
 	}
-	if !strings.Contains(out, "直近 14 日の訂正率 33.3%(発話 3・訂正 1)が閾値") || !strings.Contains(out, "を超えた") {
+	if !strings.Contains(out, "直近 14 日の訂正率 33.3%(発話 3・訂正 1)") || !strings.Contains(out, "→ 閾値を超えた。") {
 		t.Errorf("stdout が想定と違う: %q", out)
 	}
 }

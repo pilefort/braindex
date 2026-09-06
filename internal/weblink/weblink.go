@@ -16,6 +16,10 @@ import "strings"
 // javascript: や data: のように、開いただけでコードが動きうるスキームを落とすのが目的なので、
 // スキームの無いリンク(文書内リンク・相対パス)は通す。mailto: や file: のような
 // 他のスキームも落とす(生成物は「読むための HTML」で、外部アプリを起こす必要が無い)。
+//
+// Windows の絶対パス("C:/x/y.png"・"C:\x\y.png")は、コロンの前が 1 文字なのでスキームではなく
+// ドライブ文字として扱い、相対パスと同じく通す。1 文字のスキームは URL に実在しない。
+// (2026-09-06 に、画像とリンクの Windows パスが「スキーム c」と誤判定されて落ちていたのを直した)
 func Safe(u string) bool {
 	s := strings.TrimSpace(u)
 	i := strings.IndexByte(s, ':')
@@ -27,6 +31,11 @@ func Safe(u string) bool {
 	if j := strings.IndexAny(s, "/?#"); j >= 0 && j < i {
 		return true
 	}
+	if i == 1 && isASCIILetter(s[0]) {
+		return true // Windows のドライブ文字
+	}
 	scheme := strings.ToLower(s[:i])
 	return scheme == "http" || scheme == "https"
 }
+
+func isASCIILetter(c byte) bool { return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') }
