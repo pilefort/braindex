@@ -74,6 +74,32 @@ func TestLint_Root(t *testing.T) {
 	}
 }
 
+// 設定の repo_depth が 2 なら root/<group>/<name> の work/ISSUE-*.md を対象にし、表示は group/name/work/ISSUE-x.md。
+// 1 段目の配置(flat/work)は見ない(索引と同じ scan.ListRepos の規則)。
+func TestLint_RepoDepth2(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "g", "repo-a", "work", "ISSUE-x.md"), goodIssue)
+	writeFile(t, filepath.Join(root, "flat", "work", "ISSUE-f.md"), goodIssue)
+	cfgPath := filepath.Join(root, "braindex.json")
+	writeFile(t, cfgPath, `{"root": ".", "repo_depth": 2}`)
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", "-no-git", "-date", "2026-09-02", "-config", cfgPath}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d want 0\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	if !strings.Contains(so.String(), "braindex lint: 1 ファイル") {
+		t.Errorf("g/repo-a の 1 ファイルだけを検査するはず: %s", so.String())
+	}
+	// 指摘を出させて表示パスを見る
+	writeFile(t, filepath.Join(root, "g", "repo-a", "work", "ISSUE-x.md"), strings.Replace(goodIssue, "最終更新: 2026-09-01\n", "", 1))
+	so.Reset()
+	if code := dispatch([]string{"lint", "-no-git", "-date", "2026-09-02", "-config", cfgPath}, &so, &se); code != 2 {
+		t.Fatalf("exit=%d want 2\n%s", code, so.String())
+	}
+	if !strings.Contains(so.String(), "g/repo-a/work/ISSUE-x.md: ") || strings.Contains(so.String(), "flat/") {
+		t.Errorf("表示が group/name/work/ISSUE-x.md でない、または 1 段目の配置が混じる: %s", so.String())
+	}
+}
+
 // ディレクトリを渡すと直下の ISSUE-*.md。
 func TestLint_Dir(t *testing.T) {
 	dir := t.TempDir()

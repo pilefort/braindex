@@ -1,6 +1,6 @@
 // Package scan はスキャン対象ファイルの発見を担う。
 //
-// 自動規則: root 直下の各ディレクトリ D について
+// 自動規則: root の repo_depth 段下の各ディレクトリ D(既定 1 で root 直下。2 なら group/name)について
 //   - notes_dirs の各ディレクトリ N について D/N/**/*.md を再帰収集(種別は N の末尾セグメント + 相対位置)。
 //     notes_dirs は braindex.json で複数指定でき、既定は ["docs/notes"](2026-09-02。wiki/ 派を受け入れるため。
 //     規約の名前は docs のまま)。同じファイルが複数の指定から拾われたら先に書いた指定のラベルで 1 回だけ
@@ -31,22 +31,105 @@ import (
 // Config は braindex.json の内容。
 type Config struct {
 	Root      string      `json:"root"`
+	RepoDepth int         `json:"repo_depth"` // root から何段下のディレクトリをリポとみなすか。0 または省略で 1(root 直下)。2 なら group/name がリポ名
 	NotesDirs []string    `json:"notes_dirs"` // 各リポのノート置き場(リポ相対・スラッシュ区切り)。複数可。空なら ["docs/notes"]
 	Extra     []ExtraRule `json:"extra"`
 }
 
+// DefaultRepoDepth は repo_depth 未指定時の段数(root 直下をリポとみなす)。
+const DefaultRepoDepth = 1
+
+// Depth は有効なリポの段数を返す(RepoDepth が 0 なら既定の 1)。負の値の検査は Scan が行う。
+func (c Config) Depth() int {
+	if c.RepoDepth <= 0 {
+		return DefaultRepoDepth
+	}
+	return c.RepoDepth
+}
+
 // ExtraRule は自動規則で拾えない配置(リポ直下など規約外の置き場)を補う例外指定。
 type ExtraRule struct {
-	Repo      string   `json:"repo"`      // 対象リポ(root 直下のディレクトリ名)
+	Repo      string   `json:"repo"`      // 対象リポ(リポ名。repo_depth が 2 なら group/name のようにスラッシュ区切り)
 	Path      string   `json:"path"`      // リポ内の起点。"." はリポ直下
 	Recursive bool     `json:"recursive"` // false なら起点直下のみ
 	Kind      string   `json:"kind"`      // catalog に載せる種別ラベル
 	Exclude   []string `json:"exclude"`   // 除外パターン(path.Match のグロブ。"/" を含むなら起点からの相対パスに掛ける)。ディレクトリにも掛かり、当たった枝は丸ごと除外される
 }
 
+// Repo は root の下にある 1 リポ(ListRepos の結果)。
+type Repo struct {
+	Name string // リポ名(root 相対・スラッシュ区切り。depth 1 なら "alpha"、2 なら "work/alpha")。catalog の H2 見出し
+	Dir  string // そのディレクトリのパス(ListRepos に渡した root と同じ基準)
+}
+
+// ListRepos は root の depth 段下のディレクトリをリポとして列挙する(索引・review・lint で共通の規則)。
+//
+//   - depth 1 なら root 直下、2 なら root/<group>/<name> の各ディレクトリがリポ。depth が 1 未満なら 1
+//   - どの段でも "." で始まるディレクトリは見ない(.git など)。ディレクトリでないものも見ない
+//   - 並びは各段のディレクトリ名の昇順(os.ReadDir の順)なので、同じ木からは常に同じ列になる
+//
+// root 自身を読めなければ error。途中の段(group)を列挙できなければ、その範囲を Gap(ディレクトリ)として返して
+// 続ける——配下にリポが「無い」のか「読めなかった」のかは分からないので、無いと断定させないため。
+func ListRepos(root string, depth int) (repos []Repo, gaps []Gap, err error) {
+	if depth < 1 {
+		depth = DefaultRepoDepth
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, nil, fmt.Errorf("root を読めない: %w", err)
+	}
+	var walk func(dir, rel string, left int, entries []fs.DirEntry)
+	walk = func(dir, rel string, left int, entries []fs.DirEntry) {
+		for _, de := range entries {
+			if !de.IsDir() || strings.HasPrefix(de.Name(), ".") {
+				continue
+			}
+			name := de.Name()
+			if rel != "" {
+				name = rel + "/" + name
+			}
+			child := filepath.Join(dir, de.Name())
+			if left == 1 {
+				repos = append(repos, Repo{Name: name, Dir: child})
+				continue
+			}
+			sub, err := os.ReadDir(child)
+			if err != nil {
+				gaps = append(gaps, Gap{Rel: name, Dir: true, Reason: DescribeErr(err)})
+				continue
+			}
+			walk(child, name, left-1, sub)
+		}
+	}
+	walk(root, "", depth, entries)
+	return repos, gaps, nil
+}
+
+// SplitRepo は root 相対パス rel(スラッシュ区切り)をリポ名とリポ内のパスに分ける。cfg の段数に従い、
+// depth 2 なら "work/alpha/docs/notes/x.md" → ("work/alpha", "docs/notes/x.md")。
+// 段数に足りない・リポ名の段に空や "." で始まるセグメントがある・リポ内のパスが空なら ok=false。
+// リポ内のパスの形(空のセグメント・"."・"..")は見ない。
+func SplitRepo(cfg Config, rel string) (repo, inRepo string, ok bool) {
+	depth := cfg.Depth()
+	parts := strings.Split(strings.Trim(filepath.ToSlash(rel), "/"), "/")
+	if len(parts) <= depth {
+		return "", "", false
+	}
+	for _, seg := range parts[:depth] {
+		if seg == "" || strings.HasPrefix(seg, ".") {
+			return "", "", false
+		}
+	}
+	inRepo = strings.Join(parts[depth:], "/")
+	if inRepo == "" {
+		return "", "", false
+	}
+	return strings.Join(parts[:depth], "/"), inRepo, true
+}
+
 // File は発見した 1 ファイル。
 type File struct {
-	Repo string // リポ名(catalog の H2 見出し)
+	Repo string // リポ名(catalog の H2 見出し。repo_depth が 2 なら group/name)
 	Kind string // 種別ラベル(notes/common, notes/project, notes, notes/<sub>, decisions, ...)
 	Rel  string // root 相対・スラッシュ区切りのパス
 	Abs  string // 読み込み用の絶対パス
@@ -88,6 +171,10 @@ func Scan(cfg Config) (Result, error) {
 	if cfg.Root == "" {
 		return Result{}, errors.New("root が空")
 	}
+	if cfg.RepoDepth < 0 {
+		return Result{}, fmt.Errorf("repo_depth は 1 以上(省略で 1): %d", cfg.RepoDepth)
+	}
+	depth := cfg.Depth()
 	notesDirs := cfg.NotesDirs
 	if len(notesDirs) == 0 {
 		notesDirs = []string{DefaultNotesDir}
@@ -102,8 +189,8 @@ func Scan(cfg Config) (Result, error) {
 		}
 	}
 	for _, ex := range cfg.Extra {
-		if ex.Repo == "" || strings.ContainsAny(ex.Repo, `/\\`) || ex.Repo == "." || ex.Repo == ".." {
-			return Result{}, fmt.Errorf("extra: repo は root 直下のディレクトリ名だけを書く: %q", ex.Repo)
+		if err := checkRepoName(ex.Repo, depth); err != nil {
+			return Result{}, err
 		}
 		// ラベルは「extra <repo> の path」。他の文言の "extra <repo>/<path>" と並んだとき /path が値に見えないように
 		if err := checkRepoRelative("extra "+ex.Repo+" の path", ex.Path); err != nil {
@@ -119,20 +206,16 @@ func Scan(cfg Config) (Result, error) {
 	var files []File
 	seen := map[string]bool{} // 同一ファイルの重複排除(絶対パス)。先に拾った方(自動規則 → extra の順)のラベルが勝つ
 
-	// 自動規則: root 直下の各ディレクトリを走査
-	entries, err := os.ReadDir(rootAbs)
+	// 自動規則: root の depth 段下の各ディレクトリ(リポ)を走査。列挙できなかった group は確認不能の範囲
+	repos, gaps, err := ListRepos(rootAbs, depth)
 	if err != nil {
-		return Result{}, fmt.Errorf("root を読めない: %w", err)
+		return Result{}, err
 	}
-	for _, de := range entries {
-		if !de.IsDir() {
-			continue
-		}
-		name := de.Name()
-		if strings.HasPrefix(name, ".") {
-			continue // .git などは対象外
-		}
-		repoDir := filepath.Join(rootAbs, name)
+	for _, g := range gaps {
+		c.addGap(g)
+	}
+	for _, r := range repos {
+		name, repoDir := r.Name, r.Dir
 
 		// docs/decisions.md(notes_dirs より先に拾い、種別 decisions を優先する)
 		decPath := filepath.Join(repoDir, "docs", "decisions.md")
@@ -194,10 +277,13 @@ func (c *collector) warn(format string, a ...any) {
 
 // gap は確認できなかった範囲(権限エラー等)を記録する。警告にも同じ内容を 1 行出す(従来の文言を保つ)。
 func (c *collector) gap(abs string, dir bool, err error) {
-	rel := relSlash(c.rootAbs, abs)
-	reason := DescribeErr(err)
-	c.gaps = append(c.gaps, Gap{Rel: rel, Dir: dir, Reason: reason})
-	c.warn("%s: %s", rel, reason)
+	c.addGap(Gap{Rel: relSlash(c.rootAbs, abs), Dir: dir, Reason: DescribeErr(err)})
+}
+
+// addGap は root 相対で表した確認不能の範囲を記録する(ListRepos が返した group の分など)。
+func (c *collector) addGap(g Gap) {
+	c.gaps = append(c.gaps, g)
+	c.warn("%s: %s", g.Rel, g.Reason)
 }
 
 // SortGaps は読めなかった範囲を Rel 昇順に並べ、同じ Rel の重複を落として返す(出力の決定性のため)。
@@ -230,8 +316,8 @@ func Covers(cfg Config, rel string) bool {
 	if rel == "" || !isMarkdown(rel) || hasArchiveSeg(rel) {
 		return false
 	}
-	repo, inRepo, ok := strings.Cut(rel, "/")
-	if !ok || repo == "" || strings.HasPrefix(repo, ".") || inRepo == "" {
+	repo, inRepo, ok := SplitRepo(cfg, rel)
+	if !ok {
 		return false
 	}
 	for _, seg := range strings.Split(inRepo, "/") {
@@ -293,6 +379,25 @@ func Covers(cfg Config, rel string) bool {
 		return true
 	}
 	return false
+}
+
+// checkRepoName は extra.repo が root から depth 段のリポ名(スラッシュ区切り)であることを確かめる。
+// depth 1 なら "alpha"、2 なら "work/alpha"。段数が違う・空のセグメント・"." や ".."・バックスラッシュは設定の誤り。
+func checkRepoName(repo string, depth int) error {
+	segs := strings.Split(repo, "/")
+	ok := len(segs) == depth && !strings.Contains(repo, `\`)
+	for _, s := range segs {
+		if s == "" || s == "." || s == ".." {
+			ok = false
+		}
+	}
+	if ok {
+		return nil
+	}
+	if depth == 1 {
+		return fmt.Errorf("extra: repo は root 直下のディレクトリ名だけを書く: %q", repo)
+	}
+	return fmt.Errorf("extra: repo は root から %d 段のディレクトリ名をスラッシュで区切って書く(repo_depth が %d): %q", depth, depth, repo)
 }
 
 // checkRepoRelative は設定のパス(notes_dirs・extra.path)がリポ内の相対パスであることを確かめる。

@@ -18,8 +18,13 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/pilefort/braindex/internal/fsutil"
 	"github.com/pilefort/braindex/internal/interest"
 )
+
+// writeAtomic は保存物(既読・統計・LLM キャッシュ・keep)の書き込み。一時ファイルに書き切ってから置き換えるので、
+// 途中で止まっても前回の内容が残る(fsutil.WriteAtomic)。テストで差し替える(保存の失敗を再現するため)。
+var writeAtomic = fsutil.WriteAtomic
 
 // Settings は braindex.json の news 節。省略・0 は既定値。
 type Settings struct {

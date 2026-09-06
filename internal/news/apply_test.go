@@ -343,6 +343,66 @@ func TestIngest_feedStatsは名前一覧が無ければ照合しない(t *testin
 	}
 }
 
+// 統計を書けずに止まっても(保存だけを失敗させて再現)、再実行で keep を重複させずに統計と取り込み済みを揃える。
+// 取り込み済みへ移すのは統計を書いた後なので、その前に止まれば選別 JSON は置き場に残り、次回また拾える
+// (設計レビュー補足 2026-09-06「処理単位の復旧」)。移した後に統計を書けずに止まると、その選別の数は二度と拾えない。
+func TestIngest_統計を書けずに止まっても再実行で揃う(t *testing.T) {
+	newsDir := filepath.Join(t.TempDir(), "news")
+	inbox := filepath.Join(newsDir, "inbox")
+	if err := os.MkdirAll(inbox, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	name := SelectionPrefix + "2026-08-15_daily_1.json"
+	keeps := `{"id": "a", "title": "残す記事", "link": "https://x/keep", "feed": "F1"}`
+	if err := os.WriteFile(filepath.Join(inbox, name),
+		[]byte(selectionJSON("2026-08-15", "daily", keeps, `"F1": {"shown": 3, "kept": 1}`)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	statsPath := filepath.Join(newsDir, StatsFile)
+	orig := writeAtomic
+	writeAtomic = func(path string, data []byte, perm fs.FileMode) error {
+		if filepath.Base(path) == StatsFile { // 統計の保存だけ失敗させる(ディスクが一杯・電源断の代わり)
+			return errors.New("統計を書けない(注入)")
+		}
+		return orig(path, data, perm)
+	}
+	t.Cleanup(func() { writeAtomic = orig })
+	if _, err := Ingest(newsDir, []string{inbox}, nil); err == nil {
+		t.Fatal("統計を書けないのに成功した")
+	}
+	// 止まった時点: keep は書けていてよいが、選別 JSON は置き場に残っている(取り込み済みへ移していない)
+	if _, err := os.Stat(filepath.Join(inbox, name)); err != nil {
+		t.Errorf("統計を書けなかったのに選別 JSON を置き場から動かした: %v", err)
+	}
+	writeAtomic = orig
+
+	// 再実行: 揃う
+	msgs, err := Ingest(newsDir, []string{inbox}, nil)
+	if err != nil {
+		t.Fatalf("再実行: %v", err)
+	}
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "取り込み: "+name) {
+		t.Errorf("再実行の msgs: %q", msgs)
+	}
+	keepMD, err := os.ReadFile(filepath.Join(newsDir, KeepDir, "2026-08.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(keepMD), "https://x/keep"); n != 1 {
+		t.Errorf("keep に %d 回(1 回だけのはず):\n%s", n, keepMD)
+	}
+	st, err := LoadStats(statsPath)
+	if err != nil || st.Digests["2026-08-15_daily"]["F1"].Kept != 1 {
+		t.Errorf("再実行後の統計: err=%v %+v", err, st.Digests)
+	}
+	if _, err := os.Stat(filepath.Join(newsDir, IngestedDir, name)); err != nil {
+		t.Errorf("再実行後も取り込み済みに無い: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(inbox, name)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("再実行後も置き場に残っている: %v", err)
+	}
+}
+
 // 不要ばかり付く取材先は点の上限を下げて主要表示から下ろす(決定 2026-09-06)。
 // 不要率は「見た数」でなく「選んだ数」で割る——折りたたみに入って目に入らなかった記事を
 // 不要と数えないため。
