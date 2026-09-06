@@ -234,7 +234,14 @@ func runRetroCheck(args []string, stdout, stderr io.Writer) int {
 	}
 
 	w := retro.Recent(today, days, retroLoc)
-	ss, warns, err := sessions.Dir{Path: env.sessionsDir}.Sessions(sessions.Options{Since: w.Since})
+	weeks := env.settings.Baseline()
+	base := retro.Baseline(w, weeks)
+	// セッションの読み込みは 1 回。基準期間まで遡って読む(基準を使わないときは窓の起点から)
+	since := w.Since
+	if !base.Since.IsZero() {
+		since = base.Since
+	}
+	ss, warns, err := sessions.Dir{Path: env.sessionsDir}.Sessions(sessions.Options{Since: since})
 	if err != nil {
 		return fail(err)
 	}
@@ -257,13 +264,20 @@ func runRetroCheck(args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	}
-	msg := fmt.Sprintf("直近 %d 日の訂正率 %s(発話 %d・訂正 %d)", days, total.Percent(), total.Utterances, total.Corrections)
-	if total.Rate() > thr {
-		fmt.Fprintf(stdout, "braindex retro check: %sが閾値 %.1f%% を超えた → レトロスペクティブの時期(braindex retro extract で材料を出す)\n", msg, thr*100)
+	baseTotal := retro.Count{}
+	if !base.Since.IsZero() {
+		baseTotal = retro.Total(retro.Judge(ss, base, env.dicts...))
+	}
+	verdict := retro.Compare(total, baseTotal, thr)
+	msg := fmt.Sprintf("直近 %d 日の訂正率 %s(発話 %d・訂正 %d)%s / 閾値 %.1f%% → %s",
+		days, total.Percent(), total.Utterances, total.Corrections,
+		baselineClause(base, baseTotal, weeks), thr*100, verdictText(verdict))
+	if verdict == retro.Exceed {
+		fmt.Fprintf(stdout, "braindex retro check: %s\n", msg)
 		return 3
 	}
 	if !o.quiet {
-		fmt.Fprintf(stdout, "braindex retro check: %sは閾値 %.1f%% 以下\n", msg, thr*100)
+		fmt.Fprintf(stdout, "braindex retro check: %s\n", msg)
 	}
 	if len(warns) > 0 {
 		if !o.quiet {
@@ -501,4 +515,27 @@ func loadRetroDictionaries(s retro.Settings, baseDir, home string) ([]*retro.Dic
 		out = append(out, d)
 	}
 	return out, nil
+}
+
+// baselineClause は check の 1 行に挟む基準期間の部分。基準を使わないときは空。
+func baselineClause(base retro.Window, total retro.Count, weeks int) string {
+	if base.Since.IsZero() {
+		return ""
+	}
+	if total.Utterances < retro.MinBaselineTurns {
+		return fmt.Sprintf(" / 基準 %d 週は材料不足(発話 %d・%d 未満)", weeks, total.Utterances, retro.MinBaselineTurns)
+	}
+	return fmt.Sprintf(" / 基準 %s(発話 %d・%d 週)", total.Percent(), total.Utterances, weeks)
+}
+
+// verdictText は判定の言い方。鳴らすときだけ次の一手を書く。
+func verdictText(v retro.Verdict) string {
+	switch v {
+	case retro.Exceed:
+		return "閾値を超えた。レトロスペクティブの時期(braindex retro extract で材料を出す)"
+	case retro.SameAsBaseline:
+		return "閾値は超えたが基準と同水準(鳴らさない)"
+	default:
+		return "閾値以下"
+	}
 }
