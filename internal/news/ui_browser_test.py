@@ -73,6 +73,9 @@ with sync_playwright() as p:
     expect(first.locator(".reading-status")).to_have_value("try")
     page.locator('[data-view="today"]').click()
     page.locator('[data-id="article-2"] .bd').click()
+    # 見送った記事が消えても、フォーカスは同じ位置の記事に移る(末尾だったので 1 つ前の article-1)。
+    # 上部のビュー切り替えへ飛ばすと、画面が先頭まで戻ってしまう。
+    expect(page.locator('[data-id="article-1"] .bd')).to_be_focused()
     page.locator('[data-view="drop"]').click()
     expect(page.locator(".item:visible")).to_have_count(1)
     page.locator('[data-id="article-2"] .bd').click()

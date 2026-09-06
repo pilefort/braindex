@@ -44,7 +44,15 @@ function paint(){
  document.querySelectorAll("[data-view]").forEach(b=>{b.setAttribute("aria-pressed",String(b.dataset.view===view));if(LIBRARY&&b.dataset.view!=="keep")b.hidden=true;});showSaveState();
 }
 function setS(li,v){if(own(records,li.dataset.id))return;if(v==="keep"&&!li.dataset.link)return;if(v===null)delete state[li.dataset.id];else state[li.dataset.id]=v;persist();paint();}
-for(const li of items){li.querySelector(".bk").onclick=()=>setS(li,selected(li)==="keep"?null:"keep");li.querySelector(".bd").onclick=()=>{setS(li,selected(li)==="drop"?null:"drop");if(li.hidden)document.querySelector('[data-view="'+view+'"]').focus();};li.querySelector(".reading-status").onchange=e=>{draft.reading[li.dataset.id]={...reading(li),status:e.target.value,status_changed:true,status_updated:new Date().toISOString()};persist();paint();};}
+// 見送りで記事が一覧から消えたとき、同じ位置に来た次の記事へフォーカスを移す(末尾なら 1 つ前)。
+// preventScroll を付けるのは、上部のボタンへ飛ばすと画面が先頭まで戻ってしまうため。
+function focusAfterHide(at){
+ const vis=items.filter(x=>!x.hidden),li=vis.length?vis[Math.min(at,vis.length-1)]:null;
+ if(li){items.forEach(x=>x.classList.remove("cur"));li.classList.add("cur");cur=vis.indexOf(li);}
+ const btn=li&&[li.querySelector(".bd"),li.querySelector(".bk")].find(b=>b&&!b.hidden&&!b.disabled);
+ (btn||document.querySelector('[data-view="'+view+'"]')).focus({preventScroll:true});
+}
+for(const li of items){li.querySelector(".bk").onclick=()=>setS(li,selected(li)==="keep"?null:"keep");li.querySelector(".bd").onclick=()=>{const at=items.filter(x=>!x.hidden).indexOf(li);setS(li,selected(li)==="drop"?null:"drop");if(li.hidden)focusAfterHide(at);};li.querySelector(".reading-status").onchange=e=>{draft.reading[li.dataset.id]={...reading(li),status:e.target.value,status_changed:true,status_updated:new Date().toISOString()};persist();paint();};}
 document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{view=b.dataset.view;category=null;paint();});
 document.querySelectorAll("button[data-category]").forEach(b=>b.onclick=()=>{category=b.dataset.category;view=LIBRARY?"keep":"today";if(LIBRARY){$("notice").textContent="保存記事は日付をまたいだ一覧です。";}paint();});
 if(LIBRARY)document.querySelector(".overview").hidden=true;
