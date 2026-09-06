@@ -490,7 +490,11 @@ func annotateWithLLM(s news.Settings, newsDir string, results []news.Result, ter
 		ws = append(ws, fmt.Sprintf("%d バッチ失敗(その分は語の一致の点のまま): %s", rep.Failed, strings.Join(rep.Errors, " / ")))
 	}
 	if rep.Requested > 0 {
-		fmt.Fprintf(progress, "LLM 補助: %d 件を聞いて %d 件に注釈(キャッシュ合計 %d 件)\n", rep.Requested, rep.Annotated, len(cache))
+		retried := ""
+		if rep.Retried > 0 {
+			retried = fmt.Sprintf("・訳が返らず %d 件を聞き直し", rep.Retried)
+		}
+		fmt.Fprintf(progress, "LLM 補助: %d 件を聞いて %d 件に注釈%s(キャッシュ合計 %d 件)\n", rep.Requested, rep.Annotated, retried, len(cache))
 	}
 	if err := cache.Save(cachePath); err != nil {
 		ws = append(ws, fmt.Sprintf("キャッシュを書けない(次回も同じ記事を聞く): %v", err))

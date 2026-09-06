@@ -30,10 +30,13 @@ const LLMCacheFile = ".llm_cache.json"
 const LLMMark = "LLM"
 
 // Annotation は 1 記事の注釈。Title / Summary は日本語訳(日本語の記事は空)。Score が nil なら未採点。
+// NoTitle は「日本語の記事でないのに訳が返らず、聞き直しても空だった」印。これが無いと、
+// 訳が落ちた記事を毎回聞き直して費用だけが増える。
 type Annotation struct {
 	Title   string `json:"t"`
 	Summary string `json:"s"`
 	Score   *int   `json:"r"`
+	NoTitle bool   `json:"nt,omitempty"`
 }
 
 // Annotations は記事 ID → 注釈。
@@ -161,7 +164,7 @@ type AnnotateOptions struct {
 // 既定値。原型(2026-08-15〜の運用値)と同じ。
 const (
 	DefaultAnnotatePool  = 30
-	DefaultAnnotateBatch = 20
+	DefaultAnnotateBatch = 10  // 1 回に多く聞くと Haiku が見出しの訳を落とす(2026-09-07 の実測で 20 件だと英語 33 件中 20 件が訳なし)
 	annotateSummaryLimit = 300 // プロンプトに載せる概要の上限(文字)
 	promptTermsLimit     = 40  // プロンプトに載せる語の上限
 	promptExamplesLimit  = 20  // プロンプトに載せる keep 見出しの上限
@@ -170,7 +173,8 @@ const (
 // AnnotateReport は Annotate の集計(進捗の表示用)。
 type AnnotateReport struct {
 	Requested int // 聞いた記事数(キャッシュにあった分は含まない)
-	Annotated int // 応答で注釈が付いた記事数
+	Annotated int // 注釈が付いた記事数
+	Retried   int // 訳が返らず聞き直した記事数
 	Failed    int // 失敗したバッチ数
 	Errors    []string
 }
@@ -198,15 +202,53 @@ func Annotate(ctx context.Context, a Annotator, results []Result, cache Annotati
 			if i >= o.Pool {
 				break
 			}
-			if c, ok := cache[e.ID]; ok && c.Score != nil {
+			if c, ok := cache[e.ID]; ok && c.Score != nil && !needTranslation(c, lang) {
 				continue
 			}
 			todo = append(todo, annotationItem{ID: e.ID, Lang: lang, Title: e.Title, Summary: truncateRunes(e.Summary, annotateSummaryLimit)})
 		}
 	}
 	rep := AnnotateReport{Requested: len(todo)}
-	for i := 0; i < len(todo); i += o.Batch {
-		end := i + o.Batch
+	askInBatches(ctx, a, todo, cache, o, o.Batch, &rep)
+	// 訳が落ちた記事だけを、半分のまとまりでもう一度聞く(1 回だけ)。それでも空なら印を付けて次回から聞かない。
+	var retry []annotationItem
+	for _, it := range todo {
+		if c, ok := cache[it.ID]; ok && needTranslation(c, it.Lang) {
+			retry = append(retry, it)
+		}
+	}
+	if len(retry) > 0 {
+		rep.Retried = len(retry)
+		size := o.Batch / 2
+		if size < 1 {
+			size = 1
+		}
+		askInBatches(ctx, a, retry, cache, o, size, &rep)
+		for _, it := range retry {
+			if c, ok := cache[it.ID]; ok && needTranslation(c, it.Lang) {
+				c.NoTitle = true
+				cache[it.ID] = c
+			}
+		}
+	}
+	// 聞いた記事のうち採点が付いたものを数える(聞き直した分を二重に数えない)
+	for _, it := range todo {
+		if c, ok := cache[it.ID]; ok && c.Score != nil {
+			rep.Annotated++
+		}
+	}
+	return rep
+}
+
+// needTranslation は「日本語の記事でないのに訳が無く、まだ聞き直していない」か。
+func needTranslation(c Annotation, lang string) bool {
+	return lang != "ja" && c.Title == "" && !c.NoTitle
+}
+
+// askInBatches は todo を size 件ずつ聞いて cache に合流させる。失敗したまとまりは数えて次へ進む。
+func askInBatches(ctx context.Context, a Annotator, todo []annotationItem, cache Annotations, o AnnotateOptions, size int, rep *AnnotateReport) {
+	for i := 0; i < len(todo); i += size {
+		end := i + size
 		if end > len(todo) {
 			end = len(todo)
 		}
@@ -233,17 +275,19 @@ func Annotate(ctx context.Context, a Annotator, results []Result, cache Annotati
 			continue
 		}
 		for id, v := range got {
-			if old, ok := cache[id]; ok && v.Title == "" && old.Title != "" {
-				v.Title = old.Title
-				if v.Summary == "" {
-					v.Summary = old.Summary
+			v.NoTitle = false // 印は手元で付けるもの。応答が nt を名乗っても信じない
+			if old, ok := cache[id]; ok {
+				if v.Title == "" && old.Title != "" {
+					v.Title = old.Title
+					if v.Summary == "" {
+						v.Summary = old.Summary
+					}
 				}
+				v.NoTitle = old.NoTitle
 			}
 			cache[id] = v
 		}
-		rep.Annotated += len(got)
 	}
-	return rep
 }
 
 func truncateRunes(s string, n int) string {
@@ -284,6 +328,7 @@ func BuildAnnotationPrompt(batch []annotationItem, terms, examples []string) str
 	sb.WriteString("3=確実に読む(関心の中心・一次情報・技術的に深い) / 2=読む価値あり / 1=薄い(関心の周辺・二番煎じ・中身の無い体験談) / 0=無関係・宣伝・資金調達・人事・相場。\n")
 	sb.WriteString("基準は下の「関心プロファイル」と「最近『残す』にした見出しの例」。迷ったら例に似ているかで決めよ。\n")
 	sb.WriteString("lang が ja 以外の項目は見出し t と概要 s を自然な日本語に翻訳して付けよ(固有名詞・製品名・専門用語はむやみにカタカナ化せず原語を残してよい。s が空なら空のまま)。")
+	sb.WriteString("t は省略も空文字も不可。全項目に必ず訳を入れよ。")
 	sb.WriteString("lang=ja の項目は t,s を空文字にせよ。\n")
 	sb.WriteString("出力は同じ id を付けた JSON 配列だけ: [{\"id\":\"...\",\"t\":\"...\",\"s\":\"...\",\"r\":2}] 。JSON 以外の文・コードフェンスは出力禁止。\n\n")
 	sb.WriteString("## 関心プロファイル(語・重み降順)\n" + prof + "\n\n")
