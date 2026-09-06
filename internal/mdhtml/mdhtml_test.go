@@ -146,6 +146,58 @@ func TestInline_リンクのスキームを絞る(t *testing.T) {
 	}
 }
 
+// 画像記法 ![alt](src) は <img> にする。src は http(s)・相対パス・ローカルの絶対パスの 3 通り。
+// ローカルの絶対パス(Windows のドライブ文字・/ 始まり)は file:// の URL にする(HTML は一時置き場に書かれ、
+// Markdown と同じ場所に無い。ブラウザが "C:/..." を素のまま file と解釈するかは環境次第なので明示する)。
+// 直す前は `!` が本文に残り、Windows のパスはリンクの判定にも落ちて文字だけになっていた(2026-09-06 実測)。
+func TestInline_画像(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"![図](https://example.com/a.png)", `<img src="https://example.com/a.png" alt="図">`},
+		{"![図](imgs/a.png)", `<img src="imgs/a.png" alt="図">`},
+		{"![図](C:/work/a.png)", `<img src="file:///C:/work/a.png" alt="図">`},
+		{`![図](C:\work\a.png)`, `<img src="file:///C:/work/a.png" alt="図">`},
+		{"![図](/home/u/a.png)", `<img src="file:///home/u/a.png" alt="図">`},
+		{"![](a.png)", `<img src="a.png" alt="">`},
+		{"![図](a b.png)", `<img src="a%20b.png" alt="図">`},
+		{`![a "b"](x.png)`, `<img src="x.png" alt="a &quot;b&quot;">`},
+		{"![**太字**](x.png)", `<img src="x.png" alt="**太字**">`}, // alt の中は記法として解釈しない
+		{"![`c`](x.png)", `<img src="x.png" alt="c">`},         // 退避した行内コードも文字に戻す
+		{"![図](javascript:alert)", "図"},                        // リンクと同じ判定で落とす
+		{"![図](data:image/png;base64,xxx)", "図"},
+		{"[![図](a.png)](https://example.com/)", `<a href="https://example.com/" target="_blank" rel="noopener"><img src="a.png" alt="図"></a>`},
+		{"前 ![図](a.png) 後 [b](c.md)", `前 <img src="a.png" alt="図"> 後 <a href="c.md" target="_blank" rel="noopener">b</a>`},
+	}
+	for _, c := range cases {
+		if got := inline(c.in); got != c.want {
+			t.Errorf("inline(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// Windows の絶対パスはリンクでも通す(ドライブ文字はスキームではない)。href はパスのまま出す。
+func TestInline_Windowsのパスをリンクに出す(t *testing.T) {
+	got := inline("[台帳](C:/work/README.md)")
+	want := `<a href="C:/work/README.md" target="_blank" rel="noopener">台帳</a>`
+	if got != want {
+		t.Errorf("inline = %q, want %q", got, want)
+	}
+}
+
+// 画像だけの行は段落に包む。同じ入力からは同じ出力。
+func TestBody_画像(t *testing.T) {
+	md := "本文\n\n![図](C:/work/a.png)\n\n- 項目 ![小](b.png)\n"
+	want := "<p>本文</p>\n" +
+		`<p><img src="file:///C:/work/a.png" alt="図"></p>` + "\n" +
+		`<ul><li>項目 <img src="b.png" alt="小"></li></ul>`
+	got := Body(md)
+	if got != want {
+		t.Errorf("Body:\n got: %s\nwant: %s", got, want)
+	}
+	if Body(md) != got {
+		t.Fatal("同じ入力で出力が違う")
+	}
+}
+
 // 原型の linkify は Markdown リンクの href の中まで再リンクして HTML を壊した。移植ではタグと <a>・<code>・<pre> の中を触らない。
 func TestLinkify(t *testing.T) {
 	in := `<p>see <a href="https://u.example/x" target="_blank" rel="noopener">t</a> and https://v.example/y <code>https://c.example/</code></p>` +

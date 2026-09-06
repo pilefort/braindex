@@ -1,7 +1,7 @@
 // Package mdhtml は最小・自作の Markdown → HTML 変換。braindex answer が回答を自己完結 HTML にするための同梱依存。
 //
 // 原型は作者の answer_html.py に同梱されていた md_to_html.py(自前パーサ・決定的・純粋関数)。依存を足さず Go に写した。
-// 見出し/表/リスト/チェックボックス/引用/コード/水平線/段落と、行内の強調・コード・リンク・[[wiki]] に対応する。
+// 見出し/表/リスト/チェックボックス/引用/コード/水平線/段落と、行内の強調・コード・リンク・画像・[[wiki]] に対応する。
 // 同じ入力からは同じ出力(決定性テストで担保)。外部 I/O は無い。
 package mdhtml
 
@@ -20,8 +20,11 @@ var (
 	codeSpanRE = regexp.MustCompile("`([^`]+)`")
 	boldRE     = regexp.MustCompile(`\*\*([^*]+)\*\*`)
 	linkRE     = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
+	imgRE      = regexp.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`)
 	wikiRE     = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
 	stashRE    = regexp.MustCompile("\x00([0-9]+)\x00")
+	tagRE      = regexp.MustCompile(`<[^>]*>`)
+	driveRE    = regexp.MustCompile(`^[A-Za-z]:[\\/]`) // Windows の絶対パス(C:/ や C:\)
 
 	tableSepRE = regexp.MustCompile(`^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$`)
 	listItemRE = regexp.MustCompile(`^(\s*)([-*+]|[0-9]+\.)\s+(.*)$`)
@@ -104,33 +107,70 @@ func italic(s string) string {
 	return b.String()
 }
 
-// inline は行内記法を HTML にする。コード退避 → エスケープ → wiki → リンク → 強調 → コード復帰、の順。
+// attrURL は href / src に出す値。属性を閉じる " と、URL に載らない空白だけを % 表記にする。
+func attrURL(u string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(u, `"`, "%22"), " ", "%20")
+}
+
+// imageSrc は <img src> に出す値。ローカルの絶対パス(Windows のドライブ文字・/ 始まり)は file:// の URL にする。
+// HTML は一時置き場に書かれ Markdown と同じ場所に無いので、絶対パスで参照させる。"C:/..." を素のまま出しても
+// file と解釈するかはブラウザと OS 次第なので明示する。相対パスはそのまま(HTML から見た相対)。
+// Markdown 側で file:// と書いたものは、リンクと同じく落とす(決定 2026-09-03。パスで書けばよい)。
+func imageSrc(p string) string {
+	p = strings.TrimSpace(p)
+	switch {
+	case driveRE.MatchString(p):
+		p = "file:///" + strings.ReplaceAll(p, `\`, "/")
+	case strings.HasPrefix(p, "/") && !strings.HasPrefix(p, "//"):
+		p = "file://" + p
+	}
+	return attrURL(p)
+}
+
+// inline は行内記法を HTML にする。コード退避 → エスケープ → wiki → 画像 → リンク → 強調 → 復帰、の順。
+// 退避表には復帰時にそのまま出す HTML を入れる。行内コードのほか、<img> も入れて後段の強調・リンクに触らせない
+// (alt や src の中の * や [ を記法として解釈させないため)。
 func inline(text string) string {
 	var stash []string
-	text = codeSpanRE.ReplaceAllStringFunc(text, func(m string) string {
-		stash = append(stash, m[1:len(m)-1])
+	keep := func(html string) string {
+		stash = append(stash, html)
 		return "\x00" + strconv.Itoa(len(stash)-1) + "\x00"
+	}
+	restore := func(s string) string {
+		return stashRE.ReplaceAllStringFunc(s, func(m string) string {
+			idx, err := strconv.Atoi(m[1 : len(m)-1])
+			if err != nil || idx < 0 || idx >= len(stash) {
+				return m // 自分が書いた目印ではない。触らずに残す
+			}
+			return stash[idx]
+		})
+	}
+	text = codeSpanRE.ReplaceAllStringFunc(text, func(m string) string {
+		return keep("<code>" + escapeText(m[1:len(m)-1]) + "</code>")
 	})
 	text = escapeText(text)
 	text = wikiRE.ReplaceAllString(text, `<span class="wl">$1</span>`)
+	text = imgRE.ReplaceAllStringFunc(text, func(m string) string {
+		sm := imgRE.FindStringSubmatch(m)
+		if !weblink.Safe(sm[2]) {
+			// リンクと同じ判定。javascript: や data: は src に出さず、alt の文字だけ残す
+			return sm[1]
+		}
+		// alt は属性値なので、退避したコードは文字に戻し、タグは剥がし、" をエスケープする
+		alt := strings.ReplaceAll(tagRE.ReplaceAllString(restore(sm[1]), ""), `"`, "&quot;")
+		return keep(`<img src="` + imageSrc(sm[2]) + `" alt="` + alt + `">`)
+	})
 	text = linkRE.ReplaceAllStringFunc(text, func(m string) string {
 		sm := linkRE.FindStringSubmatch(m)
 		if !weblink.Safe(sm[2]) {
 			// javascript: のようなスキームは href に出さず、文字だけ残す(リンクの文言は消さない)
 			return sm[1]
 		}
-		u := strings.ReplaceAll(strings.ReplaceAll(sm[2], `"`, "%22"), " ", "%20")
-		return `<a href="` + u + `" target="_blank" rel="noopener">` + sm[1] + `</a>`
+		return `<a href="` + attrURL(sm[2]) + `" target="_blank" rel="noopener">` + sm[1] + `</a>`
 	})
 	text = boldRE.ReplaceAllString(text, "<strong>$1</strong>")
 	text = italic(text)
-	return stashRE.ReplaceAllStringFunc(text, func(m string) string {
-		idx, err := strconv.Atoi(m[1 : len(m)-1])
-		if err != nil || idx < 0 || idx >= len(stash) {
-			return m // 自分が書いた目印ではない。触らずに残す
-		}
-		return "<code>" + escapeText(stash[idx]) + "</code>"
-	})
+	return restore(text)
 }
 
 type listItem struct {
