@@ -360,3 +360,76 @@ func TestRank_下げた取材先は上限が下がる(t *testing.T) {
 		t.Error("当たった語まで消した")
 	}
 }
+
+// 関心外から拾い上げる選び方: 主要表示は選ばない・関心度が高い方(1)を先に・1 フィード 1 件・同じ日なら同じ結果。
+func TestPickSerendipity(t *testing.T) {
+	results := []Result{
+		{Source: Source{Name: "A"}, New: []feed.Entry{{ID: "a0"}, {ID: "a1"}, {ID: "a2"}}},
+		{Source: Source{Name: "B"}, New: []feed.Entry{{ID: "b0"}, {ID: "b1"}}},
+		{Source: Source{Name: "C"}, Err: errors.New("失敗")},
+	}
+	rk := Ranking{
+		"a0": {Value: 0}, "a1": {Value: 1}, "a2": {Value: 3},
+		"b0": {Value: 0}, "b1": {Value: 1},
+	}
+	got := PickSerendipity(results, rk, 2, 2, "2026-09-07")
+	if len(got) != 2 {
+		t.Fatalf("選んだ数 %d want 2: %v", len(got), got)
+	}
+	if got["a2"] {
+		t.Errorf("主要表示の記事を選んでいる: %v", got)
+	}
+	if !got["a1"] || !got["b1"] {
+		t.Errorf("関心度 1 でなく 0 を選んでいる(1 フィード 1 件のはず): %v", got)
+	}
+	if again := PickSerendipity(results, rk, 2, 2, "2026-09-07"); !reflect.DeepEqual(got, again) {
+		t.Errorf("同じ日で結果が変わる: %v → %v", got, again)
+	}
+	if n := PickSerendipity(results, rk, 2, 0, "2026-09-07"); n != nil {
+		t.Errorf("0 件の指定で選んでいる: %v", n)
+	}
+	if n := PickSerendipity(results, nil, 2, 2, "2026-09-07"); n != nil {
+		t.Errorf("採点が無いのに選んでいる: %v", n)
+	}
+	// 1 フィードしか無ければ、指定より少なくても 1 件だけ
+	one := PickSerendipity(results[:1], rk, 2, 2, "2026-09-07")
+	if len(one) != 1 {
+		t.Errorf("1 フィードから %d 件選んだ want 1: %v", len(one), one)
+	}
+}
+
+// 拾い上げた記事は「ほかの記事」から外す(同じ記事が 2 か所に出ると選別の状態が壊れる)。
+func TestTakeSerendipity(t *testing.T) {
+	low := []feed.Entry{{ID: "x"}, {ID: "y"}, {ID: "z"}}
+	rest, picked := TakeSerendipity(low, map[string]bool{"y": true})
+	if len(rest) != 2 || rest[0].ID != "x" || rest[1].ID != "z" {
+		t.Errorf("残り %+v", rest)
+	}
+	if len(picked) != 1 || picked[0].ID != "y" {
+		t.Errorf("抜いた分 %+v", picked)
+	}
+	if r, p := TakeSerendipity(low, nil); len(r) != 3 || p != nil {
+		t.Errorf("指定が無いときは触らない: %+v %+v", r, p)
+	}
+}
+
+// Markdown に「もしかして興味あるかも」の節が出て、その記事は関心外の段から消える。
+func TestDigest_Serendipity(t *testing.T) {
+	results := []Result{{Source: Source{Name: "A"}, New: []feed.Entry{
+		{ID: "hi", Title: "主要の記事", Link: "https://example.com/1"},
+		{ID: "lo", Title: "拾い上げた記事", Link: "https://example.com/2"},
+		{ID: "lo2", Title: "ほかの記事", Link: "https://example.com/3"},
+	}}}
+	rk := Ranking{"hi": {Value: 3}, "lo": {Value: 1}, "lo2": {Value: 0}}
+	md := string(Digest(results, DigestOptions{Layer: "daily", Today: "2026-09-07", Cap: 10, Ranking: rk, MinScore: 2,
+		Serendipity: map[string]bool{"lo": true}}))
+	if !strings.Contains(md, "## "+SerendipityLabel+"（1 件）") {
+		t.Errorf("拾い上げの節が無い:\n%s", md)
+	}
+	if !strings.Contains(md, "- 関心外と判定 1 件:") {
+		t.Errorf("関心外の段から拾い上げた分を外していない:\n%s", md)
+	}
+	if strings.Count(md, "拾い上げた記事") != 1 {
+		t.Errorf("同じ記事が 2 か所に出ている:\n%s", md)
+	}
+}

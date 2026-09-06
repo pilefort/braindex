@@ -302,6 +302,8 @@ func TestNewsFetch_Errors(t *testing.T) {
 func TestNewsFetch_Scored(t *testing.T) {
 	hub, _ := newsHub(t)
 	writeFile(t, filepath.Join(hub, "news", "interests.md"), "ゴルーチン\n") // 記事1 の概要に当たる
+	// serendipity は 0。ここは二段の分かれ方の検査で、関心外からの拾い上げが混ざると読めない
+	writeFile(t, filepath.Join(hub, "braindex.json"), `{"root": "..", "news": {"serendipity": 0}}`)
 	var so, se bytes.Buffer
 	code := dispatch([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-layer", "daily",
 		"-stdout", "-sessions", filepath.Join(hub, "no-such-dir")}, &so, &se)
@@ -358,5 +360,31 @@ func TestUnusedPath(t *testing.T) {
 	q := filepath.Join(dir, "e.html")
 	if got, err := unusedPath(q, strings.ToUpper(q)); err != nil || got != filepath.Join(dir, "e-2.html") {
 		t.Errorf("予約あり: %s err=%v", got, err)
+	}
+}
+
+// 既定では、関心外と判定した記事から日替わりで拾い上げ、ラベル付きの別枠に出す。
+func TestNewsFetch_Serendipity(t *testing.T) {
+	hub, _ := newsHub(t)
+	writeFile(t, filepath.Join(hub, "news", "interests.md"), "ゴルーチン\n") // 記事1 だけが主要になる
+	var so, se bytes.Buffer
+	code := dispatch([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-layer", "daily",
+		"-stdout", "-sessions", filepath.Join(hub, "no-such-dir")}, &so, &se)
+	if code != 2 { // 取得失敗 1 本などの警告
+		t.Fatalf("exit=%d\n%s", code, se.String())
+	}
+	mustContain(t, "stdout", so.String(), "## もしかして興味あるかも（1 件）", "関心の外と判定した記事から、日替わりで選びました。",
+		"[記事2](https://example.com/2) ★0")
+	if strings.Contains(so.String(), "関心外と判定") {
+		t.Errorf("拾い上げた記事が「関心外と判定」にも残っている:\n%s", so.String())
+	}
+	// 設定で止められる
+	writeFile(t, filepath.Join(hub, "braindex.json"), `{"root": "..", "news": {"serendipity": 0}}`)
+	so.Reset()
+	se.Reset()
+	dispatch([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-layer", "daily", "-replay",
+		"-stdout", "-sessions", filepath.Join(hub, "no-such-dir")}, &so, &se)
+	if strings.Contains(so.String(), "もしかして興味あるかも") {
+		t.Errorf("serendipity=0 なのに拾い上げている:\n%s", so.String())
 	}
 }

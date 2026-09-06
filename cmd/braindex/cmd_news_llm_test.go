@@ -63,7 +63,8 @@ func TestNewsFetch_LLM既定は呼ばない(t *testing.T) {
 // -no-llm で止まる。
 func TestNewsFetch_LLM(t *testing.T) {
 	hub, _ := newsHub(t)
-	writeFile(t, filepath.Join(hub, "braindex.json"), `{"root": "..", "news": {"llm": "claude-cli", "llm_model": "m1"}}`)
+	// serendipity は 0。ここは LLM の採点と訳の検査で、関心外からの拾い上げが混ざると見分けにくい
+	writeFile(t, filepath.Join(hub, "braindex.json"), `{"root": "..", "news": {"llm": "claude-cli", "llm_model": "m1", "serendipity": 0}}`)
 	writeFile(t, filepath.Join(hub, "news", "interests.md"), "ゴルーチン\n") // 記事1 の概要に当たる(語の点 2)
 	// 記事1 は LLM が 0(語の点 2 を下げる)、記事2 は 3 に訳つき
 	f := &cliFake{reply: `[{"id":"__ID1__","t":"","s":"","r":0},{"id":"__ID2__","t":"記事二の訳","s":"","r":3}]`}

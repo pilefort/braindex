@@ -5,3 +5,6 @@ dialog{width:min(700px,calc(100% - 28px));max-height:90vh;overflow:auto;border:1
 @media(max-width:850px){.layout{grid-template-columns:1fr}aside{position:static;grid-row:1}.steps{grid-template-columns:repeat(3,1fr);gap:12px}aside button{width:auto}.overview{gap:12px}}@media(max-width:540px){.wrap{padding:20px 16px 40px}h1{font-size:27px}.overview{grid-template-columns:1fr 1fr}.steps{grid-template-columns:1fr}.item{padding:20px}.item .article-title{font-size:19px}.sub{align-items:start;flex-direction:column}.btns a{margin-left:0}.choices{grid-template-columns:1fr}dialog{padding:20px}}
 
 .feed-group>h3{display:none}.topic span{overflow-wrap:anywhere}
+
+/* 関心外から日替わりで拾い上げた記事の枠とラベル */
+.serendipity>h2{color:var(--accent)}.tag.lucky{background:var(--accent);color:var(--onaccent)}.item.lucky{border-color:var(--accent)}

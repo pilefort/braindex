@@ -22,8 +22,15 @@ const SelectionPrefix = "braindex-news-selection_"
 // フィードは分類(category)ごとにまとめ、各フィードで 主要 → 関心外と判定(<details> で折りたたみ) の順。
 // 「残す／不要」はブラウザの localStorage に覚え、「選別を書き出す」で JSON をダウンロードする(サーバ不要)。
 // 同じ入力からは同じバイト列になる(生成日時を入れない。日付は o.Today)。
+// luckyPick は関心外から拾い上げた 1 件（どのフィード由来かを覚えておく）。
+type luckyPick struct {
+	e feed.Entry
+	r Result
+}
+
 func RenderHTML(results []Result, o DigestOptions) []byte {
 	byCat := map[string][]Result{}
+	var lucky []luckyPick
 	var failures, empty []string
 	totalNew, totalMain := 0, 0
 	for _, r := range results {
@@ -77,6 +84,11 @@ func RenderHTML(results []Result, o DigestOptions) []byte {
 		for _, r := range byCat[cat] {
 			parts.WriteString(`<section class="feed-group">`)
 			main, low := Split(r.New, o.Ranking, o.MinScore)
+			var picked []feed.Entry
+			low, picked = TakeSerendipity(low, o.Serendipity)
+			for _, e := range picked {
+				lucky = append(lucky, luckyPick{e: e, r: r})
+			}
 			shown := capped(main, o.Cap)
 			totalMain += len(shown)
 			fmt.Fprintf(&parts, "<h3>%s（新着 %d 件", esc(r.Source.Name), len(r.New))
@@ -106,6 +118,16 @@ func RenderHTML(results []Result, o DigestOptions) []byte {
 			parts.WriteString("</section>\n")
 		}
 		parts.WriteString("</section>\n")
+	}
+	if len(lucky) > 0 {
+		// 関心の外から拾い上げた記事。カテゴリの絞り込みでは消えないよう、独立した枠に置く。
+		fmt.Fprintf(&parts, `<section class="category serendipity"><h2>%s</h2>`, esc(SerendipityLabel))
+		parts.WriteString("<p class=\"intro\">関心の外と判定した記事から、日替わりで選びました。読まないと決めた分野の外側を見るための枠です。</p>\n")
+		parts.WriteString("<section class=\"feed-group\"><ul>\n")
+		for _, x := range lucky {
+			parts.WriteString(itemHTML(x.e, x.r, o, true))
+		}
+		parts.WriteString("</ul>\n</section>\n</section>\n")
 	}
 	items := parts.String()
 	if items == "" {
@@ -205,10 +227,16 @@ func jsString(s string) string {
 }
 
 // itemHTML は 1 項目の <li>。data-* に選別 JSON へ書く値を持たせる。low は折りたたみ側。
+// o.Serendipity に入っている記事にはラベルを付ける(関心外から日替わりで拾い上げたもの)。
 func itemHTML(e feed.Entry, r Result, o DigestOptions, low bool) string {
 	cls, lowFlag := "item", "0"
 	if low {
 		cls, lowFlag = "item low", "1"
+	}
+	badge := ""
+	if o.Serendipity[e.ID] {
+		cls += " lucky"
+		badge = `<span class="tag lucky">` + esc(SerendipityLabel) + `</span>`
 	}
 	score, reason := "", ""
 	if s, ok := o.Ranking[e.ID]; ok {
@@ -247,7 +275,7 @@ func itemHTML(e feed.Entry, r Result, o DigestOptions, low bool) string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, `<li class="%s" data-id="%s" data-title="%s" data-link="%s" data-feed="%s" data-cat="%s" data-low="%s" data-r="%s" data-summary="%s">`, cls, esc(e.ID), esc(e.Title), esc(link), esc(r.Source.Name), esc(r.Source.Category), lowFlag, score, esc(summary))
-	fmt.Fprintf(&b, `<div class="meta"><span class="tag">%s</span><span>%s · %s</span></div><h3 class="article-title">%s</h3><p class="sum">%s</p>`, esc(category), esc(r.Source.Name), esc(e.Published), esc(title), esc(summary))
+	fmt.Fprintf(&b, `<div class="meta"><span class="tag">%s</span>%s<span>%s · %s</span></div><h3 class="article-title">%s</h3><p class="sum">%s</p>`, esc(category), badge, esc(r.Source.Name), esc(e.Published), esc(title), esc(summary))
 	if translation != "" {
 		fmt.Fprintf(&b, `<small>%s</small>`, translation)
 	}

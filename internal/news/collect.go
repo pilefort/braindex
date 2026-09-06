@@ -2,6 +2,8 @@ package news
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
@@ -130,6 +132,68 @@ func Split(entries []feed.Entry, rk Ranking, minScore int) (main, low []feed.Ent
 	return main, low
 }
 
+// SerendipityLabel は「関心外だが今日だけ拾い上げた」記事に付ける名前。
+const SerendipityLabel = "もしかして興味あるかも"
+
+// PickSerendipity は関心外と判定した記事から n 件を選ぶ（意図しない発見のため）。
+// 関心度が高い方(=関心の周辺)から先に選ぶ。0 は無関係・宣伝・人事・相場と判定されたもので、毎日出す価値が薄い。
+// 同点は「日付＋記事 ID」のハッシュ順。1 つのフィードから 2 件は選ばない。
+// 同じ日・同じ入力なら毎回同じ記事になる(日付が変われば変わる)。
+func PickSerendipity(results []Result, rk Ranking, minScore, n int, day string) map[string]bool {
+	if n <= 0 || rk == nil {
+		return nil
+	}
+	type cand struct {
+		id, feed, key string
+		score         int
+	}
+	var cands []cand
+	for _, r := range results {
+		if r.Err != nil {
+			continue
+		}
+		_, low := Split(r.New, rk, minScore)
+		for _, e := range low {
+			sum := sha256.Sum256([]byte(day + "\x00" + e.ID))
+			cands = append(cands, cand{id: e.ID, feed: r.Source.Name, key: hex.EncodeToString(sum[:8]), score: rk[e.ID].Value})
+		}
+	}
+	sort.Slice(cands, func(i, j int) bool {
+		if cands[i].score != cands[j].score {
+			return cands[i].score > cands[j].score
+		}
+		return cands[i].key < cands[j].key
+	})
+	picks, seen := map[string]bool{}, map[string]bool{}
+	for _, c := range cands {
+		if len(picks) >= n {
+			break
+		}
+		if seen[c.feed] {
+			continue
+		}
+		seen[c.feed] = true
+		picks[c.id] = true
+	}
+	return picks
+}
+
+// TakeSerendipity は関心外の並びから、選ばれた記事を抜き出す。残りと抜いた分を返す
+// (同じ記事が「ほかの記事」と両方に出ると、選別の状態が壊れるため)。
+func TakeSerendipity(low []feed.Entry, picks map[string]bool) (rest, picked []feed.Entry) {
+	if len(picks) == 0 {
+		return low, nil
+	}
+	for _, e := range low {
+		if picks[e.ID] {
+			picked = append(picked, e)
+		} else {
+			rest = append(rest, e)
+		}
+	}
+	return rest, picked
+}
+
 // DigestOptions はダイジェストの体裁。
 type DigestOptions struct {
 	Layer       string               // 層の名前(見出し)
@@ -142,6 +206,7 @@ type DigestOptions struct {
 	Reading     *Reading             // 記事の相談・回答・取り込み確認。
 	Library     bool                 // 日付をまたぐ保存記事の一覧。
 	LibraryHref string               // 生成先から読書一覧への相対URL（CLIが組む）。
+	Serendipity map[string]bool      // 関心外から拾い上げる記事の ID(PickSerendipity)。nil なら枠を出さない
 }
 
 // Digest は新着のダイジェスト(Markdown・LF)を組む。
@@ -164,11 +229,15 @@ func Digest(results []Result, o DigestOptions) []byte {
 		fmt.Fprintf(&sb, "・関心度 %d 以上を主要表示", o.MinScore)
 	}
 	sb.WriteString("\n\n")
+	var lucky []feed.Entry
 	for _, r := range results {
 		if r.Err != nil || len(r.New) == 0 {
 			continue
 		}
 		main, low := Split(r.New, o.Ranking, o.MinScore)
+		var picked []feed.Entry
+		low, picked = TakeSerendipity(low, o.Serendipity)
+		lucky = append(lucky, picked...)
 		fmt.Fprintf(&sb, "## %s（", r.Source.Name)
 		if r.Source.Category != "" {
 			fmt.Fprintf(&sb, "%s・", r.Source.Category)
@@ -183,6 +252,12 @@ func Digest(results []Result, o DigestOptions) []byte {
 			fmt.Fprintf(&sb, "- 関心外と判定 %d 件:\n", len(low))
 			writeTier(&sb, low, o, "  ")
 		}
+		sb.WriteString("\n")
+	}
+	if len(lucky) > 0 {
+		fmt.Fprintf(&sb, "## %s（%d 件）\n", SerendipityLabel, len(lucky))
+		sb.WriteString("関心の外と判定した記事から、日替わりで選びました。\n")
+		writeTier(&sb, lucky, o, "")
 		sb.WriteString("\n")
 	}
 	if failed := Failed(results); len(failed) > 0 {

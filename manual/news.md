@@ -45,10 +45,15 @@ keep は次のプロファイルの出典になるので、**選別がそのま�
 **設定例**（`braindex init -add news` が足す節と同じ。全部省略可で、値は既定）:
 
 ```json
-"news": { "dir": "news", "feeds": "news/feeds.json", "seen_days": 90, "profile_days": 14,
+"news": { "dir": "news", "feeds": "news/feeds.json", "seen_days": 90, "profile_days": 14, "serendipity": 2,
           "cap_per_layer": { "daily": 15, "weekly": 25 }, "show_min_score": 2,
           "llm": "off", "llm_model": "", "llm_timeout_sec": 120 }
 ```
+
+**もしかして興味あるかも（関心外からの拾い上げ）**: 関心度が `show_min_score` 未満で「ほかの記事」に落ちた記事から、
+`serendipity` 件（既定 2・0 で止める）を独立した枠に出す。関心度が高い方（1）から選び、1 つのフィードから 2 件は選ばない。
+並びは「日付＋記事 ID」で決まるので、同じ日に何度作り直しても同じ記事になり、日が変われば入れ替わる。
+拾い上げた記事は「ほかの記事」からは外れる。あとで読むに入れると、これまでどおり関心プロファイルに反映される。
 
 **置き場 `news/`**: `feeds.json`（自分で書く）・`keep/YYYY-MM.md`（残した見出し。蓄積側なので版管理に残す）・`interests.md`（任意の補助）が利用者のもの。
 `digest_*`・`.seen.json`（既読）・`.stats.json`（選別の統計）・`.llm_cache.json`・`.ingested/`（取り込み済みの選別 JSON）・

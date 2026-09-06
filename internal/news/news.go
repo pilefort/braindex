@@ -36,6 +36,7 @@ type Settings struct {
 	SessionsDir  string         `json:"sessions_dir"`   // セッションログの置き場。空なら retro.sessions_dir → ~/.claude/projects
 	ShowMinScore *int           `json:"show_min_score"` // この関心度(0〜interest.MaxScore)以上を主要表示。未満は「関心外と判定」に折りたたむ。
 	// ポインタなのは 0(全件を主要表示)と未設定(既定 2)を区別するため。他のキーのように 0 を未設定とみなすと、0 を設定できない
+	Serendipity   *int   `json:"serendipity"`     // 関心外から拾い上げて「もしかして興味あるかも」に出す件数。既定 2・0 で出さない。ポインタなのは 0(出さない)と未設定(既定 2)を区別するため
 	LLM           string `json:"llm"`             // LLM 補助(翻訳＋採点)。"off"(既定)か "claude-cli"(claude CLI のヘッドレス呼び出し・opt-in)
 	LLMModel      string `json:"llm_model"`       // claude CLI に渡すモデル名(--model)。空なら CLI の既定
 	LLMTimeoutSec int    `json:"llm_timeout_sec"` // 1 バッチの待ち時間(秒)。既定 120
@@ -55,6 +56,8 @@ const (
 	DefaultSeenDays     = 90
 	DefaultProfileDays  = 14
 	DefaultShowMinScore = 2              // 原型と同じ(2026-08-15〜の運用値)
+	DefaultSerendipity  = 2              // 関心外から日替わりで拾い上げる件数
+	MaxSerendipity      = 10             // これ以上は「たまに」でなくなる
 	KeepDir             = "keep"         // Dir の下。選別で残した見出し(YYYY-MM.md)。git 管理
 	InterestsFile       = "interests.md" // Dir の下。補助の関心ファイル(任意・1 行 1 語)
 	DefaultCap          = 20
@@ -90,6 +93,10 @@ func (s Settings) WithDefaults() Settings {
 		n := DefaultShowMinScore
 		s.ShowMinScore = &n
 	}
+	if s.Serendipity == nil {
+		n := DefaultSerendipity
+		s.Serendipity = &n
+	}
 	if s.LLM == "" {
 		s.LLM = LLMOff
 	}
@@ -97,6 +104,14 @@ func (s Settings) WithDefaults() Settings {
 		s.LLMTimeoutSec = DefaultLLMTimeoutSec
 	}
 	return s
+}
+
+// SerendipityCount は関心外から拾い上げる件数。WithDefaults を通していない Settings でも既定を返す。
+func (s Settings) SerendipityCount() int {
+	if s.Serendipity == nil {
+		return DefaultSerendipity
+	}
+	return *s.Serendipity
 }
 
 // MinScore は主要表示の下限。WithDefaults を通していない Settings でも既定を返す。
@@ -112,6 +127,9 @@ func (s Settings) MinScore() int {
 func (s Settings) Validate() error {
 	if s.ShowMinScore != nil && (*s.ShowMinScore < 0 || *s.ShowMinScore > interest.MaxScore) {
 		return fmt.Errorf("設定 news.show_min_score: 0〜%d のどれか(0 は全件を主要表示): %d", interest.MaxScore, *s.ShowMinScore)
+	}
+	if s.Serendipity != nil && (*s.Serendipity < 0 || *s.Serendipity > MaxSerendipity) {
+		return fmt.Errorf("設定 news.serendipity: 0〜%d のどれか(0 は出さない): %d", MaxSerendipity, *s.Serendipity)
 	}
 	if s.SeenDays < 0 {
 		return fmt.Errorf("設定 news.seen_days: 0 以上(0 は既定 %d): %d", DefaultSeenDays, s.SeenDays)
