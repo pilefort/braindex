@@ -56,6 +56,39 @@ func TestBuildAnnotationPrompt(t *testing.T) {
 	}
 }
 
+// 訳が落ちた英語の記事は、半分のまとまりでもう一度だけ聞く。2 度目も空なら印を付け、次回からは聞かない。
+func TestAnnotateRetriesMissingTranslation(t *testing.T) {
+	f := &fakeAnnotator{reply: func(p string) (string, error) {
+		// 聞き直しは 1 件ずつ来る。a1 はそのとき訳を返し、a2 は最後まで返さない。
+		if strings.Contains(p, `"id":"a1"`) && !strings.Contains(p, `"id":"a2"`) {
+			return `[{"id":"a1","t":"見出し一","s":"要約","r":3}]`, nil
+		}
+		return `[{"id":"a1","t":"","s":"","r":3},{"id":"a2","t":"","s":"","r":1},{"id":"b1","t":"","s":"","r":1}]`, nil
+	}}
+	cache := Annotations{}
+	rep := Annotate(context.Background(), f, llmResults(), cache, AnnotateOptions{Pool: 2, Batch: 2})
+	if len(f.prompts) != 4 {
+		t.Fatalf("呼び出し %d 回 want 4(最初の 2 まとまり＋聞き直し 2 件)", len(f.prompts))
+	}
+	if rep.Requested != 3 || rep.Retried != 2 || rep.Annotated != 3 {
+		t.Errorf("report %+v want Requested=3 Retried=2 Annotated=3", rep)
+	}
+	want := Annotations{
+		"a1": {Title: "見出し一", Summary: "要約", Score: intp(3)},
+		"a2": {Score: intp(1), NoTitle: true},
+		"b1": {Score: intp(1)},
+	}
+	if !reflect.DeepEqual(cache, want) {
+		t.Errorf("cache %+v want %+v", cache, want)
+	}
+	// 印の付いた記事は次からは聞かない(毎回聞き直すと費用だけ増える)。
+	f.prompts = nil
+	Annotate(context.Background(), f, llmResults(), cache, AnnotateOptions{Pool: 2, Batch: 2})
+	if len(f.prompts) != 0 {
+		t.Errorf("2 回目に %d 回聞いた want 0", len(f.prompts))
+	}
+}
+
 // fakeAnnotator は CLI の代わり。受けたプロンプトを記録し、決めた応答を返す。
 type fakeAnnotator struct {
 	prompts []string
@@ -229,7 +262,7 @@ func TestApplyAnnotations_未採点は捏造しない(t *testing.T) {
 // レビュー #91-4: 応答にバッチに無い id があっても cache に入れない・数えない。
 func TestAnnotate_捏造idは捨てる(t *testing.T) {
 	f := &fakeAnnotator{reply: func(string) (string, error) {
-		return `[{"id":"a1","r":1},{"id":"zzz","t":"捏造","r":3}]`, nil
+		return `[{"id":"a1","t":"訳","r":1},{"id":"zzz","t":"捏造","r":3}]`, nil
 	}}
 	cache := Annotations{}
 	rep := Annotate(context.Background(), f, llmResults(), cache, AnnotateOptions{Pool: 10, Batch: 10})

@@ -93,15 +93,16 @@ func TestNewsFetch_LLM(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("exit=%d\n%s%s", code, so, se)
 	}
-	if len(f.prompts) != 1 {
-		t.Fatalf("呼び出し %d 回 want 1\n%s", len(f.prompts), se)
+	// 記事1 は訳が返らないので、その 1 件だけをもう一度聞く(2 回目も空なら以後は聞かない)。
+	if len(f.prompts) != 2 {
+		t.Fatalf("呼び出し %d 回 want 2(最初の 1 回＋記事1 の聞き直し)\n%s", len(f.prompts), se)
 	}
 	p := f.prompts[0]
 	mustContain(t, "prompt", p, "記事1", "ゴルーチン の話", `"lang":"en"`, "## 関心プロファイル", "ゴルーチン")
 	if strings.Contains(p, "example.com") {
 		t.Errorf("リンクをプロンプトに載せている(不要な情報)")
 	}
-	mustContain(t, "stderr", se, "LLM 補助: 2 件を聞いて 2 件に注釈")
+	mustContain(t, "stderr", se, "LLM 補助: 2 件を聞いて 2 件に注釈・訳が返らず 1 件を聞き直し")
 	// 記事2 が 3(LLM)で主要、記事1 は 0(LLM)で関心外。訳が添えられる
 	mustContain(t, "stdout", so, "[記事2](https://example.com/2) ★3（LLM）／訳: 記事二の訳", "関心外と判定 1 件:", "[記事1](https://example.com/1) ★0（LLM）")
 	if _, err := os.Stat(filepath.Join(hub, "news", news.LLMCacheFile)); err != nil {
