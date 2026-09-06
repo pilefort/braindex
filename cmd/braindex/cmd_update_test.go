@@ -240,7 +240,7 @@ func TestUpdate_MergedConfigLineSaysAdded(t *testing.T) {
 	if strings.Contains(out, "保持(編集済み): braindex.json") {
 		t.Errorf("節を足したのに「保持(編集済み)」と出ている:\n%s", out)
 	}
-	if !strings.Contains(out, "保持(編集済み・無い節は足した): braindex.json → braindex.json.new に今の版を置いた(雛形にあって無いキー: retro.position_bins, retro.window_days)") {
+	if !strings.Contains(out, "保持(編集済み・無い節は足した): braindex.json → braindex.json.new に今の版を置いた(雛形にあって無いキー: retro.baseline_weeks, retro.position_bins, retro.window_days)") {
 		t.Errorf("足した旨と欠けたキーを添えた行が無い:\n%s", out)
 	}
 }

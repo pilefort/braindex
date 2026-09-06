@@ -2,6 +2,7 @@ package retro
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -216,4 +217,49 @@ func (c Count) Percent() string {
 
 func writeRow(b *strings.Builder, c Count) {
 	fmt.Fprintf(b, "| %s | %d | %d | %s |\n", c.Key, c.Utterances, c.Corrections, c.Percent())
+}
+
+// Baseline は recent の窓の直前の weeks 週の窓 [recent.Since - 7×weeks 日, recent.Since)。
+// weeks が 0 以下、または recent に起点が無い(全期間)ときは、比べる基準を作れないのでゼロ値を返す。
+func Baseline(recent Window, weeks int) Window {
+	if weeks <= 0 || recent.Since.IsZero() {
+		return Window{}
+	}
+	return Window{Since: recent.Since.AddDate(0, 0, -7*weeks), Until: recent.Since}
+}
+
+// MinBaselineTurns は基準期間を判定に使うのに必要な発話数。これ未満なら基準は無いものとして
+// 閾値だけで判定する(少ない発話から出した率は揺れが大きく、2SE の幅も当てにならない)。
+const MinBaselineTurns = 50
+
+// Verdict は retro check の判定。
+type Verdict int
+
+const (
+	Below          Verdict = iota // 閾値以下。鳴らさない
+	SameAsBaseline                // 閾値は超えたが基準期間と同水準。鳴らさない
+	Exceed                        // 閾値を超え、基準期間からも上振れている。鳴らす
+)
+
+// Compare は直近の窓と基準期間を比べて判定する。
+//
+// 閾値は「床」として残す(決定 2026-09-03 の 0.08 は覆さない)。そのうえで、基準期間の率から
+// 2SE を超えて上振れているときだけ鳴らす——閾値だけだと、その人の平常運転が閾値の上にある間は
+// 毎回鳴り続けて合図の意味が消える。SE は直近の窓の発話数で計る二項分布の標準誤差
+// (基準の率 p_b がその人の「ふだん」で、直近の n 発話がそこから引かれたと見なしたときの揺れ幅)。
+//
+// 基準の発話数が MinBaselineTurns 未満なら材料不足として閾値だけで判定する(従来動作)。
+func Compare(recent, baseline Count, threshold float64) Verdict {
+	if recent.Utterances == 0 || recent.Rate() <= threshold {
+		return Below
+	}
+	if baseline.Utterances < MinBaselineTurns {
+		return Exceed
+	}
+	pb := baseline.Rate()
+	se := math.Sqrt(pb * (1 - pb) / float64(recent.Utterances))
+	if recent.Rate()-pb > 2*se {
+		return Exceed
+	}
+	return SameAsBaseline
 }

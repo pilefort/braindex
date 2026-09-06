@@ -221,3 +221,52 @@ func TestRecent(t *testing.T) {
 		t.Errorf("0 日は無制限: got=%+v", w)
 	}
 }
+
+// 閾値は床として残しつつ、基準期間から 2SE を超えて上振れたときだけ鳴らす(決定 2026-09-06)。
+// 閾値だけだと、その人の平常運転が閾値の上にある間は毎回鳴り続けて合図の意味が消える。
+func TestCompare(t *testing.T) {
+	c := func(n, hit int) Count { return Count{Utterances: n, Corrections: hit} }
+	cases := []struct {
+		desc             string
+		recent, baseline Count
+		threshold        float64
+		want             Verdict
+	}{
+		{"閾値以下なら基準を見るまでもない", c(100, 5), c(500, 40), 0.08, Below},
+		{"閾値ちょうどは超えない", c(100, 8), c(500, 40), 0.08, Below},
+		{"閾値超えだが基準と同水準(2SE≈5.4pt の中)", c(100, 9), c(500, 40), 0.08, SameAsBaseline},
+		{"閾値も基準も超えた", c(100, 15), c(500, 40), 0.08, Exceed},
+		{"基準の発話が少なければ閾値だけで判定", c(100, 9), c(20, 2), 0.08, Exceed},
+		{"基準の発話がちょうど 50 なら使う", c(100, 9), c(50, 4), 0.08, SameAsBaseline},
+		{"基準を使わない(発話 0)なら閾値だけ", c(100, 9), Count{}, 0.08, Exceed},
+		{"基準の率が 0 なら差が正で鳴る", c(100, 9), c(500, 0), 0.08, Exceed},
+		{"直近に発話が無ければ鳴らさない", Count{}, c(500, 40), 0.08, Below},
+	}
+	for _, x := range cases {
+		if got := Compare(x.recent, x.baseline, x.threshold); got != x.want {
+			t.Errorf("Compare[%s]: want=%v got=%v", x.desc, x.want, got)
+		}
+	}
+}
+
+func TestBaseline(t *testing.T) {
+	loc := time.UTC
+	recent := Recent(time.Date(2026, 9, 1, 10, 0, 0, 0, loc), 14, loc)
+	b := Baseline(recent, 8)
+	if want := time.Date(2026, 6, 23, 0, 0, 0, 0, loc); !b.Since.Equal(want) { // 2026-08-18(窓の起点)の 56 日前
+		t.Errorf("基準の起点: want=%v got=%v", want, b.Since)
+	}
+	if !b.Until.Equal(recent.Since) {
+		t.Errorf("基準の終端は窓の起点: want=%v got=%v", recent.Since, b.Until)
+	}
+	// 窓と基準は重ならない: 窓の起点ちょうどの発話は窓の側
+	if b.Contains(recent.Since) || !recent.Contains(recent.Since) {
+		t.Error("窓の起点が両方に入るか、どちらにも入らない")
+	}
+	if got := Baseline(recent, 0); got != (Window{}) {
+		t.Errorf("0 週は基準なし: %+v", got)
+	}
+	if got := Baseline(Window{}, 8); got != (Window{}) {
+		t.Errorf("全期間の窓には基準を作れない: %+v", got)
+	}
+}

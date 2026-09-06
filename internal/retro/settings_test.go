@@ -8,10 +8,11 @@ import (
 
 func TestSettings_WithDefaults(t *testing.T) {
 	s := Settings{}.WithDefaults()
-	if s.SessionsDir != "" || s.WindowDays != 14 || s.Threshold != 0.08 || s.PositionBins != "1-3,4-10,11-30,31-" || s.Dictionary != "" || s.DictionaryExtra != "" {
+	if s.SessionsDir != "" || s.WindowDays != 14 || s.Threshold != 0.08 || s.PositionBins != "1-3,4-10,11-30,31-" || s.Dictionary != "" || s.DictionaryExtra != "" || s.Baseline() != 8 {
 		t.Errorf("既定値: got=%+v", s)
 	}
-	full := Settings{SessionsDir: "~/logs", WindowDays: 7, Threshold: 0.2, PositionBins: "1-5,6-", Dictionary: "d.txt", DictionaryExtra: "e.txt"}
+	weeks := 3
+	full := Settings{SessionsDir: "~/logs", WindowDays: 7, Threshold: 0.2, BaselineWeeks: &weeks, PositionBins: "1-5,6-", Dictionary: "d.txt", DictionaryExtra: "e.txt"}
 	if got := full.WithDefaults(); got != full {
 		t.Errorf("指定した値は変えない: got=%+v", got)
 	}
@@ -98,5 +99,32 @@ func TestDefaults_AreValid(t *testing.T) {
 	}
 	if len(bins) != 4 || bins[0].Lo != 1 || bins[len(bins)-1].Hi != 0 {
 		t.Errorf("DefaultPositionBins の解析結果: %+v", bins)
+	}
+}
+
+// baseline_weeks は 0 が「基準を使わない」なので、書かれていない(nil)ときだけ既定で埋める。
+func TestSettings_BaselineWeeks(t *testing.T) {
+	zero := 0
+	three := 3
+	neg := -1
+	cases := []struct {
+		desc string
+		in   *int
+		want int
+	}{
+		{"書かれていなければ既定", nil, DefaultBaselineWeeks},
+		{"0 はそのまま(基準を使わない)", &zero, 0},
+		{"指定した値", &three, 3},
+	}
+	for _, c := range cases {
+		if got := (Settings{BaselineWeeks: c.in}).WithDefaults().Baseline(); got != c.want {
+			t.Errorf("Baseline[%s]: want=%d got=%d", c.desc, c.want, got)
+		}
+	}
+	if err := (Settings{BaselineWeeks: &neg}).Validate(); err == nil {
+		t.Error("負の baseline_weeks がエラーにならない")
+	}
+	if err := (Settings{BaselineWeeks: &zero}).Validate(); err != nil {
+		t.Errorf("0 はエラーにしない: %v", err)
 	}
 }
