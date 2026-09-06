@@ -94,10 +94,7 @@ func Build(in Input) (Result, error) {
 		return res, err
 	}
 	res.Warnings = append(res.Warnings, built.Warnings...)
-	afterEntries, err := ParseCatalog(built.Catalog)
-	if err != nil {
-		return res, err
-	}
+	afterEntries := built.Records
 
 	g, hasGit := LookGit()
 	var gp *Git
