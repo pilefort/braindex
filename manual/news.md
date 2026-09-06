@@ -29,7 +29,7 @@ keep は次のプロファイルの出典になるので、**選別がそのま�
 | サブコマンド | 何をするか |
 |---|---|
 | `news fetch` | フィードを取得し、新着のダイジェスト（Markdown）と選別 UI（HTML）を書く。冒頭で `apply` と同じ取り込みも動く |
-| `news profile` | 関心プロファイル（語 → 重み・出典）を表示する。出典は索引の直近差分・直近のセッション内容・`news/keep/`・`news/interests.md` |
+| `news profile` | 関心プロファイル（語 → 重み・出典）を表示する。出典は索引の直近差分（索引の隣に本文の変更の記録 `index/changes.json` があれば、記録日が古くても本文を直したノートを観測日で数える）・直近のセッション内容・`news/keep/`・`news/interests.md` |
 | `news apply` | 選別 JSON を `<news.dir>/inbox` と `-inbox`（既定 `~/Downloads`）から取り込む |
 | `news suggest` | 直近の会話・索引・keep から作った関心プロファイルに当たる取材先（RSS）を、同梱の取材先目録（17 ジャンル・98 本）から候補として出す。`feeds.json` に登録済みのものは除く。`-top N`（既定 10）・`-json` |
 

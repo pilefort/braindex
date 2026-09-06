@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pilefort/braindex/internal/changehistory"
 	"github.com/pilefort/braindex/internal/config"
 	"github.com/pilefort/braindex/internal/interest"
 	"github.com/pilefort/braindex/internal/news"
@@ -51,10 +52,11 @@ func runNewsProfile(args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&o.json, "json", false, "JSON で出す(全件)")
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方: braindex news profile [-config braindex.json] [-date YYYY-MM-DD] [-days N] [-sessions DIR] [-top N] [-json]")
-		fmt.Fprintln(stderr, "  関心プロファイル(語 → 重み・出典)を標準出力に書く。出典は 索引の直近差分(index/catalog.md)・直近のセッション内容・")
-		fmt.Fprintln(stderr, "  選別で残した見出し(news/keep/YYYY-MM.md)・補助の関心ファイル(news/interests.md・1 行 1 語)。")
+		fmt.Fprintln(stderr, "  関心プロファイル(語 → 重み・出典)を標準出力に書く。出典は 索引の直近差分(index/catalog.md。隣の changes.json があれば")
+		fmt.Fprintln(stderr, "  本文だけ直したノートも観測日で数える)・直近のセッション内容・選別で残した見出し(news/keep/YYYY-MM.md)・")
+		fmt.Fprintln(stderr, "  補助の関心ファイル(news/interests.md・1 行 1 語)。")
 		fmt.Fprintln(stderr, "  重みは出典ごとに最大を 1 に正規化した値の和。規則ベースで、LLM は使わない。セッション本文は読むだけで送らない。")
-		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗 / 2 警告つきで完了(索引やセッションの置き場が無く、その出典を飛ばした)")
+		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗 / 2 警告つきで完了(索引やセッションの置き場が無く、その出典を飛ばした。本文の変更の記録が壊れていて読めない)")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
 		fs.PrintDefaults()
@@ -133,8 +135,8 @@ func loadProfile(fc config.Config, hubDir, today string, days int, sessionsDir s
 	return p, warnings, nil
 }
 
-// loadProfileInput は関心プロファイルの材料(索引・セッション・keep・補助)を読む。プロファイルにせず材料のまま返すので、
-// 同じ材料をほかの目的(braindex learn の訂正の文脈)にも使える。警告の扱いは loadProfile と同じ。
+// loadProfileInput は関心プロファイルの材料(索引と本文の変更の記録・セッション・keep・補助)を読む。プロファイルにせず
+// 材料のまま返すので、同じ材料をほかの目的(braindex learn の訂正の文脈)にも使える。警告の扱いは loadProfile と同じ。
 func loadProfileInput(fc config.Config, hubDir, today string, days int, sessionsDir string, allProjects bool) (interest.Input, []string, error) {
 	var warnings []string
 	warn := func(format string, a ...any) { warnings = append(warnings, fmt.Sprintf(format, a...)) }
@@ -163,6 +165,13 @@ func loadProfileInput(fc config.Config, hubDir, today string, days int, sessions
 		in.Catalog, err = review.ParseCatalog(b)
 		if err != nil {
 			return interest.Input{}, nil, fmt.Errorf("%s: %w", catalogPath, err)
+		}
+		// 索引の隣の本文の変更の記録(changes.json)。記録日が窓の外でも本文を直したノートを観測日で数える。
+		// 記録が無い hub は今までどおり記録日だけで決まる。壊れていれば警告して本文だけの変更は数えない
+		if h, err := changehistory.Load(filepath.Join(filepath.Dir(catalogPath), changehistory.FileName)); err != nil {
+			warn("本文の変更の記録を読めない: %v(本文だけの変更は数えない)", err)
+		} else if h.Known() {
+			in.Changes = h.Notes
 		}
 	} else if errors.Is(err, iofs.ErrNotExist) {
 		warn("索引 %s が無いので飛ばした(braindex で生成する)", catalogPath)
