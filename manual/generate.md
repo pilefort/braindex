@@ -23,9 +23,10 @@
 
 | キー | 意味 |
 |---|---|
-| `root` | 走査のルート。直下の各ディレクトリを 1 リポとみなす。相対パスは設定ファイルのディレクトリ基準。`-root` が無ければ必須 |
+| `root` | 走査のルート。直下の各ディレクトリを 1 リポとみなす（`repo_depth` で段数を変えられる）。相対パスは設定ファイルのディレクトリ基準。`-root` が無ければ必須 |
+| `repo_depth` | root から何段下のディレクトリをリポとみなすか。既定 1（root 直下）。`2` なら `root/<group>/<name>` がリポで、リポ名（索引の H2 見出し・`extra.repo`・`search -repo` など）は `group/name`。段数は root 全体で 1 つ（1 段と 2 段の配置は混ぜられない。2 段のときは 1 段目の `docs/notes` は見ない）。0 または省略で 1、負の値は設定の誤り。列挙できなかった group は「読めなかった範囲」として索引の先頭に残る |
 | `notes_dirs` | 各リポのノート置き場。既定 `["docs/notes"]`。`["wiki"]` や、移行中の `["docs/notes", "wiki"]` も可。種別ラベルは末尾セグメント。リポ内の相対パスに限る（`..` を含むパスと絶対パスは設定の誤りとして終了コード 1） |
-| `extra` | 規約外の置き場を個別に足す配列。各要素は `repo`（root 直下のリポ名）・`path`（リポ内の起点。`"."` はリポ直下。`notes_dirs` と同じくリポ内の相対パスに限る）・`recursive`（`true` でサブディレクトリも走査）・`kind`（種別ラベル）・`exclude`（グロブの配列。`/` を含むパターンは起点からの相対パス、含まなければファイル名とディレクトリ名に掛ける。ディレクトリに当たるとその枝ごと除外する。大文字小文字は区別する） |
+| `extra` | 規約外の置き場を個別に足す配列。各要素は `repo`（リポ名。`repo_depth` が 2 なら `group/name`）・`path`（リポ内の起点。`"."` はリポ直下。`notes_dirs` と同じくリポ内の相対パスに限る）・`recursive`（`true` でサブディレクトリも走査）・`kind`（種別ラベル）・`exclude`（グロブの配列。`/` を含むパターンは起点からの相対パス、含まなければファイル名とディレクトリ名に掛ける。ディレクトリに当たるとその枝ごと除外する。大文字小文字は区別する） |
 | `review` | 週次レビュー（`braindex review`・[review-lint.md](review-lint.md)）の節。`dir`（記録の置き場。既定 `work/review`）・`since_days`（前回の記録が無いときに遡る日数。既定 14）・`stale_todo_weeks`（TODO を放置とみなす週数。既定 4）・`archive_months`（何か月より前をアーカイブ候補にするか。既定 6）。省略可 |
 | `retro` | 振り返り（`braindex retro`）の節。`sessions_dir`・`window_days`・`threshold`・`position_bins`・`dictionary`・`dictionary_extra`。省略可。詳細は [retro.md](retro.md) |
 | `news` | ニュースサジェスト（`braindex news`・[news.md](news.md)）の節。`dir`（既定 `news`）・`feeds`（既定 `news/feeds.json`）・`seen_days`（既定 90）・`cap_per_layer`（層ごとの 1 フィード表示上限。既定 `{"daily": 15, "weekly": 25}`・表に無い層は 20）・`profile_days`（既定 14）・`sessions_dir`・`show_min_score`（主要表示にする関心度の下限。0〜3・既定 2。**0 は全件を主要表示**で、省略とは別の意味）・`llm`（`off`（既定）か `claude-cli`。LLM 補助の opt-in）・`llm_model`・`llm_timeout_sec`（既定 120）。省略可。範囲外の値は設定の誤りとしてエラー |
@@ -46,12 +47,24 @@
 }
 ```
 
+例（`~/projects/<group>/<name>` のように 1 段はさんで整理している root。索引の見出しは `## work/alpha` になる）:
+
+```json
+{
+  "root": "..",
+  "repo_depth": 2,
+  "extra": [
+    { "repo": "work/alpha", "path": "research", "recursive": true, "kind": "research" }
+  ]
+}
+```
+
 フラグ: `-config` `-root` `-out`（既定は設定ファイルと同じディレクトリの `index/catalog.md`）`-date YYYY-MM-DD`（生成日の固定。テスト・CI 用）`-version`（入っている版を 1 行出して終わる）。
 終了コード: 0 成功／1 失敗（フラグの誤り・設定・root が読めない。索引は書かない）／2 警告つき完了（読めないファイルや存在しない `extra` を stderr に出して飛ばし、索引は書く。本文の変更の記録を読めない・書けないときも同じ）。
 
 ## 索引の各行の決め方
 
-- リポ: `root` 直下の各ディレクトリ（`.` で始まるものは除く）。root 相対パスに `archive` セグメントを含むファイルは除外
+- リポ: `root` の `repo_depth` 段下の各ディレクトリ（既定 1 で直下。どの段でも `.` で始まるものは除く）。リポ名は root 相対のスラッシュ区切り（`alpha`・2 段なら `work/alpha`）。root 相対パスに `archive` セグメントを含むファイルは除外
 - 種別: ノート置き場の直下はその末尾セグメント（既定 `notes`）、サブディレクトリ配下は `notes/<サブディレクトリ>`、`docs/decisions.md` は `decisions`、`extra` は指定した `kind`（`recursive` ならサブディレクトリ配下は `kind/<サブディレクトリ>`）
 - 日付: ファイル名の `YYYYMMDD` か `YYYY-MM-DD` → 本文先頭 10 行の ISO 日付か `YYYY年M月D日` → 無ければ空欄（mtime には頼らない）
 - タイトル: 最初の `# ` 行。無ければファイル名（`.md` を除く）

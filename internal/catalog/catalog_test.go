@@ -157,6 +157,62 @@ func TestBuild_Deterministic(t *testing.T) {
 	}
 }
 
+// repo_depth 2 の root(internal/scan/testdata/root-depth2)を索引化する設定。extra の repo も group/name。
+func e2eDepth2Config() scan.Config {
+	return scan.Config{
+		Root:      filepath.Join("..", "scan", "testdata", "root-depth2"),
+		RepoDepth: 2,
+		Extra:     []scan.ExtraRule{{Repo: "group-b/repo-z", Path: "research", Recursive: true, Kind: "research"}},
+	}
+}
+
+// repo_depth 2 では索引の H2 見出しが group/name になる。表は golden-depth2.md と一致し、2 回生成でバイト一致する。
+// 1 段目の配置(stray/docs/notes)は載らない。
+func TestBuild_E2EGolden_RepoDepth2(t *testing.T) {
+	res, err := Build(e2eDepth2Config(), "2026-08-07")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if res.Entries != 7 {
+		t.Errorf("件数: want=7 got=%d", res.Entries)
+	}
+	if len(res.Warnings) != 0 || !res.Coverage.Complete() {
+		t.Errorf("警告なし・走査の記録は完全のはず: %q %+v", res.Warnings, res.Coverage)
+	}
+	cat := string(res.Catalog)
+	for _, h := range []string{"\n## group-a/repo-x\n", "\n## group-a/repo-y\n", "\n## group-b/repo-z\n"} {
+		if !strings.Contains(cat, h) {
+			t.Errorf("見出し %q が無い:\n%s", strings.TrimSpace(h), cat)
+		}
+	}
+	if strings.Contains(cat, "stray") {
+		t.Errorf("1 段目の配置が載っている:\n%s", cat)
+	}
+	got := render.Render(res.Records, "2026-08-07")
+	golden := filepath.Join("testdata", "golden-depth2.md")
+	if *update {
+		if err := os.WriteFile(golden, got, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("golden 更新: %s", golden)
+		return
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatalf("golden 読み込み: %v (先に `go test ./internal/catalog/ -update` で生成)", err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("catalog が golden と不一致:\n--- got ---\n%s", got)
+	}
+	again, err := Build(e2eDepth2Config(), "2026-08-07")
+	if err != nil {
+		t.Fatalf("Build(2 回目): %v", err)
+	}
+	if !bytes.Equal(res.Catalog, again.Catalog) {
+		t.Errorf("repo_depth 2 で 2 回生成するとバイト不一致(決定性違反)")
+	}
+}
+
 // clone 直後を模す: 同じ内容のツリーを 2 つ作り、mtime だけ変えて生成しても出力はバイト一致する
 // (git は mtime を保存しないので、mtime に依存すると clone ごとに索引が変わる)。
 // 日付を持たないノート(ext/docs/guides/style.md)を含める。
