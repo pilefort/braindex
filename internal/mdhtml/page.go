@@ -88,6 +88,9 @@ const js = `(function(){var t=document.getElementById('t');` +
 //  1. 開閉の記憶: 畳んだ・開いたという操作を localStorage に覚え、次に開いたときその状態に戻す。
 //     既読を自動で判定しない(2026-09-06 に「画面に 3 秒以上入ったら既読」を撤回。自己リロードと噛み合って
 //     読んでいる最中にエントリが畳まれたため)。「新着」は一度も開閉していないエントリの印。
+//     操作を拾うのは summary のクリックで、details の toggle イベントではない——Chromium は初期表示の
+//     `<details open>` にも toggle を投げるので、toggle で記録すると読み込んだ瞬間に全エントリが
+//     「操作済み」になり、「新着」が一度も出なかった(2026-09-06 実測 → docs/notes/common/details-toggle-on-load.md)。
 //  2. 全部開く / 全部畳む のボタン。
 //  3. 自己リロード: 常駐サーバを置かない代わりに 12 秒ごとに自分を読み直す(決定 2026-09-05)。
 //     隠れているタブ・文字を選択中は止め、スクロール位置は復元する。ボタンで止められる。
@@ -100,13 +103,15 @@ var ns=(location.pathname.split('/').pop()||'thread');
 function get(id){try{return localStorage.getItem('ans-open:'+ns+':'+id);}catch(e){return null;}}
 function put(id,v){try{localStorage.setItem('ans-open:'+ns+':'+id,v?'1':'0');}catch(e){}}
 function unbadge(d){var n=d.querySelector('.ent-n');if(n)n.parentNode.removeChild(n);}
+function mark(d){put(d.id,d.open);unbadge(d);}
 for(var i=0;i<es.length;i++){(function(d){
 var s=get(d.id);
 if(s!==null){d.open=(s==='1');unbadge(d);}
-d.addEventListener('toggle',function(){put(d.id,d.open);unbadge(d);});
+var sm=d.querySelector('summary');
+if(sm)sm.addEventListener('click',function(){setTimeout(function(){mark(d);},0);});
 })(es[i]);}
 var o=document.getElementById('thr-open'),c=document.getElementById('thr-close');
-function all(v){for(var i=0;i<es.length;i++)es[i].open=v;}
+function all(v){for(var i=0;i<es.length;i++){es[i].open=v;mark(es[i]);}}
 if(o)o.addEventListener('click',function(){all(true);});
 if(c)c.addEventListener('click',function(){all(false);});
 })();

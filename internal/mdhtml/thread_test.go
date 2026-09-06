@@ -146,3 +146,20 @@ func TestThreadPage_外部読み込みなし(t *testing.T) {
 		}
 	}
 }
+
+// 「新着」の印を消すのは summary のクリックだけで、details の toggle では消さない。
+// Chromium は初期表示の `<details open>` にも toggle を投げるので、toggle で記録すると
+// 読み込んだ瞬間に全エントリが「操作済み」になり、印が一度も出なかった(2026-09-06 実測)。
+// ブラウザを回せないので、埋め込む JS の形で歯止めをかける。
+func TestThreadPage_新着は初期表示で消えない(t *testing.T) {
+	h := ThreadPage(threadSample, "索引の設計")
+	if !strings.Contains(h, `sm.addEventListener('click'`) {
+		t.Error("開閉の記録が summary のクリックで行われていない")
+	}
+	if strings.Contains(h, `addEventListener('toggle'`) {
+		t.Error("details の toggle で開閉を記録している(初期表示で「新着」が消える)")
+	}
+	if !strings.Contains(h, `<span class="ent-n">新着</span>`) {
+		t.Error("「新着」の印が HTML に無い")
+	}
+}
