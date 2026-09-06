@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -158,10 +159,44 @@ func KeepMarkdown(keeps []Keep, date, layer string) string {
 // IngestedDir は Dir の下。取り込み済みの選別 JSON を移す先。git 管理外。
 const IngestedDir = ".ingested"
 
+// SelectionDatePattern は選別 JSON の date に許す形。date は keep ファイル(news/keep/YYYY-MM.md)の
+// パスの一部になるので、数字とハイフンだけに限る。選別 JSON はブラウザのダウンロード先という信用境界の
+// 外から拾うため、`../../x` のような値で置き場の外に書かせない(設計レビュー 2026-09-06 H4)。
+var SelectionDatePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+// FeedNames は feeds.json の取材先を名前の集合にする(Ingest の feed_stats の照合用)。
+func FeedNames(srcs []Source) map[string]bool {
+	m := make(map[string]bool, len(srcs))
+	for _, s := range srcs {
+		m[s.Name] = true
+	}
+	return m
+}
+
+// checkFeedStats は feed_stats のうち、取材先の名前が known にあって数が 0 以上の項目だけを返す。
+// 併せて落とした項目の数を返す。known が nil のときは名前を照合しない(feeds.json を読めなかったとき)。
+func checkFeedStats(in map[string]FeedStats, known map[string]bool) (map[string]FeedStats, int) {
+	out := make(map[string]FeedStats, len(in))
+	dropped := 0
+	for name, d := range in {
+		if known != nil && !known[name] {
+			dropped++
+			continue
+		}
+		if d.Shown < 0 || d.Kept < 0 || d.Dropped < 0 || d.Hidden < 0 || d.Rescued < 0 {
+			dropped++
+			continue
+		}
+		out[name] = d
+	}
+	return out, dropped
+}
+
 // Ingest は dirs にある選別 JSON(SelectionPrefix*.json)を名前順に取り込み、keep に追記し、統計を上書きし、
 // ファイルを newsDir/.ingested/ へ移す。取り込んだ件数分のメッセージを返す。形式が違うファイルは飛ばして伝える。
 // 同じ記事(リンク)が keep ファイルに既にあれば追記しない。統計はダイジェスト("<日付>_<層>")単位で上書き。
-func Ingest(newsDir string, dirs []string) (msgs []string, err error) {
+// known は feeds.json の取材先の名前(FeedNames)。feed_stats はこの名前にある項目だけ数える。nil なら照合しない。
+func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string, err error) {
 	var paths []string
 	for _, d := range dirs {
 		// glob ではなく走査する: 置き場の名前に [ や * が入っていてもパターンとして解釈されない。
@@ -189,6 +224,7 @@ func Ingest(newsDir string, dirs []string) (msgs []string, err error) {
 	if err != nil {
 		return nil, err
 	}
+	done := 0 // 取り込めた選別 JSON の数
 	for _, p := range paths {
 		b, err := os.ReadFile(p)
 		if err != nil {
@@ -199,12 +235,19 @@ func Ingest(newsDir string, dirs []string) (msgs []string, err error) {
 			msgs = append(msgs, fmt.Sprintf("飛ばした(%v): %s", err, filepath.Base(p)))
 			continue
 		}
-		date, layer := sel.Date, sel.Layer
-		if date == "" {
-			date = "unknown"
+		// date が使えない選別 JSON は取り込まず、取り込み済みへも移さない。
+		// 人が中を見て消せるように元の場所に残す(勝手に .ingested/ へ隠すと気づけない)。
+		if !SelectionDatePattern.MatchString(sel.Date) {
+			msgs = append(msgs, fmt.Sprintf("選別 JSON %s: date %q が YYYY-MM-DD でない → 取り込まない", filepath.Base(p), sel.Date))
+			continue
 		}
+		date, layer := sel.Date, sel.Layer
 		if layer == "" {
 			layer = "unknown"
+		}
+		stats, dropped := checkFeedStats(sel.FeedStats, known)
+		if dropped > 0 {
+			msgs = append(msgs, fmt.Sprintf("選別 JSON %s: feed_stats の %d 項目を落とした(feeds.json に無い取材先か、負の数)", filepath.Base(p), dropped))
 		}
 		if len(sel.Keeps) > 0 {
 			month := date
@@ -215,7 +258,7 @@ func Ingest(newsDir string, dirs []string) (msgs []string, err error) {
 				return msgs, err
 			}
 		}
-		st.Digests[date+"_"+layer] = sel.FeedStats
+		st.Digests[date+"_"+layer] = stats
 		ingested := filepath.Join(newsDir, IngestedDir)
 		if err := os.MkdirAll(ingested, 0o755); err != nil {
 			return msgs, err
@@ -224,6 +267,12 @@ func Ingest(newsDir string, dirs []string) (msgs []string, err error) {
 			return msgs, fmt.Errorf("取り込み済みへ移せない: %w", err)
 		}
 		msgs = append(msgs, fmt.Sprintf("取り込み: %s（残す %d 件）", filepath.Base(p), len(sel.Keeps)))
+		done++
+	}
+	// 1 つも取り込めなかったら統計は触らない。中身が全部 type 違い・date 違いのときに
+	// 空の .stats.json だけができるのを避ける(何も取り込まなかった回は何も残さない)。
+	if done == 0 {
+		return msgs, nil
 	}
 	if err := st.Save(statsPath); err != nil {
 		return msgs, err

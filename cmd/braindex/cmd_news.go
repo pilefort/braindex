@@ -202,7 +202,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	// 取り込めなくても今日の新着は出す。ここで止めると、壊れた JSON が 1 つ残っているだけで
 	// ダイジェストが出なくなる(リポの規約: 完了できるものは警告つき完了の 2)。
 	ingestWarning := 0 // 取り込みの警告(選別 JSON・統計)。ダイジェストは書くので終了コード 2 に数える
-	if err := ingestSelections(newsDir, o.inbox, progress); err != nil {
+	if err := ingestSelections(newsDir, news.FeedNames(all), o.inbox, progress); err != nil {
 		fmt.Fprintf(stderr, "braindex news fetch: 警告: 選別を取り込めない(keep と統計は前回のまま): %v\n", err)
 		ingestWarning++
 	}
