@@ -123,3 +123,32 @@ func metaLine(h string) string {
 	}
 	return "(META 行が無い)"
 }
+
+// 拾い上げた記事は独立した枠に出てラベルが付き、「ほかの記事」には出ない(同じ記事が 2 か所に出ない)。
+func TestRenderHTML_Serendipity(t *testing.T) {
+	results := []Result{{Source: Source{Name: "A", Category: "tech"}, New: []feed.Entry{
+		{ID: "hi", Title: "主要の記事", Link: "https://example.com/1"},
+		{ID: "lo", Title: "拾い上げた記事", Link: "https://example.com/2"},
+		{ID: "lo2", Title: "ほかの記事", Link: "https://example.com/3"},
+	}}}
+	rk := Ranking{"hi": interest.Score{Value: 3}, "lo": interest.Score{Value: 1}, "lo2": interest.Score{Value: 0}}
+	h := string(RenderHTML(results, DigestOptions{Today: "2026-09-07", Layer: "daily", Cap: 10, Ranking: rk, MinScore: 2,
+		Serendipity: map[string]bool{"lo": true}}))
+	for _, want := range []string{`class="category serendipity"`, `<h2>` + SerendipityLabel + `</h2>`,
+		`<span class="tag lucky">` + SerendipityLabel + `</span>`, `関心の外と判定した記事から`} {
+		if !strings.Contains(h, want) {
+			t.Errorf("%q が無い", want)
+		}
+	}
+	if n := strings.Count(h, `data-id="lo"`); n != 1 {
+		t.Errorf(`data-id="lo" が %d 個(1 個であるべき: 2 か所に出ると選別の状態が壊れる)`, n)
+	}
+	// 拾い上げた記事は関心外の側から数えるので、keep したら rescued として集計される
+	if !strings.Contains(h, `data-id="lo" data-title="拾い上げた記事" data-link="https://example.com/2" data-feed="A" data-cat="tech" data-low="1"`) {
+		t.Error("拾い上げた記事の data-low が 1 でない")
+	}
+	// ほかの記事の折りたたみは残る(lo2 だけ)
+	if !strings.Contains(h, "ほかの記事 1 件") {
+		t.Errorf("折りたたみの件数が違う:\n%s", h)
+	}
+}

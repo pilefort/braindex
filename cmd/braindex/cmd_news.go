@@ -323,6 +323,8 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	do := news.DigestOptions{Layer: o.layer, Today: today, Cap: s.Cap(o.layer), Ranking: ranking, MinScore: s.MinScore(), Totals: stats.Totals(), Annotations: annotations}
+	// 関心外と判定した記事から日替わりで数件を拾い上げる(意図しない発見のため)。同じ日なら何度作り直しても同じ記事。
+	do.Serendipity = news.PickSerendipity(results, ranking, s.MinScore(), s.SerendipityCount(), today)
 	reading, readingErr := news.LoadReading(newsDir)
 	if readingErr != nil {
 		fmt.Fprintln(stderr, "braindex news fetch: 警告: 保存記事の一覧を読めない:", readingErr)
