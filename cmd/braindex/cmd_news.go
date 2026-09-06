@@ -14,6 +14,7 @@ import (
 
 	"github.com/pilefort/braindex/internal/config"
 	"github.com/pilefort/braindex/internal/feed"
+	"github.com/pilefort/braindex/internal/fsutil"
 	"github.com/pilefort/braindex/internal/news"
 )
 
@@ -27,6 +28,9 @@ func init() {
 
 // newsFetcher は fetch が使う取得器。テストで差し替える(ネットワークに出ないため)。
 var newsFetcher news.Fetcher = feed.Fetcher{}
+
+// saveSeen は既読の保存。テストで差し替える(保存の失敗を再現するため)。
+var saveSeen = news.Seen.Save
 
 // newNewsAnnotator は LLM 補助(news.llm = claude-cli)の呼び出し側を作る。claude CLI が PATH に無ければ news.ErrNoClaudeCLI。
 // テストで差し替える(CLI を呼ばないため)。
@@ -88,9 +92,12 @@ type newsFetchOptions struct {
 
 // runNewsFetch は braindex news fetch を実行する。
 //
-// 終了コード: 0 成功 / 1 失敗(出力先が既にある・全フィードの取得失敗を含む。何も書かない) /
+// 終了コード: 0 成功 / 1 失敗(出力先が既にある・別の braindex news が動いている・全フィードの取得失敗を含む。何も書かない) /
 // 2 警告つきで完了(一部のフィードが取得できなかった・採点の出典(索引・セッションの置き場)が無かった・
-// 選別や統計を取り込めなかった)。
+// 選別や統計を取り込めなかった・残留したロックを外した・別の日の未完了が残っている)。
+//
+// 保存物は news/.lock.json で排他し、md → html → 既読 の書き始めから終わりまでを news/.pending.json に記録する
+// (中断からの立て直し → internal/news/run.go)。
 func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	var o newsFetchOptions
 	fs := flag.NewFlagSet("braindex news fetch", flag.ContinueOnError)
@@ -117,8 +124,10 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "  LLM 補助(opt-in): 設定 news.llm を \"claude-cli\" にすると、claude CLI をヘッドレスで呼んで英語見出しの翻訳と関心度(0〜3)を付け、")
 		fmt.Fprintln(stderr, "  語の一致の点に重ねる(バッジの説明に LLM と出る)。渡すのは見出し・概要・プロファイルの語・keep の見出しだけ。")
 		fmt.Fprintln(stderr, "  結果は news/.llm_cache.json に覚えて同じ記事を 2 回聞かない。CLI が無い・失敗した分は語の点のまま(警告・終了コード 2)。")
-		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗(出力先が既にある・全フィードの取得失敗。何も書かない) / 2 警告つきで完了(一部のフィードが取得できなかった・")
-		fmt.Fprintln(stderr, "  採点の出典(索引・セッションの置き場)が無かった・選別や統計を取り込めなかった)")
+		fmt.Fprintln(stderr, "  途中で止まった回は news/.pending.json に記録が残り、同じ日をもう一度実行すると書き直して既読まで進める(完了した回は「既にある」で止まる)。")
+		fmt.Fprintln(stderr, "  並行起動は news/.lock.json で片方だけにする(1 時間より古い残留は外して進む)。")
+		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗(出力先が既にある・別の braindex news が動いている・全フィードの取得失敗。何も書かない) / 2 警告つきで完了(一部のフィードが取得できなかった・")
+		fmt.Fprintln(stderr, "  採点の出典(索引・セッションの置き場)が無かった・選別や統計を取り込めなかった・残留したロックを外した・別の日の未完了が残っている)")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
 		fs.PrintDefaults()
@@ -174,6 +183,18 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	if len(srcs) == 0 {
 		return fail(fmt.Errorf("層 %q のフィードが無い(feeds.json にある層: %v)", o.layer, news.Layers(all)))
 	}
+	// 排他: 定期実行と手動が重なっても、保存物(既読・統計・keep・ダイジェスト)を触るのは片方だけ。
+	// 残留(前の実行が落ちた)を外して進んだときは警告にする
+	unlock, stale, err := news.Lock(newsDir, "fetch")
+	if err != nil {
+		return fail(err)
+	}
+	defer unlock()
+	lockWarning := 0
+	if stale != "" {
+		fmt.Fprintln(stderr, "braindex news fetch: 警告:", stale)
+		lockWarning = 1
+	}
 	seenPath := filepath.Join(newsDir, news.SeenFile)
 	seen, err := news.LoadSeen(seenPath)
 	if err != nil {
@@ -188,16 +209,42 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 
 	// 出力先は取得の前に確かめる。既にあれば書かない(braindex review と同じ規則・決定 2026-09-03)。
 	// 取得の後に落とすと、既読だけ進んで手元に何も残らない回ができる。
+	// 例外は前回の fetch が途中で止まった出力先(news/.pending.json に記録が残っている): 完了していないので書き直す。
+	pendingPath := filepath.Join(newsDir, news.PendingFile)
+	pendingWarning := 0
+	pending, err := news.LoadPending(pendingPath)
+	if err != nil {
+		// 記録が壊れていても今日の新着は出す。前回の出力先は「既にある」の規則に戻る(書き直さない)
+		fmt.Fprintf(stderr, "braindex news fetch: 警告: %v\n", err)
+		pendingWarning++
+		pending = news.Pending{}
+	}
 	outPath := o.out
 	if outPath == "" {
 		outPath = filepath.Join(newsDir, fmt.Sprintf("digest_%s_%s.md", today, o.layer))
 	}
+	var resume news.PendingRun
+	resuming := false
 	if !o.stdout {
-		if _, serr := os.Lstat(outPath); serr == nil {
+		// 記録に残すので絶対パスにする(次回が別のカレントディレクトリから動いても同じ出力先と分かる)
+		if outPath, err = filepath.Abs(outPath); err != nil {
+			return fail(err)
+		}
+		resume, resuming = pending.Find(outPath)
+		if _, serr := os.Lstat(outPath); serr == nil && !resuming {
 			return fail(fmt.Errorf("既にある: %s(同じ日の 2 回目は上書きしない。-out で別名を指定するか、-stdout で標準出力に出す)", outPath))
-		} else if !errors.Is(serr, iofs.ErrNotExist) {
+		} else if serr != nil && !errors.Is(serr, iofs.ErrNotExist) {
 			return fail(serr)
 		}
+	}
+	// 別の回の未完了は、この実行では完了させられない。伝えて、記録は残す
+	for _, r := range pending.Runs {
+		if resuming && r.Primary() == resume.Primary() {
+			continue
+		}
+		fmt.Fprintf(stderr, "braindex news fetch: 警告: 前回の news fetch(%s・%s 層・%s 開始)は完了していない: %s(既読が進んでいないので、その記事は次も新着に出る)。`%s` で書き直して完了する。要らなければ %s から消す\n",
+			r.Date, r.Layer, r.Started, r.Primary(), resumeCommand(r), pendingPath)
+		pendingWarning++
 	}
 
 	// 前回の選別 JSON を取り込む(keep と統計に反映。今回の関心プロファイルにも効く)。
@@ -274,6 +321,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	do := news.DigestOptions{Layer: o.layer, Today: today, Cap: s.Cap(o.layer), Ranking: ranking, MinScore: s.MinScore(), Totals: stats.Totals(), Annotations: annotations}
 	digest := news.Digest(results, do)
 	openWarning := 0
+	var htmlPath string
 	if o.stdout {
 		if _, err := stdout.Write(digest); err != nil {
 			return fail(err)
@@ -288,29 +336,33 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		if err := os.MkdirAll(filepath.Join(newsDir, "inbox"), 0o755); err != nil {
 			fmt.Fprintf(stderr, "braindex news fetch: 警告: 選別の保存先を作れない: %v\n", err)
 		}
-		if err := os.WriteFile(outPath, digest, 0o644); err != nil {
-			return fail(err)
-		}
-		htmlPath := strings.TrimSuffix(outPath, filepath.Ext(outPath)) + ".html"
-		if strings.EqualFold(htmlPath, outPath) {
+		htmlPath = strings.TrimSuffix(outPath, filepath.Ext(outPath)) + ".html"
+		if resuming && len(resume.Outputs) > 1 {
+			htmlPath = resume.Outputs[1] // 前回と同じ名前に書き直す(-out が .html のときの連番を増やさない)
+		} else if strings.EqualFold(htmlPath, outPath) {
 			// -out に .html を渡された場合。同じ名前に書くと md を消してしまうので、md と同じ連番の規則で別名にする
-			// (Windows は大文字小文字を区別しないので .HTML も同じ扱い)
-			htmlPath, err = unusedPath(htmlPath)
+			// (Windows は大文字小文字を区別しないので .HTML も同じ扱い)。md はまだ書いていないので名前を予約して避ける
+			htmlPath, err = unusedPath(htmlPath, outPath)
 			if err != nil {
 				return fail(err)
 			}
 		}
-		if err := os.WriteFile(htmlPath, news.RenderHTML(results, do), 0o644); err != nil {
+		// 書き始める前に記録を置く。md → html → 既読 の途中で止まっても、次の fetch がこの記録を見て書き直す
+		pending.Put(news.PendingRun{Op: "fetch", Started: time.Now().Format(time.RFC3339), Date: today, Layer: o.layer, Outputs: []string{outPath, htmlPath}})
+		if err := pending.Save(pendingPath); err != nil {
+			return fail(fmt.Errorf("未完了の記録を書けない: %w", err))
+		}
+		if resuming {
+			fmt.Fprintf(stdout, "前回の news fetch(%s 開始)は途中で止まっていた: %s を書き直して既読まで進める\n", resume.Started, outPath)
+		}
+		if err := fsutil.WriteAtomic(outPath, digest, 0o644); err != nil {
+			return fail(err)
+		}
+		if err := fsutil.WriteAtomic(htmlPath, news.RenderHTML(results, do), 0o644); err != nil {
 			return fail(err)
 		}
 		fmt.Fprintf(stdout, "news ダイジェスト: %s\n", outPath)
 		fmt.Fprintf(stdout, "news 選別 UI: %s\n", htmlPath)
-		if !o.noOpen {
-			if err := openInBrowser(htmlPath); err != nil {
-				fmt.Fprintln(stderr, "braindex news fetch: 警告:", err)
-				openWarning = 1
-			}
-		}
 	}
 
 	// 既読はダイジェストを書けた後に更新する(書けなかった新着が既読になって消えないように)
@@ -319,28 +371,57 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		if err != nil {
 			return fail(err)
 		}
-		if err := pruned.Save(seenPath); err != nil {
+		if err := saveSeen(pruned, seenPath); err != nil {
 			return fail(err)
 		}
 	}
 
-	if n := len(news.Failed(results)) + profileWarnings + openWarning + ingestWarning + llmWarnings; n > 0 {
+	if !o.stdout {
+		// 既読まで書けた = 完了。記録を消す(消せなくても保存物は揃っているので、次回が今日の分を書き直すだけ。警告にとどめる)
+		pending.Remove(outPath)
+		if err := pending.Save(pendingPath); err != nil {
+			fmt.Fprintf(stderr, "braindex news fetch: 警告: 未完了の記録を消せない(次回は今日の分を書き直してから進む): %v\n", err)
+			pendingWarning++
+		}
+		// ブラウザは保存物を全部書いた後に開く(開くのに手間取っても、ここで止められても、食い違いは残らない)
+		if !o.noOpen {
+			if err := openInBrowser(htmlPath); err != nil {
+				fmt.Fprintln(stderr, "braindex news fetch: 警告:", err)
+				openWarning = 1
+			}
+		}
+	}
+
+	if n := len(news.Failed(results)) + profileWarnings + openWarning + ingestWarning + llmWarnings + lockWarning + pendingWarning; n > 0 {
 		fmt.Fprintf(stderr, "braindex news fetch: 警告 %d 件(取得失敗 %d 本・終了コード 2)\n", n, len(news.Failed(results)))
 		return 2
 	}
 	return 0
 }
 
+// resumeCommand は未完了の記録 r を書き直して完了させるコマンド。出力先が既定の名前(digest_<日付>_<層>.md)でなければ -out も付ける。
+func resumeCommand(r news.PendingRun) string {
+	cmd := fmt.Sprintf("braindex news fetch -date %s -layer %s", r.Date, r.Layer)
+	if out := r.Primary(); filepath.Base(out) != fmt.Sprintf("digest_%s_%s.md", r.Date, r.Layer) {
+		cmd += " -out " + out
+	}
+	return cmd
+}
+
 // unusedPath は path が無ければそのまま、あれば拡張子の前に -2, -3 … を付けた未使用の名前を返す。
+// reserved はこれから書く名前(まだ無いが使えない)。大文字小文字は区別しない(Windows に合わせる)。
 // 使うのは -out に .html を渡された場合だけ: md と html を同じ名前に書くと md を消してしまう。
 // 同じ日の 2 回目そのものは、出力先が既にあれば書かない(決定 2026-09-03)。
-func unusedPath(path string) (string, error) {
+func unusedPath(path string, reserved ...string) (string, error) {
 	ext := filepath.Ext(path)
 	base := path[:len(path)-len(ext)]
 	for i := 1; i < 1000; i++ {
 		p := path
 		if i > 1 {
 			p = fmt.Sprintf("%s-%d%s", base, i, ext)
+		}
+		if isReserved(p, reserved) {
+			continue
 		}
 		if _, err := os.Lstat(p); errors.Is(err, iofs.ErrNotExist) {
 			return p, nil
@@ -349,6 +430,15 @@ func unusedPath(path string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("空いている名前が無い: %s", path)
+}
+
+func isReserved(p string, reserved []string) bool {
+	for _, r := range reserved {
+		if strings.EqualFold(p, r) {
+			return true
+		}
+	}
+	return false
 }
 
 // annotateWithLLM は claude CLI で新着に翻訳と関心度を付け、キャッシュ(news/.llm_cache.json)に合流させて返す。

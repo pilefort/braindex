@@ -96,7 +96,7 @@ func LoadStats(path string) (Stats, error) {
 	return st, nil
 }
 
-// Save は統計ファイルを書く(キー順で整形。同じ内容なら同じバイト列)。
+// Save は統計ファイルを書く(キー順で整形。同じ内容なら同じバイト列)。書き込みは原子的。
 func (st Stats) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -108,7 +108,7 @@ func (st Stats) Save(path string) error {
 	if err := enc.Encode(st); err != nil {
 		return err
 	}
-	return os.WriteFile(path, buf.Bytes(), 0o644)
+	return writeAtomic(path, buf.Bytes(), 0o644)
 }
 
 // Totals はスナップショットをフィード別に合計する。
@@ -196,6 +196,11 @@ func checkFeedStats(in map[string]FeedStats, known map[string]bool) (map[string]
 // ファイルを newsDir/.ingested/ へ移す。取り込んだ件数分のメッセージを返す。形式が違うファイルは飛ばして伝える。
 // 同じ記事(リンク)が keep ファイルに既にあれば追記しない。統計はダイジェスト("<日付>_<層>")単位で上書き。
 // known は feeds.json の取材先の名前(FeedNames)。feed_stats はこの名前にある項目だけ数える。nil なら照合しない。
+//
+// 途中で止まっても再実行で揃う: 選別 JSON 1 つごとに keep → 統計 → 取り込み済みへ移す、の順で書く。
+// 移す前に止まれば次回また同じ JSON を読み、keep はリンクで重複を除き、統計は同じキーに同じ数を上書きするので
+// 同じ結果になる。逆順(移してから統計)だと、移した後に統計を書けずに止まったとき、その選別の数は二度と拾えない
+// (置き場から消えているので次回は読まない)。並行起動の排他は呼び出し側の Lock。
 func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string, err error) {
 	var paths []string
 	for _, d := range dirs {
@@ -224,7 +229,6 @@ func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string
 	if err != nil {
 		return nil, err
 	}
-	done := 0 // 取り込めた選別 JSON の数
 	for _, p := range paths {
 		b, err := os.ReadFile(p)
 		if err != nil {
@@ -258,7 +262,12 @@ func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string
 				return msgs, err
 			}
 		}
+		// 統計は 1 つ取り込むごとに書く(移す前に)。1 つも取り込めなかった回は統計を触らないので、
+		// 中身が全部 type 違い・date 違いのときに空の .stats.json だけができることもない
 		st.Digests[date+"_"+layer] = stats
+		if err := st.Save(statsPath); err != nil {
+			return msgs, err
+		}
 		ingested := filepath.Join(newsDir, IngestedDir)
 		if err := os.MkdirAll(ingested, 0o755); err != nil {
 			return msgs, err
@@ -267,15 +276,6 @@ func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string
 			return msgs, fmt.Errorf("取り込み済みへ移せない: %w", err)
 		}
 		msgs = append(msgs, fmt.Sprintf("取り込み: %s（残す %d 件）", filepath.Base(p), len(sel.Keeps)))
-		done++
-	}
-	// 1 つも取り込めなかったら統計は触らない。中身が全部 type 違い・date 違いのときに
-	// 空の .stats.json だけができるのを避ける(何も取り込まなかった回は何も残さない)。
-	if done == 0 {
-		return msgs, nil
-	}
-	if err := st.Save(statsPath); err != nil {
-		return msgs, err
 	}
 	return msgs, nil
 }
@@ -294,17 +294,23 @@ func moveFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(dst, b, 0o644); err != nil {
+	if err := writeAtomic(dst, b, 0o644); err != nil {
 		return err
 	}
 	return os.Remove(src)
 }
 
-// appendKeeps は keep ファイルに、まだ無いリンクの記事だけ追記する。ファイルが無ければ見出しから作る。
+// appendKeeps は keep ファイルに、まだ無いリンクの記事だけ足して書き直す。ファイルが無ければ見出しから作る。
+// 追記(O_APPEND)でなく全体を原子的に書き直すのは、途中で止まったときに書きかけの行を残さないため
+// (リンクの欠けた行は次回の重複判定に掛からず、同じ記事がもう 1 行増える)。既にある部分はバイト列のまま写す。
 func appendKeeps(path, month string, keeps []Keep, date, layer string) error {
 	existing, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
+	}
+	perm := fs.FileMode(0o644)
+	if fi, serr := os.Stat(path); serr == nil { // 利用者の版管理下のファイルなので、権限は今のまま保つ
+		perm = fi.Mode().Perm()
 	}
 	var fresh []Keep
 	for _, k := range keeps {
@@ -321,16 +327,14 @@ func appendKeeps(path, month string, keeps []Keep, date, layer string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+	var buf bytes.Buffer
 	if len(existing) == 0 {
-		fmt.Fprintf(f, "# 選別済みニュース %s\n", month)
+		fmt.Fprintf(&buf, "# 選別済みニュース %s\n", month)
+	} else {
+		buf.Write(existing)
 	}
-	_, err = f.WriteString(KeepMarkdown(fresh, date, layer))
-	return err
+	buf.WriteString(KeepMarkdown(fresh, date, layer))
+	return writeAtomic(path, buf.Bytes(), perm)
 }
 
 // 不要ばかり付く取材先を主要表示から下ろす条件(決定 2026-09-06)。

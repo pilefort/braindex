@@ -354,4 +354,9 @@ func TestUnusedPath(t *testing.T) {
 	if got, err := unusedPath(p); err != nil || got != filepath.Join(dir, "d-3.md") {
 		t.Errorf("2 つある: %s err=%v", got, err)
 	}
+	// 予約した名前(これから書く md)は、まだ無くても避ける。大文字小文字は区別しない
+	q := filepath.Join(dir, "e.html")
+	if got, err := unusedPath(q, strings.ToUpper(q)); err != nil || got != filepath.Join(dir, "e-2.html") {
+		t.Errorf("予約あり: %s err=%v", got, err)
+	}
 }

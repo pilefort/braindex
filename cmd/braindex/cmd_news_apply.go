@@ -53,7 +53,9 @@ func runNewsApply(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "  から取り込む。「残す」は news/keep/YYYY-MM.md に追記(同じリンクは 1 回)、フィード別の数は news/.stats.json に")
 		fmt.Fprintln(stderr, "  ダイジェスト単位で上書き保存(同じ日の再書き出しは二重に数えない)。取り込んだ JSON は news/.ingested/ へ移す。")
 		fmt.Fprintln(stderr, "  news fetch の冒頭でも同じ取り込みが動くので、通常は別に実行しなくてよい。")
-		fmt.Fprintln(stderr, "  終了コード: 0 成功(取り込むものが無くても 0) / 1 失敗")
+		fmt.Fprintln(stderr, "  1 つの JSON ごとに keep → 統計 → 取り込み済みへ移す、の順に書くので、途中で止まっても再実行で揃う(keep は同じリンクを 2 回足さない)。")
+		fmt.Fprintln(stderr, "  fetch と同じロック(news/.lock.json)を取る。")
+		fmt.Fprintln(stderr, "  終了コード: 0 成功(取り込むものが無くても 0) / 1 失敗(別の braindex news が動いている、を含む)")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
 		fs.PrintDefaults()
@@ -86,6 +88,15 @@ func runNewsApply(args []string, stdout, stderr io.Writer) int {
 	s := fc.News.WithDefaults()
 	hubDir := filepath.Dir(cfgPath)
 	newsDir := filepath.Join(hubDir, filepath.FromSlash(s.Dir))
+	// 排他: fetch と同じロック。並行して取り込むと同じ keep を 2 回足す
+	unlock, stale, err := news.Lock(newsDir, "apply")
+	if err != nil {
+		return fail(err)
+	}
+	defer unlock()
+	if stale != "" {
+		fmt.Fprintln(stderr, "braindex news apply: 警告:", stale)
+	}
 	// feed_stats の照合に取材先の名前が要る。読めなくても取り込みは続ける(名前の照合だけ落ちる)。
 	var known map[string]bool
 	if srcs, ferr := news.LoadFeeds(filepath.Join(hubDir, filepath.FromSlash(s.Feeds))); ferr != nil {

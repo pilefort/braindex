@@ -67,7 +67,7 @@ func (a Annotations) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(b, '\n'), 0o644)
+	return writeAtomic(path, append(b, '\n'), 0o644)
 }
 
 // Annotator は LLM を呼ぶ側。実体は ClaudeCLI。テストでは差し替える(ネットワークにも CLI にも出ない)。
