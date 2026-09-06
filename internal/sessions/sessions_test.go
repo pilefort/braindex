@@ -305,3 +305,65 @@ func TestUnknownVersionWarnings(t *testing.T) {
 		t.Error("範囲外が無ければ何も返さない")
 	}
 }
+
+// UnderRoot: cwd が root の配下にあるセッションだけ返す。配下でないもの・cwd が無いもの(置き場の
+// ディレクトリ名しか分からないもの)は除いて件数を warning にまとめる(設計レビュー 2026-09-06 M2)。
+func TestUnderRoot(t *testing.T) {
+	sep := string(filepath.Separator)
+	root := sep + filepath.Join("work")
+	cases := []struct {
+		desc, project string
+		under, known  bool
+	}{
+		{"直下", filepath.Join(root, "repo-a"), true, true},
+		{"孫", filepath.Join(root, "repo-a", "sub"), true, true},
+		{"root そのもの", root, true, true},
+		{"外", sep + filepath.Join("other", "repo-b"), false, true},
+		{"root の 1 つ上", sep, false, true},
+		{"名前が前方一致するだけの別ディレクトリ", sep + filepath.Join("workspace", "x"), false, true},
+		{"cwd が無い(置き場の slug)", "-work-repo-a", false, false},
+		{"空", "", false, false},
+	}
+	for _, c := range cases {
+		under, known := underRoot(c.project, root)
+		if under != c.under || known != c.known {
+			t.Errorf("underRoot[%s] %q: want=(%v,%v) got=(%v,%v)", c.desc, c.project, c.under, c.known, under, known)
+		}
+	}
+}
+
+func TestDir_Sessions_UnderRootで絞る(t *testing.T) {
+	// testdata のセッションの cwd は /work/repo-a と /work/repo-b。bbbb4444 は cwd が無い
+	all, _, err := Dir{Path: "testdata/projects"}.Sessions(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("絞らないとき: %d 件", len(all))
+	}
+
+	root := string(filepath.Separator) + filepath.Join("work", "repo-a")
+	got, warns, err := Dir{Path: "testdata/projects"}.Sessions(Options{UnderRoot: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, s := range got {
+		ids = append(ids, s.ID)
+	}
+	if want := []string{"aaaa1111"}; !reflect.DeepEqual(ids, want) {
+		t.Errorf("root 配下だけ: want=%v got=%v", want, ids)
+	}
+	var outside, unknown bool
+	for _, w := range warns {
+		if strings.Contains(w, "の外のセッション 1 件を除いた") {
+			outside = true
+		}
+		if strings.Contains(w, "作業ディレクトリが分からないセッション 1 件を除いた") {
+			unknown = true
+		}
+	}
+	if !outside || !unknown {
+		t.Errorf("除いた件数の警告が無い: %q", warns)
+	}
+}
