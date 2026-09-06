@@ -196,6 +196,11 @@ func checkFeedStats(in map[string]FeedStats, known map[string]bool) (map[string]
 // ファイルを newsDir/.ingested/ へ移す。取り込んだ件数分のメッセージを返す。形式が違うファイルは飛ばして伝える。
 // 同じ記事(リンク)が keep ファイルに既にあれば追記しない。統計はダイジェスト("<日付>_<層>")単位で上書き。
 // known は feeds.json の取材先の名前(FeedNames)。feed_stats はこの名前にある項目だけ数える。nil なら照合しない。
+//
+// 途中で止まっても再実行で揃う: 選別 JSON 1 つごとに keep → 統計 → 取り込み済みへ移す、の順で書く。
+// 移す前に止まれば次回また同じ JSON を読み、keep はリンクで重複を除き、統計は同じキーに同じ数を上書きするので
+// 同じ結果になる。逆順(移してから統計)だと、移した後に統計を書けずに止まったとき、その選別の数は二度と拾えない
+// (置き場から消えているので次回は読まない)。並行起動の排他は呼び出し側の Lock。
 func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string, err error) {
 	var paths []string
 	for _, d := range dirs {
@@ -224,7 +229,6 @@ func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string
 	if err != nil {
 		return nil, err
 	}
-	done := 0 // 取り込めた選別 JSON の数
 	for _, p := range paths {
 		b, err := os.ReadFile(p)
 		if err != nil {
@@ -258,7 +262,12 @@ func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string
 				return msgs, err
 			}
 		}
+		// 統計は 1 つ取り込むごとに書く(移す前に)。1 つも取り込めなかった回は統計を触らないので、
+		// 中身が全部 type 違い・date 違いのときに空の .stats.json だけができることもない
 		st.Digests[date+"_"+layer] = stats
+		if err := st.Save(statsPath); err != nil {
+			return msgs, err
+		}
 		ingested := filepath.Join(newsDir, IngestedDir)
 		if err := os.MkdirAll(ingested, 0o755); err != nil {
 			return msgs, err
@@ -267,15 +276,6 @@ func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string
 			return msgs, fmt.Errorf("取り込み済みへ移せない: %w", err)
 		}
 		msgs = append(msgs, fmt.Sprintf("取り込み: %s（残す %d 件）", filepath.Base(p), len(sel.Keeps)))
-		done++
-	}
-	// 1 つも取り込めなかったら統計は触らない。中身が全部 type 違い・date 違いのときに
-	// 空の .stats.json だけができるのを避ける(何も取り込まなかった回は何も残さない)。
-	if done == 0 {
-		return msgs, nil
-	}
-	if err := st.Save(statsPath); err != nil {
-		return msgs, err
 	}
 	return msgs, nil
 }
