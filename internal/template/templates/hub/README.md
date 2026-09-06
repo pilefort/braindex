@@ -41,7 +41,7 @@ hub と `braindex` 自身の絶対パスを埋め込むので、定期実行の�
 
 `braindex retro check` が、直近 14 日のセッションログ（Claude Code の `~/.claude/projects`）で「エージェントの振る舞いへの訂正」の割合を
 閾値（既定 8%）と比べ、超えていて**かつ直前の 8 週の水準からも上振れて**いれば 1 行と終了コード 3 で知らせる。
-ふだんより悪くなったという合図で、率が高いこと自体の合図ではない。判定は辞書照合の決定論で、発話の本文はどこにも書かず送らない。
+ふだんより悪くなったという合図で、率が高いこと自体の合図ではない。判定は辞書照合の規則ベースで、発話の本文はどこにも書かず送らない。
 超えたら、スキル `retro`（`.claude/skills/retro/SKILL.md`）の手順で `braindex retro extract` のダイジェスト（OS の一時ディレクトリに出る）を読み、
 所見と規約への反映案を `docs/notes/retro-YYYY-MM-DD.md` に残す。数値は `braindex retro stats -window-days 14 -by project,week,position` の表を貼る（窓を付けないと全期間の集計になる）。
 

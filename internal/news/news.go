@@ -3,7 +3,7 @@
 // フィード一覧(feeds.json)を読み、各フィードを取得(internal/feed)し、既読(.seen.json)との差分を新着として
 // ダイジェスト(Markdown)にする。取得は internal/feed に任せ、ここは既読・上限・失敗の扱いと出力の組み立て。
 // 外へ出る通信はフィードの GET だけで、セッション内容やノートは送らない。
-// 関心の採点は internal/interest(語の一致・決定論)。LLM 補助(llm.go)は設定 news.llm で明示したときだけ動く opt-in で、
+// 関心の採点は internal/interest(語の一致・規則ベース)。LLM 補助(llm.go)は設定 news.llm で明示したときだけ動く opt-in で、
 // 既定では LLM を呼ばない。
 package news
 

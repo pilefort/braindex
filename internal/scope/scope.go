@@ -1,4 +1,4 @@
-// Package scope は横断の矛盾検査(skill contradiction-scan)の走査対象を決定論で列挙・絞り込み・分割する。
+// Package scope は横断の矛盾検査(skill contradiction-scan)の走査対象を規則ベースで列挙・絞り込み・分割する。
 //
 // 索引(index/catalog.md)を読み、話題・リポで絞り、chunk(1 束をサブエージェント 1 体が読む単位)に分ける。
 // 矛盾の判定はしない(それは実ファイルを全文読む人かエージェントの仕事)。ここが出すのは対象の場所(パス)であって
