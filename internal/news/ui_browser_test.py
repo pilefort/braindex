@@ -83,6 +83,17 @@ with sync_playwright() as p:
     page.locator('[data-view="today"]').click()
     page.locator('button[data-category="科学"]').click()
     expect(page.locator(".item:visible")).to_have_count(1)
+    # 「あとで読む」に入れた記事は、まとめて概要だけを頼める(詳しい解説は記事ごとのダイアログから)。
+    page.locator('[data-id="article-3"] .bk').click()
+    expect(page.locator("#nBatch")).to_have_text("2")
+    page.locator("#batchExplain").click()
+    batch = page.locator("#requestText").input_value()
+    assert "1. 記事:" in batch and "2. 記事:" in batch, batch
+    assert "概要は 1 枚の HTML にまとめてください" in batch, batch
+    assert "news reading -id article-1 -question" in batch, batch
+    expect(page.locator("#askOne")).to_be_hidden()
+    page.keyboard.press("Escape")
+    print("batch overview checks passed", flush=True)
     page.set_viewport_size({"width": 390, "height": 844})
     page.screenshot(path=str(root / "mobile.png"), full_page=True)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
