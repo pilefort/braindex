@@ -32,8 +32,12 @@ func ParseThread(md string) (string, []Entry) {
 	var entries []Entry
 	var bodies [][]string
 	cur := -1
+	fence := false // コードブロックの中はマーカーに見えても境界にしない(回答にマーカーの例を書けるように)
 	for _, ln := range strings.Split(md, "\n") {
-		if at, q, ok := parseEntryLine(ln); ok {
+		if isFence(ln) {
+			fence = !fence
+		}
+		if at, q, ok := parseEntryLine(ln); ok && !fence {
 			entries = append(entries, Entry{At: at, Q: q})
 			bodies = append(bodies, nil)
 			cur++
@@ -91,13 +95,20 @@ func ThreadPage(md, title string) string {
 		`<button class="thr-b" id="thr-open">全部開く</button>` +
 		`<button class="thr-b" id="thr-close">全部畳む</button>` +
 		`<button class="thr-b" id="thr-auto">自動更新</button>` + "</div>\n")
+	// 同じ日時が並んだときの連番は古い方から数える。新しいエントリは上に足されるので、
+	// 新しい順に数えると追記のたびに既存の id が 1 つずつずれ、開閉の記憶が別のエントリに移る。
+	ids := make([]string, len(entries))
 	used := map[string]int{}
-	for _, e := range entries {
-		id := entryID(e.At)
+	for i := len(entries) - 1; i >= 0; i-- {
+		id := entryID(entries[i].At)
 		used[id]++
 		if n := used[id]; n > 1 {
 			id += "-" + strconv.Itoa(n)
 		}
+		ids[i] = id
+	}
+	for i, e := range entries {
+		id := ids[i]
 		b.WriteString(`<details class="ent" id="` + id + `" open>` + "\n")
 		b.WriteString(`<summary><span class="ent-w">` + escapeText(formatAt(e.At)) + `</span>`)
 		if q := strings.TrimSpace(e.Q); q != "" {
@@ -112,8 +123,12 @@ func ThreadPage(md, title string) string {
 // IsThread は .md がスレッド(エントリのマーカーを持つ)かどうかを返す。
 // スレッドの .md をそのまま渡されたときに、1 枚ものでなくスレッドとして描き直すための判定。
 func IsThread(md string) bool {
+	fence := false
 	for _, ln := range strings.Split(strings.ReplaceAll(md, "\r\n", "\n"), "\n") {
-		if _, _, ok := parseEntryLine(ln); ok {
+		if isFence(ln) {
+			fence = !fence
+		}
+		if _, _, ok := parseEntryLine(ln); ok && !fence {
 			return true
 		}
 	}

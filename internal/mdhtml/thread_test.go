@@ -163,3 +163,61 @@ func TestThreadPage_新着は初期表示で消えない(t *testing.T) {
 		t.Error("「新着」の印が HTML に無い")
 	}
 }
+
+// 回答の中のコードブロックにマーカーの例を書いても、エントリが割れない(codex 指摘 2026-09-06)。
+func TestParseThread_コードブロックの中のマーカーは境界にしない(t *testing.T) {
+	md := "# 題名\n" +
+		"\n<!--braindex:entry at=\"2026-09-06T10:00:00+09:00\" q=\"書き方は？\"-->\n\n" +
+		"境界はこう書きます。\n\n```\n<!--braindex:entry at=\"2026-01-01T00:00:00+09:00\" q=\"例\"-->\n```\n\n後書き。\n"
+	title, entries := ParseThread(md)
+	if title != "題名" {
+		t.Fatalf("題名が違う: %q", title)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("エントリ数が %d(期待 1)。コードブロックの中で割れている", len(entries))
+	}
+	if !strings.Contains(entries[0].Body, "後書き。") {
+		t.Error("コードブロックより後の本文が落ちている")
+	}
+	// マーカーがコードブロックの中にしか無い .md は 1 枚もの。
+	if IsThread("# 題名\n\n説明。\n\n```\n<!--braindex:entry at=\"2026-01-01T00:00:00+09:00\" q=\"例\"-->\n```\n") {
+		t.Error("コードブロックの中のマーカーでスレッドと判定した")
+	}
+}
+
+// 同じ秒に追記しても、既に描いてあるエントリの id が動かない(codex 指摘 2026-09-06)。
+// id が動くと、開閉の記憶が別のエントリに移り、新しい回答が畳まれて出る。
+func TestThreadPage_同じ秒に追記しても既存のidが動かない(t *testing.T) {
+	at := "2026-09-06T10:00:00+09:00"
+	before := RenderThread("題名", []Entry{{At: at, Q: "2 つ目", Body: "B"}, {At: at, Q: "1 つ目", Body: "A"}})
+	after := Prepend(before, "題名", Entry{At: at, Q: "3 つ目", Body: "C"})
+	ids := func(md string) []string {
+		var out []string
+		for _, ln := range strings.Split(ThreadPage(md, "題名"), "\n") {
+			if i := strings.Index(ln, `<details class="ent" id="`); i >= 0 {
+				s := ln[i+len(`<details class="ent" id="`):]
+				out = append(out, s[:strings.IndexByte(s, '"')])
+			}
+		}
+		return out
+	}
+	b, a := ids(before), ids(after)
+	if len(b) != 2 || len(a) != 3 {
+		t.Fatalf("エントリ数が違う: 前 %v / 後 %v", b, a)
+	}
+	if a[1] != b[0] || a[2] != b[1] {
+		t.Errorf("追記で既存の id が動いた: 前 %v → 後 %v", b, a)
+	}
+	if a[0] == b[0] || a[0] == b[1] {
+		t.Errorf("新しいエントリが既存の id を取った: %v", a)
+	}
+}
+
+// チェックの消し込みは、エントリごとに別の鍵で覚える(codex 指摘 2026-09-06)。
+// 同じ文言の項目を含む回答を足すと、古いチェックが新しい項目に移るため。
+func TestThreadPage_チェックの鍵はエントリごと(t *testing.T) {
+	h := ThreadPage(threadSample, "索引の設計")
+	if !strings.Contains(h, `closest('details.ent')`) {
+		t.Error("チェックの鍵にエントリの id が入っていない")
+	}
+}

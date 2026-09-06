@@ -65,6 +65,8 @@ body{background:var(--bg);color:var(--ink);font-family:var(--jp);line-height:1.8
 
 // js は配色の切り替え(localStorage に保存・初期値は OS の設定)と、チェックリストの消し込み
 // (項目テキストをキーに localStorage へ保存。再生成しても同じテキストなら状態が残る)。
+// スレッドではエントリの id も鍵に混ぜる——混ぜないと、同じ文言の項目を含む回答を上に足したときに
+// 出現順がずれ、古いチェックが新しい項目へ移る(codex 指摘 2026-09-06)。1 枚ものは鍵が変わらない。
 // 原型にあった常駐サーバ向けの自動リロード(SSE)は持ち込まない(設計判断 2026-09-03)。
 const js = `(function(){var t=document.getElementById('t');` +
 	`function ap(v){if(v==='dark')document.documentElement.setAttribute('data-theme','dark');` +
@@ -75,9 +77,10 @@ const js = `(function(){var t=document.getElementById('t');` +
 	`ap(d?'light':'dark');try{localStorage.setItem('ans-theme',d?'light':'dark');}catch(e){}});})();` +
 	`(function(){var seen={};var cbs=document.querySelectorAll('li.task>input[type=checkbox]');` +
 	`for(var i=0;i<cbs.length;i++){(function(cb){var li=cb.parentElement;` +
+	`var ent=li.closest?li.closest('details.ent'):null;var sc=ent?ent.id+':':'';` +
 	`var txt=(li.textContent||'').replace(/\s+/g,' ').trim().slice(0,120);` +
-	`var n=seen[txt]=(seen[txt]||0)+1;` +
-	`var key='ans-task:'+document.title+':'+txt+(n>1?'#'+n:'');` +
+	`var n=seen[sc+txt]=(seen[sc+txt]||0)+1;` +
+	`var key='ans-task:'+document.title+':'+sc+txt+(n>1?'#'+n:'');` +
 	`function sync(){li.classList.toggle('done',cb.checked);}` +
 	`try{var s=localStorage.getItem(key);if(s!==null)cb.checked=(s==='1');}catch(e){}` +
 	`sync();` +
