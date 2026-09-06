@@ -1,6 +1,7 @@
 package template
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -226,5 +227,59 @@ func TestUpdate_DryRunWritesNothing(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(dst, "docs")); err == nil {
 		t.Error("dry-run なのにファイルを作っている")
+	}
+}
+
+// 書いた分は都度台帳に残す。最後にまとめて保存すると、途中で失敗したときに
+// 「書いたのに台帳に無い」ファイルができ、次の update がそれを「利用者が編集した」と見て
+// .new を置いてしまう(設計レビュー 2026-09-06 M8)。
+func TestUpdate_途中で失敗しても書いた分は台帳に残る(t *testing.T) {
+	dst := t.TempDir()
+	if _, err := Install(dst, KindRepo); err != nil {
+		t.Fatal(err)
+	}
+	// 配ったファイルを全部消して、update が作り直す状況にする
+	files, err := Files(KindRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) < 2 {
+		t.Fatalf("テストの前提: 2 ファイル以上 (%d)", len(files))
+	}
+	for _, f := range files {
+		if err := os.Remove(filepath.Join(dst, filepath.FromSlash(f.Path))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 台帳も空にして、全ファイルが「作成」になるようにする
+	if err := SaveLedger(dst, Ledger{Kind: string(KindRepo), Files: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2 ファイル目の書き込みで失敗させる
+	orig := writeFile
+	n := 0
+	writeFile = func(path string, b []byte) error {
+		n++
+		if n == 2 {
+			return errors.New("書き込みに失敗した")
+		}
+		return orig(path, b)
+	}
+	t.Cleanup(func() { writeFile = orig })
+
+	if _, err := Update(dst, KindRepo, UpdateOptions{}); err == nil {
+		t.Fatal("エラーにならない")
+	}
+
+	led, _, err := LoadLedger(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(led.Files) != 1 {
+		t.Errorf("1 ファイル目だけが台帳に残るはず: %v", led.Files)
+	}
+	if led.Files[files[0].Path] != Hash(files[0].Content) {
+		t.Errorf("1 ファイル目の記録が違う: %v", led.Files)
 	}
 }

@@ -37,11 +37,12 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	repo := fs.Bool("repo", false, "hub でなく各プロジェクトのリポ側の骨格を追従する(索引は再生成しない)")
 	dry := fs.Bool("dry-run", false, "何も書かず、何が変わるかだけを出す")
-	force := fs.Bool("force", false, "利用者が編集したファイルも今の版で上書きする(.new を置かない)")
+	force := fs.Bool("force", false, "利用者が編集したファイルも今の版で上書きする(.new を置かない)。ただし braindex.json と .gitignore は節・行を足すだけ")
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方: braindex update [-repo] [-dry-run] [-force] [dir]")
 		fmt.Fprintln(stderr, "  dir(既定: カレントディレクトリ)の雛形由来ファイルを、今の braindex の版に追いつかせ、")
 		fmt.Fprintln(stderr, "  続けて索引を再生成する。利用者が編集したファイルは上書きせず、隣に .new を置く。")
+		fmt.Fprintln(stderr, "  -force でも braindex.json と .gitignore は上書きせず、無い節・行を足すだけ(root や利用者が足した行を消さない。決定 2026-09-05)。")
 		fmt.Fprintln(stderr, "  終了コード: 0 要対応なし / 1 失敗 / 2 要対応あり(.new を置いた・索引生成が警告)")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
