@@ -287,7 +287,7 @@ func itemHTML(e feed.Entry, r Result, o DigestOptions, low bool) string {
 	if link != "" {
 		fmt.Fprintf(&b, `<a href="%s" target="_blank" rel="noopener">原文を開く ↗</a>`, esc(link))
 	}
-	b.WriteString(`</div><div class="reading-controls" hidden><label>読む状態 <select class="reading-status"><option value="later">あとで読む</option><option value="done">読了</option><option value="hold">保留</option><option value="try">試したい</option></select></label></div><p class="item-status" aria-live="polite"></p>`)
+	b.WriteString(`</div><div class="reading-controls" hidden><label>読む状態 <select class="reading-status"><option value="later">あとで読む</option><option value="deep">詳しく知りたい</option><option value="done">概要で足りた・読了</option><option value="hold">保留</option><option value="try">試したい</option><option value="none">興味なし</option></select></label></div><p class="item-status" aria-live="polite"></p>`)
 	fmt.Fprintf(&b, `<details class="original"><summary>元の見出し・概要%s</summary><p>%s</p><p>%s</p><p>%s</p></details></li>`, func() string {
 		if reason != "" {
 			return "・おすすめの理由"
