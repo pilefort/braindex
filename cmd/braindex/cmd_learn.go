@@ -37,7 +37,8 @@ type learnOptions struct {
 //
 // 材料は braindex news profile と同じ(索引・セッション・keep・補助。窓も news.profile_days を共有)。
 // 訂正の判定は retro と同じ辞書(設定 retro.dictionary があればそれ、無ければ既定)。
-// 終了コード: 0 成功 / 1 失敗 / 2 警告つき(索引やセッションの置き場が無いなど)。
+// 候補を出したあと、「索引に無い」語をノート本文で照合する(braindex search と同じ走査規則・同じ検索処理)。
+// 終了コード: 0 成功 / 1 失敗 / 2 警告つき(索引やセッションの置き場が無い・本文を読めなかった範囲があるなど)。
 func runLearn(args []string, stdout, stderr io.Writer) int {
 	var o learnOptions
 	fs := flag.NewFlagSet("braindex learn", flag.ContinueOnError)
@@ -51,12 +52,13 @@ func runLearn(args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&o.json, "json", false, "Markdown でなく JSON で出す")
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方: braindex learn [-config braindex.json] [-date YYYY-MM-DD] [-days N] [-sessions DIR] [-top N] [-json]")
-		fmt.Fprintln(stderr, "  「いま学ぶと良さそうなこと」の候補を 3 つの節で出す。材料は手元だけ(索引・セッションログ・news/keep)で、外には何も送らない。")
-		fmt.Fprintln(stderr, "    触れているがノートに無い       … セッションに繰り返し出るのに索引にも keep にも無い語(既定: 3 セッション以上)")
+		fmt.Fprintln(stderr, "  「いま学ぶと良さそうなこと」の候補を 3 つの節で出す。材料は手元だけ(索引・セッションログ・news/keep・ノート本文)で、外には何も送らない。")
+		fmt.Fprintln(stderr, "    触れているが索引に無い         … セッションに繰り返し出るのに索引にも keep にも無い語(既定: 3 セッション以上)")
 		fmt.Fprintln(stderr, "    訂正の文脈に繰り返し出る       … 訂正の発話とその直前の発話に出る語(既定: 2 発話以上。辞書は retro と同じ)")
-		fmt.Fprintln(stderr, "    残した記事にあるがノートに無い … keep の見出しにあるのに索引に無い語")
-		fmt.Fprintln(stderr, "  出力は語と件数だけ(発話の本文は載せない)。窓と材料は braindex news profile と同じ。")
-		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗 / 2 警告つき(索引やセッションの置き場が無い)")
+		fmt.Fprintln(stderr, "    残した記事にあるが索引に無い   … keep の見出しにあるのに索引に無い語")
+		fmt.Fprintln(stderr, "  「索引に無い」語は索引と同じ走査規則でノート本文を照合し、本文で発見(パス:行)・本文でも未発見・確認不能(読めなかった範囲がある)を分けて出す。")
+		fmt.Fprintln(stderr, "  出力は語と件数と出典の位置だけ(発話やノートの本文は載せない)。窓と材料は braindex news profile と同じ。")
+		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗 / 2 警告つき(索引やセッションの置き場が無い・本文を読めなかった範囲がある)")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
 		fs.PrintDefaults()
@@ -124,6 +126,15 @@ func runLearn(args []string, stdout, stderr io.Writer) int {
 		Dicts:    dicts,
 		Options:  learn.Options{Top: o.top},
 	})
+	// 「索引に無い」候補を本文で照合する。走査設定の解決は索引生成と同じ(設定ファイルの root)。
+	// root が無い・走査できない hub では照合を飛ばして警告にし、候補は索引だけの判定のまま出す(落とさない)。
+	if cfg, _, _, cerr := resolve(options{config: cfgPath}); cerr != nil {
+		warnings = append(warnings, "本文照合を飛ばした: "+cerr.Error())
+	} else if verr := learn.Verify(&r, learn.BodySearcher(cfg), learn.VerifyOptions{}); verr != nil {
+		warnings = append(warnings, "本文照合を飛ばした: "+verr.Error())
+	} else if r.Verification != nil {
+		warnings = append(warnings, r.Verification.Warnings...)
+	}
 	var out []byte
 	if o.json {
 		out, err = r.JSON()

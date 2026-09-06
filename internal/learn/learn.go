@@ -2,6 +2,9 @@
 //
 // 材料は関心プロファイル(語ごとの出典別の数)と、セッションの人間の発話に訂正辞書を当てた結果。
 // 提案には必ず理由(どの材料の何件か)を添え、発話の本文は出力に載せない(語と件数だけ)。LLM は使わない。
+//
+// 「索引に無い」の判定は索引のタイトル・要旨だけで、それは本文に記録が無い証明にならない。候補を出したあと
+// Verify(evidence.go)で本文を照合し、発見(位置つき)・未発見・確認不能を分けて示す。ノートの本文も出力に載せない。
 package learn
 
 import (
@@ -18,7 +21,7 @@ import (
 
 // Options は閾値と件数。ゼロ値は既定に置き換える。
 type Options struct {
-	MinSessions         int     // 「触れているがノートに無い」に載せる最小セッション数(既定 3)
+	MinSessions         int     // 「触れているが索引に無い」に載せる最小セッション数(既定 3)
 	MaxSessionRatio     float64 // 全セッションのうちこの割合を超えて出る語は汎用語として載せない(既定 0.1)
 	MinCorrections      int     // 「訂正の文脈に繰り返し出る」に載せる最小の訂正発話数(既定 2)
 	BoilerplateSessions int     // 同じ冒頭の発話がこの数以上のセッションに現れたら定型(機械実行・貼り付け)として除く(既定 3)
@@ -47,7 +50,7 @@ func (o Options) withDefaults() Options {
 // Input は Build の材料。
 type Input struct {
 	Profile  interest.Profile    // 関心プロファイル(Term.Counts の出典別の数を使う)
-	Catalog  []render.Entry      // 索引の全行。「ノートに無い」は窓に関係なく全行のタイトル・要旨で見る(古いノートに書いた語は除く)
+	Catalog  []render.Entry      // 索引の全行。「索引に無い」は窓に関係なく全行のタイトル・要旨で見る(古いノートに書いた語は除く)。本文は Verify が見る
 	Sessions []sessions.Session  // 人間の発話を読む(Window の中だけ)
 	Window   retro.Window        // 訂正を数える窓
 	Dicts    []*retro.Dictionary // 訂正辞書(どれかに当たれば訂正)。空なら retro.Corrections() だけ
@@ -56,20 +59,22 @@ type Input struct {
 
 // Item は提案 1 件。数はどの信号かで使う欄が違う(使わない欄は 0)。
 type Item struct {
-	Word        string `json:"word"`
-	Sessions    int    `json:"sessions,omitempty"`    // 語が出たセッション数
-	Corrections int    `json:"corrections,omitempty"` // 語が周辺に出た訂正発話数
-	Keeps       int    `json:"keeps,omitempty"`       // 語を含む keep の見出し数
+	Word        string    `json:"word"`
+	Sessions    int       `json:"sessions,omitempty"`    // 語が出たセッション数
+	Corrections int       `json:"corrections,omitempty"` // 語が周辺に出た訂正発話数
+	Keeps       int       `json:"keeps,omitempty"`       // 語を含む keep の見出し数
+	Evidence    *Evidence `json:"evidence,omitempty"`    // 本文照合の結果(Verify が付ける。照合前・訂正の文脈の節は nil)
 }
 
 // Report は提案の全体。各節は数の降順(同数は語の昇順)。
 type Report struct {
 	Today          string         `json:"today"`
 	Days           int            `json:"days"`
-	Sources        map[string]int `json:"sources"`          // index / sessions / keep(プロファイルから) と corrections(窓内の訂正発話数)
-	Unsettled      []Item         `json:"unsettled"`        // 触れているがノートに無い
-	Stumbles       []Item         `json:"stumbles"`         // 訂正の文脈に繰り返し出る
-	ReadNotWritten []Item         `json:"read_not_written"` // 残した記事にあるがノートに無い
+	Sources        map[string]int `json:"sources"`                // index / sessions / keep(プロファイルから) と corrections(窓内の訂正発話数)
+	Unsettled      []Item         `json:"unsettled"`              // 触れているが索引に無い
+	Stumbles       []Item         `json:"stumbles"`               // 訂正の文脈に繰り返し出る
+	ReadNotWritten []Item         `json:"read_not_written"`       // 残した記事にあるが索引に無い
+	Verification   *Verification  `json:"verification,omitempty"` // 本文照合の要約(Verify が付ける。照合前は nil)
 }
 
 // Build は材料から提案を作る。同じ材料からは同じ結果になる。
@@ -84,7 +89,7 @@ func Build(in Input) Report {
 		r.Sources[k] = in.Profile.Sources[k]
 	}
 
-	// 「ノートに無い」の判定は索引の全行で見る(プロファイルの index は窓内のノートしか数えないため)
+	// 「索引に無い」の判定は索引の全行で見る(プロファイルの index は窓内のノートしか数えないため)
 	noted := map[string]bool{}
 	for _, e := range in.Catalog {
 		for _, w := range interest.Words(interest.StripURLs(e.Title + " " + e.Summary)) {
@@ -232,11 +237,16 @@ func top(xs []Item, n int) []Item {
 }
 
 // Marshal は Markdown にする。
+//
+// 各項目は「語 — 材料の数／本文照合の結果」。前半が候補の理由、後半が本文で確認できた事実(位置はパス:行)。
+// 学習上の読み(どうするか)は節の説明にだけ書き、項目行には事実しか載せない。
 func (r Report) Marshal() []byte {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# 学習の提案 %s（直近 %d 日）\n\n", r.Today, r.Days)
-	fmt.Fprintf(&sb, "材料: ノート %d・セッション %d・訂正 %d 発話・keep %d\n\n",
+	fmt.Fprintf(&sb, "材料: ノート %d・セッション %d・訂正 %d 発話・keep %d\n",
 		r.Sources[interest.SourceIndex], r.Sources[interest.SourceSessions], r.Sources["corrections"], r.Sources[interest.SourceKeep])
+	sb.WriteString(r.verificationLines())
+	sb.WriteString("\n")
 	section := func(title, reading string, items []Item, line func(Item) string) {
 		fmt.Fprintf(&sb, "## %s（%d）\n\n%s\n\n", title, len(items), reading)
 		if len(items) == 0 {
@@ -244,19 +254,70 @@ func (r Report) Marshal() []byte {
 			return
 		}
 		for _, it := range items {
-			fmt.Fprintf(&sb, "- %s — %s\n", it.Word, line(it))
+			fmt.Fprintf(&sb, "- %s — %s", it.Word, line(it))
+			if it.Evidence != nil {
+				sb.WriteString("／" + it.Evidence.text())
+			}
+			sb.WriteString("\n")
 		}
 		sb.WriteString("\n")
 	}
-	section("触れているがノートに無い", "会話では繰り返し出るのに、索引にも keep にも無い語。理解が定着していない候補。ノートに 1 本書くか、学び直す。",
+	section("触れているが索引に無い",
+		"会話では繰り返し出るのに、索引（タイトル・要旨）にも keep にも無い語。本文でも未発見なら理解が定着していない候補（ノートに 1 本書くか、学び直す）。本文で発見なら、ノートはあるが要旨から引けない（読み直すか、要旨に語を出す）。",
 		r.Unsettled, func(it Item) string { return fmt.Sprintf("セッション %d 本", it.Sessions) })
 	section("訂正の文脈に繰り返し出る", "訂正の発話とその直前の発話に出る語。つまずきの周辺にある候補。前提や使い方を確かめる。",
 		r.Stumbles, func(it Item) string {
 			return fmt.Sprintf("訂正 %d 発話・セッション %d 本", it.Corrections, it.Sessions)
 		})
-	section("残した記事にあるがノートに無い", "keep した記事の見出しにあるのに、索引に無い語。読んで残したが自分の言葉にしていない候補。",
+	section("残した記事にあるが索引に無い",
+		"keep した記事の見出しにあるのに、索引に無い語。本文でも未発見なら、読んで残したが自分の言葉にしていない候補。本文で発見なら、書いてはいるが要旨から引けない。",
 		r.ReadNotWritten, func(it Item) string { return fmt.Sprintf("keep %d 件", it.Keeps) })
 	return []byte(sb.String())
+}
+
+// verificationLines は「本文照合:」の行(と確認できなかった範囲の一覧)。
+// 照合していない・語が無い・全部読めた・読めなかった範囲がある、の 4 通りを言い分ける。
+func (r Report) verificationLines() string {
+	v := r.Verification
+	switch {
+	case v == nil:
+		return "本文照合: なし（索引だけの判定。「索引に無い」を「ノートに無い」と読まない）\n"
+	case v.Words == 0:
+		return "本文照合: 照合する語なし\n"
+	case v.Complete:
+		return fmt.Sprintf("本文照合: %d ファイルを読んだ・確認できなかった範囲なし\n", v.Files)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "本文照合: %d ファイルを読んだ・確認できなかった範囲 %d 件（この中にあるかは分からない）\n", v.Files, len(v.Gaps))
+	for _, g := range v.Gaps {
+		rel := g.Rel
+		if g.Dir {
+			rel += "/"
+		}
+		fmt.Fprintf(&b, "- %s — %s\n", rel, strings.Join(strings.Fields(g.Reason), " "))
+	}
+	return b.String()
+}
+
+// text は項目行に付ける本文照合の結果。事実(区分・数・位置)だけで、本文の行は載せない。
+func (e Evidence) text() string {
+	switch e.Status {
+	case Found:
+		locs := make([]string, len(e.Locations))
+		for i, l := range e.Locations {
+			locs[i] = fmt.Sprintf("%s:%d", l.Path, l.Line)
+		}
+		s := fmt.Sprintf("本文で発見（%d 行・%d ファイル）: %s", e.Lines, e.Files, strings.Join(locs, ", "))
+		if e.Lines > len(e.Locations) {
+			s += " ほか"
+		}
+		return s
+	case Absent:
+		return "本文でも未発見（走査した範囲は全部読めた）"
+	case Unknown:
+		return "確認不能（読めなかった範囲がある）"
+	}
+	return "未照合"
 }
 
 // JSON は構造体をそのまま出す。
