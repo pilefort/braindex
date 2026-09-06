@@ -15,9 +15,6 @@ import (
 	"github.com/pilefort/braindex/internal/sessions"
 )
 
-// retroLoc は週の境界と窓の 0 時を決めるタイムゾーン(既定: 実行環境のローカル)。テストが UTC に差し替える。
-var retroLoc = time.Local
-
 func init() {
 	register(&command{
 		name:    "retro",
@@ -142,7 +139,7 @@ func runRetroStats(args []string, stdout, stderr io.Writer) int {
 		case "project":
 			fmt.Fprint(stdout, retro.Render("プロジェクト", retro.ByProject(items, env.home), total))
 		case "week":
-			fmt.Fprint(stdout, retro.Render("週", retro.ByWeek(items, retroLoc), total))
+			fmt.Fprint(stdout, retro.Render("週", retro.ByWeek(items, localLoc), total))
 		case "position":
 			fmt.Fprint(stdout, retro.Render("位置", retro.ByPosition(items, env.bins), total))
 		}
@@ -233,7 +230,7 @@ func runRetroCheck(args []string, stdout, stderr io.Writer) int {
 		thr = o.threshold
 	}
 
-	w := retro.Recent(today, days, retroLoc)
+	w := retro.Recent(today, days, localLoc)
 	weeks := env.settings.Baseline()
 	base := retro.Baseline(w, weeks)
 	// セッションの読み込みは 1 回。基準期間まで遡って読む(基準を使わないときは窓の起点から)
@@ -366,7 +363,7 @@ func runRetroExtract(args []string, stdout, stderr io.Writer) int {
 		WindowLabel: label,
 		Corrections: env.dicts,
 		Sentiment:   retro.Sentiment(),
-		Loc:         retroLoc,
+		Loc:         localLoc,
 		Home:        env.home,
 	})
 	// 前回の出力を消してから書く(出力先が常に今回の窓だけになる。決定 2026-09-03)。消すのは自分が書く sessions/ と index.tsv だけ
@@ -409,24 +406,21 @@ func retroWindow(since string, windowDays int, today time.Time) (retro.Window, s
 	}
 	switch {
 	case since != "":
-		d, err := time.ParseInLocation("2006-01-02", since, retroLoc)
+		d, err := time.ParseInLocation("2006-01-02", since, localLoc)
 		if err != nil {
 			return retro.Window{}, "", fmt.Errorf("-since は YYYY-MM-DD で指定する: %q", since)
 		}
 		return retro.Window{Since: d}, since + " 以降", nil
 	case windowDays > 0:
-		w := retro.Recent(today, windowDays, retroLoc)
-		return w, fmt.Sprintf("%s 以降(%d 日)", w.Since.In(retroLoc).Format("2006-01-02"), windowDays), nil
+		w := retro.Recent(today, windowDays, localLoc)
+		return w, fmt.Sprintf("%s 以降(%d 日)", w.Since.In(localLoc).Format("2006-01-02"), windowDays), nil
 	}
 	return retro.Window{}, "全期間", nil
 }
 
-// retroToday は -date(YYYY-MM-DD・retroLoc の 0 時)か、無ければ今。
+// retroToday は -date(YYYY-MM-DD・localLoc の 0 時)か、無ければ今(loc.go の todayOrNow)。
 func retroToday(date string) (time.Time, error) {
-	if date == "" {
-		return time.Now(), nil
-	}
-	t, err := time.ParseInLocation("2006-01-02", date, retroLoc)
+	t, err := todayOrNow(date)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("-date は YYYY-MM-DD で指定する: %q", date)
 	}

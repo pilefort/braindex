@@ -14,9 +14,9 @@ const retroTestdata = "../../internal/sessions/testdata/projects"
 // 週と窓の境界はタイムゾーンで決まるので、テストの間は UTC に固定する。
 func fixUTC(t *testing.T) {
 	t.Helper()
-	prev := retroLoc
-	retroLoc = time.UTC
-	t.Cleanup(func() { retroLoc = prev })
+	prev := localLoc
+	localLoc = time.UTC
+	t.Cleanup(func() { localLoc = prev })
 }
 
 func execRetroStats(t *testing.T, args ...string) (code int, stdout, stderr string) {

@@ -360,3 +360,39 @@ func TestWriteChangesSection(t *testing.T) {
 		t.Errorf("git 不在:\n%s", b.String())
 	}
 }
+
+// 差分ファイルの起点は「前回の索引を取ったコミットの時刻」。前回日の 0 時にすると、
+// その日のうち索引を取る前に入った変更を前回と今回で二重に数える(設計レビュー 2026-09-06 M3b)。
+// git の --since はその時刻ちょうどのコミットを含む(docs/notes/common/git-since-boundary.md)。
+func TestChangedSince_起点は時刻で渡せる(t *testing.T) {
+	r := newTestRepo(t)
+	r.write("docs/notes/before.md", "# before\n")
+	r.commitAt("2026-08-22T09:00:00", "before")
+	r.write("docs/notes/at.md", "# at\n")
+	r.commitAt("2026-08-22T10:00:00", "at")
+	r.write("docs/notes/after.md", "# after\n")
+	r.commitAt("2026-08-22T11:00:00", "after")
+
+	// 10:00 ちょうどのコミットは含む(--since は inclusive)
+	// 時刻はコミット時と同じくタイムゾーンなし = ローカル解釈。実行環境の TZ に依らず同じ結果になる
+	rc, err := r.git.ChangedSince(r.dir, "2026-08-22 10:00:00", []string{"docs/notes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, f := range rc.Files {
+		got[f.Path] = true
+	}
+	if rc.Commits != 2 || !got["docs/notes/at.md"] || !got["docs/notes/after.md"] || got["docs/notes/before.md"] {
+		t.Errorf("時刻の起点: commits=%d files=%v", rc.Commits, rc.Files)
+	}
+
+	// 日付だけを渡したときは従来どおりその日の 0 時から(実行時刻で結果が変わらない)
+	rc, err = r.git.ChangedSince(r.dir, "2026-08-22", []string{"docs/notes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rc.Commits != 3 {
+		t.Errorf("日付だけの起点: commits=%d", rc.Commits)
+	}
+}
