@@ -116,12 +116,12 @@ func RenderHTML(results []Result, o DigestOptions) []byte {
 			"<br><small>救済 = 関心外と判定されたのに残した件数（採点の見逃し）。増えるフィードは news/interests.md に関心語を足す。"+
 			"間引きは news/feeds.json から該当行を消す。</small>")
 	}
-	scoring, determinism := "採点なし（全件を主要表示）", "取得・既読・採点は決定論"
+	scoring, determinism := "採点なし（全件を主要表示）", "取得・既読・採点は規則ベース"
 	if o.Ranking != nil {
 		scoring = fmt.Sprintf("関心度は語の一致（braindex news profile）。%d 以上を主要表示", o.MinScore)
 		if n := LLMScored(results, o.Ranking); n > 0 {
 			scoring = fmt.Sprintf("関心度は語の一致（braindex news profile）に LLM 補助（news.llm・%d 件・バッジの説明に LLM と出る）を重ねたもの。%d 以上を主要表示", n, o.MinScore)
-			determinism = "取得・既読は決定論、採点に LLM 補助あり"
+			determinism = "取得・既読は規則ベース、採点に LLM 補助あり"
 		}
 	}
 	foot = append(foot, fmt.Sprintf("生成: %s / braindex news fetch（%s。%s）", esc(o.Today), determinism, scoring))

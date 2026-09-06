@@ -4,7 +4,7 @@
 
 ## braindex review — 週次レビューの下書き
 
-hub で `braindex review` を実行すると、`work/review/<今日>.md` に週次レビューの下書きができる。集計は CLI が決定論で行い、
+hub で `braindex review` を実行すると、`work/review/<今日>.md` に週次レビューの下書きができる。集計は CLI が規則ベースで行い、
 判断（差分の要約・アーカイブの可否・次アクション）は人か、人が使うエージェント（hub に入るスキル `braindex-review`）が埋める。
 索引 `index/catalog.md` は読むだけで書き換えない（再生成は `braindex`）。
 
@@ -26,7 +26,7 @@ git はあれば使う。無い環境でも索引の増減（ディスクの索�
 ## braindex lint — ISSUE とノートの検査
 
 `work/ISSUE-<slug>.md`（作業状態。テンプレ `docs/conventions.md` の形）が規約どおりか、ノート（それ以外の `.md`）が
-曖昧でないかを決定論で検査する。索引には載せない。`ISSUE-*.md` は形の検査、それ以外はノートの検査になる（`-kind issue|note` で固定できる）。
+曖昧でないかを規則ベースで検査する。索引には載せない。`ISSUE-*.md` は形の検査、それ以外はノートの検査になる（`-kind issue|note` で固定できる）。
 
 ```sh
 braindex lint                         # root 直下の各リポの work/ISSUE-*.md をまとめて検査(root は索引と同じ解決規則)

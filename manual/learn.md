@@ -7,7 +7,7 @@ braindex learn                 # 直近 14 日（news.profile_days）の材料�
 braindex learn -top 5 -json    # 各節 5 件・JSON
 ```
 
-「いま学ぶと良さそうなこと」の候補を、手元の材料だけから決定論で出す。材料と窓は `braindex news profile` と同じ
+「いま学ぶと良さそうなこと」の候補を、手元の材料だけから規則ベース（LLM を使わず規則と閾値だけ）で出す。材料と窓は `braindex news profile` と同じ
 （索引・セッションログ・`news/keep`・補助ファイル）。訂正の判定は `braindex retro` と同じ辞書（設定 `retro.dictionary` があればそれ）。
 出力は語と件数だけで、発話の本文は載せない。外には何も送らない。
 

@@ -51,7 +51,7 @@ func runNewsProfile(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "使い方: braindex news profile [-config braindex.json] [-date YYYY-MM-DD] [-days N] [-sessions DIR] [-top N] [-json]")
 		fmt.Fprintln(stderr, "  関心プロファイル(語 → 重み・出典)を標準出力に書く。出典は 索引の直近差分(index/catalog.md)・直近のセッション内容・")
 		fmt.Fprintln(stderr, "  選別で残した見出し(news/keep/YYYY-MM.md)・補助の関心ファイル(news/interests.md・1 行 1 語)。")
-		fmt.Fprintln(stderr, "  重みは出典ごとに最大を 1 に正規化した値の和。決定論で、LLM は使わない。セッション本文は読むだけで送らない。")
+		fmt.Fprintln(stderr, "  重みは出典ごとに最大を 1 に正規化した値の和。規則ベースで、LLM は使わない。セッション本文は読むだけで送らない。")
 		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗 / 2 警告つきで完了(索引やセッションの置き場が無く、その出典を飛ばした)")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
