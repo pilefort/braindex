@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/pilefort/braindex/internal/changehistory"
 	"github.com/pilefort/braindex/internal/extract"
 	"github.com/pilefort/braindex/internal/indexdata"
 	"github.com/pilefort/braindex/internal/render"
@@ -15,11 +16,12 @@ import (
 
 // Result は Build の結果。
 type Result struct {
-	Records  []indexdata.Entry // 表の読み戻しと同じ値。走査順。直接の受け渡し用。
-	Catalog  []byte            // catalog.md の内容(先頭に走査の記録を含む)
-	Entries  int               // 索引に載せた件数
-	Warnings []string          // 飛ばしたファイル・ディレクトリの説明(無ければ空)。無言スキップにしない
-	Coverage Coverage          // 走査の記録(Known は常に true)。Catalog の先頭にも同じ内容を書く
+	Records  []indexdata.Entry    // 表の読み戻しと同じ値。走査順。直接の受け渡し用。
+	Catalog  []byte               // catalog.md の内容(先頭に走査の記録を含む)
+	Entries  int                  // 索引に載せた件数
+	Warnings []string             // 飛ばしたファイル・ディレクトリの説明(無ければ空)。無言スキップにしない
+	Coverage Coverage             // 走査の記録(Known は常に true)。Catalog の先頭にも同じ内容を書く
+	Notes    []changehistory.Note // 本文を読めたノートの内容ハッシュ(走査順・Records と同じ並び)。索引には入れず、本文の変更の記録(changes.json)の材料にする
 }
 
 // Build は cfg に従って対象を走査・抽出し、catalog.md のバイト列を返す。
@@ -44,6 +46,7 @@ func Build(cfg scan.Config, genDate string) (Result, error) {
 			continue
 		}
 		m := extract.Extract(filepath.Base(f.Abs), content, f.Kind)
+		res.Notes = append(res.Notes, changehistory.Note{Path: f.Rel, Hash: changehistory.Hash(content)})
 		entries = append(entries, render.Entry{
 			Repo:    f.Repo,
 			Date:    m.Date,
