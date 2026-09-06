@@ -253,3 +253,24 @@ func TestRun_OutRelativeToCwd(t *testing.T) {
 		t.Errorf("設定ファイルのディレクトリに書いてしまった")
 	}
 }
+
+// -version は版を 1 行 stdout に出して 0 で終わる。索引は作らない
+// (どの版が入っているか利用者が言えないと、動きの違いが版差か設定か切り分けられない。
+// 設計レビュー 2026-09-06 M9)。
+func TestVersionFlag(t *testing.T) {
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"-version"}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, se.String())
+	}
+	out := so.String()
+	if !strings.HasPrefix(out, "braindex ") || strings.Count(out, "\n") != 1 {
+		t.Errorf("1 行で版を出す: %q", out)
+	}
+	if se.String() != "" {
+		t.Errorf("stderr: %q", se.String())
+	}
+	// go test は go build で作るので版は module のもの、(devel) にはならない
+	if strings.Contains(out, "(不明)") {
+		t.Errorf("版を取れていない: %q", out)
+	}
+}

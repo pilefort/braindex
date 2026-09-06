@@ -33,10 +33,11 @@ const (
 
 // options は索引生成のコマンドラインで与える値。空は「未指定」。
 type options struct {
-	config string // -config。未指定なら既定 braindex.json(無くてもよい)
-	root   string // -root。設定ファイルの root より優先
-	out    string // -out。未指定なら設定ファイルと同じディレクトリの index/catalog.md
-	date   string // -date。未指定なら今日
+	config  string // -config。未指定なら既定 braindex.json(無くてもよい)
+	root    string // -root。設定ファイルの root より優先
+	out     string // -out。未指定なら設定ファイルと同じディレクトリの index/catalog.md
+	date    string // -date。未指定なら今日
+	version bool   // -version。版を 1 行出して終わる
 }
 
 func main() {
@@ -55,6 +56,10 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 	if done {
 		return code
 	}
+	if o.version {
+		fmt.Fprintln(stdout, versionLine())
+		return 0
+	}
 	return run(o, stdout, stderr)
 }
 
@@ -70,6 +75,7 @@ func parseArgs(args []string, stderr io.Writer) (o options, code int, done bool)
 	fs.StringVar(&o.root, "root", "", "走査のルート。直下の各ディレクトリを 1 リポとみなす(設定ファイルの root より優先)")
 	fs.StringVar(&o.out, "out", "", "索引の出力先(既定: 設定ファイルと同じディレクトリの index/catalog.md)")
 	fs.StringVar(&o.date, "date", "", "先頭行に載せる生成日 YYYY-MM-DD(既定: 今日)。再現可能な出力が要るときに使う")
+	fs.BoolVar(&o.version, "version", false, "入っている braindex の版を 1 行出して終わる")
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方:")
 		fmt.Fprintln(stderr, "  braindex [フラグ]              索引(index/catalog.md)を生成する")
