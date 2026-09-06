@@ -11,6 +11,25 @@ permissions:
   contents: read
 
 jobs:
+  news-browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: ブラウザ検査の準備
+        run: |
+          python -m pip install playwright==1.62.0
+          python -m playwright install --with-deps chromium
+      - name: ニュースの選別・相談・保存を実ブラウザで検査
+        env:
+          BRAINDEX_BROWSER_TEST: '1'
+        run: go test ./internal/news -run TestNewsBrowser -v
   test:
     strategy:
       fail-fast: false

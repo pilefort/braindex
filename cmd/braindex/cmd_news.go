@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	iofs "io/fs" // fs はフラグ集合の変数名に使っている
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,6 +51,7 @@ func runNews(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "  profile  関心プロファイル(語 → 重み・出典)を表示する")
 		fmt.Fprintln(stderr, "  apply    HTML で書き出した選別 JSON を取り込む(keep に追記・統計を更新)")
 		fmt.Fprintln(stderr, "  suggest  関心プロファイルに当たる取材先(RSS)を同梱の目録から候補として出す")
+		fmt.Fprintln(stderr, "  reading  保存記事と相談・解説を読む。会話で作成した回答を記事へ登録する")
 		fmt.Fprintln(stderr, "フラグは braindex news <サブコマンド> -h")
 	}
 	if len(args) == 0 {
@@ -65,6 +67,8 @@ func runNews(args []string, stdout, stderr io.Writer) int {
 		return runNewsApply(args[1:], stdout, stderr)
 	case "suggest":
 		return runNewsSuggest(args[1:], stdout, stderr)
+	case "reading":
+		return runNewsReading(args[1:], stdout, stderr)
 	case "-h", "-help", "--help":
 		usage()
 		return 0
@@ -319,6 +323,13 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	do := news.DigestOptions{Layer: o.layer, Today: today, Cap: s.Cap(o.layer), Ranking: ranking, MinScore: s.MinScore(), Totals: stats.Totals(), Annotations: annotations}
+	reading, readingErr := news.LoadReading(newsDir)
+	if readingErr != nil {
+		fmt.Fprintln(stderr, "braindex news fetch: 警告: 保存記事の一覧を読めない:", readingErr)
+		ingestWarning++
+	} else {
+		do.Reading = &reading
+	}
 	digest := news.Digest(results, do)
 	openWarning := 0
 	var htmlPath string
@@ -357,6 +368,14 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		}
 		if err := fsutil.WriteAtomic(outPath, digest, 0o644); err != nil {
 			return fail(err)
+		}
+		if readingErr == nil {
+			if err := news.WriteReading(newsDir, reading); err != nil {
+				fmt.Fprintln(stderr, "braindex news fetch: 警告: 保存記事の一覧を表示できない:", err)
+				ingestWarning++
+			} else if rel, err := filepath.Rel(filepath.Dir(htmlPath), filepath.Join(newsDir, news.ReadingHTML)); err == nil {
+				do.LibraryHref = (&url.URL{Path: filepath.ToSlash(rel)}).String()
+			}
 		}
 		if err := fsutil.WriteAtomic(htmlPath, news.RenderHTML(results, do), 0o644); err != nil {
 			return fail(err)

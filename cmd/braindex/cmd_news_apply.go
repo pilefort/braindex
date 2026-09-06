@@ -49,7 +49,7 @@ func runNewsApply(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&inbox, "inbox", "", "選別 JSON を探すディレクトリ(既定: ~/Downloads。<news.dir>/inbox はいつも見る)")
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方: braindex news apply [-config braindex.json] [-inbox DIR]")
-		fmt.Fprintln(stderr, "  HTML の「選別を書き出す」で保存した JSON(braindex-news-selection_*.json)を <news.dir>/inbox と -inbox(既定 ~/Downloads)")
+		fmt.Fprintln(stderr, "  HTML の「選択と相談を保存」（旧「選別を書き出す」）で保存した JSON(braindex-news-selection_*.json)を <news.dir>/inbox と -inbox(既定 ~/Downloads)")
 		fmt.Fprintln(stderr, "  から取り込む。「残す」は news/keep/YYYY-MM.md に追記(同じリンクは 1 回)、フィード別の数は news/.stats.json に")
 		fmt.Fprintln(stderr, "  ダイジェスト単位で上書き保存(同じ日の再書き出しは二重に数えない)。取り込んだ JSON は news/.ingested/ へ移す。")
 		fmt.Fprintln(stderr, "  news fetch の冒頭でも同じ取り込みが動くので、通常は別に実行しなくてよい。")
@@ -108,5 +108,8 @@ func runNewsApply(args []string, stdout, stderr io.Writer) int {
 		return fail(err)
 	}
 	fmt.Fprintln(stdout, "news apply 完了")
+	if _, err := os.Stat(filepath.Join(newsDir, news.ReadingHTML)); err == nil {
+		fmt.Fprintln(stdout, "保存記事と相談の一覧:", filepath.Join(newsDir, news.ReadingHTML))
+	}
 	return 0
 }
