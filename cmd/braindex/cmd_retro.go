@@ -276,6 +276,11 @@ func runRetroCheck(args []string, stdout, stderr io.Writer) int {
 		days, total.Percent(), total.Utterances, total.Corrections,
 		baselineClause(base, baseTotal, weeks), thr*100, verdictText(verdict))
 	if verdict == retro.Exceed {
+		// 鳴らしたのに窓の中に所見ノートが無ければ添える。機械節が毎回動いていても、
+		// 所見が残っていなければ振り返りの回路は動いていない(設計レビュー 2026-09-06 M7)
+		if !hasRetroNoteInWindow(env.hubDir, w.Since, today.AddDate(0, 0, 1)) {
+			msg += "（所見ノート docs/notes/retro-YYYY-MM-DD.md が窓の中に無い）"
+		}
 		fmt.Fprintf(stdout, "braindex retro check: %s\n", msg)
 		return 3
 	}
@@ -443,6 +448,7 @@ type retroEnv struct {
 	dicts       []*retro.Dictionary // 判定に使う辞書(dictionary か既定辞書、それに dictionary_extra)
 	bins        []retro.Bin
 	home        string   // 表示でホームを "~" に置き換える(取れなければ "")
+	hubDir      string   // 設定ファイルのディレクトリ。設定ファイルが無ければ ""
 	underRoot   string   // この配下のセッションだけ数える(空なら絞らない)
 	warnings    []string // 環境を決める段で出た警告(セッションの警告の前に出す)
 }
@@ -473,6 +479,9 @@ func loadRetroEnv(cfgPath, sessionsFlag string, allProjects bool) (retroEnv, err
 	}
 	s := fc.Retro.WithDefaults()
 	env.settings = s
+	if found {
+		env.hubDir = baseDir
+	}
 	root, why := sessionRoot(fc.Config.Root, baseDir, s.AllProjects || allProjects, found)
 	env.underRoot = root
 	if why != "" {
