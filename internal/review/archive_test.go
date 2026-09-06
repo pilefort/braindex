@@ -43,7 +43,7 @@ func TestArchiveCandidates(t *testing.T) {
 		t.Errorf("閾値ちょうど: %+v", got)
 	}
 	// 初回(前回の索引が無い)は全件が「追加」= touched なので、閾値を未来にしても候補は出ない(決定 2026-09-02)
-	d, err := DiffIndex(nil, afterCatalog(t))
+	d, err := DiffIndex(nil, afterCatalog(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestArchiveCandidates(t *testing.T) {
 
 // 索引差分の Touched は追加・変更のパスだけ(削除は今回の索引に無いので候補にもならない)。
 func TestIndexDiff_Touched(t *testing.T) {
-	d, err := DiffIndex(readTestdata(t, "before.md"), afterCatalog(t))
+	d, err := DiffIndex(readTestdata(t, "before.md"), afterCatalog(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
