@@ -174,12 +174,20 @@ func TestInline_画像(t *testing.T) {
 	}
 }
 
-// Windows の絶対パスはリンクでも通す(ドライブ文字はスキームではない)。href はパスのまま出す。
+// Windows の絶対パスはリンクでも通す(ドライブ文字はスキームではない)。
+// href は画像と同じく file:// にする。素のまま出すと、file:// で開いた HTML からは
+// 相対パスとして解決されて開けない(実測 2026-09-06)。
 func TestInline_Windowsのパスをリンクに出す(t *testing.T) {
-	got := inline("[台帳](C:/work/README.md)")
-	want := `<a href="C:/work/README.md" target="_blank" rel="noopener">台帳</a>`
-	if got != want {
-		t.Errorf("inline = %q, want %q", got, want)
+	cases := map[string]string{
+		"[台帳](C:/work/README.md)": `<a href="file:///C:/work/README.md" target="_blank" rel="noopener">台帳</a>`,
+		`[台帳](C:\work\README.md)`: `<a href="file:///C:/work/README.md" target="_blank" rel="noopener">台帳</a>`,
+		"[根](/srv/x.md)":          `<a href="file:///srv/x.md" target="_blank" rel="noopener">根</a>`,
+		"[隣](docs/x.md)":          `<a href="docs/x.md" target="_blank" rel="noopener">隣</a>`, // 相対はそのまま
+	}
+	for in, want := range cases {
+		if got := inline(in); got != want {
+			t.Errorf("inline(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

@@ -112,11 +112,11 @@ func attrURL(u string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(u, `"`, "%22"), " ", "%20")
 }
 
-// imageSrc は <img src> に出す値。ローカルの絶対パス(Windows のドライブ文字・/ 始まり)は file:// の URL にする。
+// localURL は href / src に出す値。ローカルの絶対パス(Windows のドライブ文字・/ 始まり)は file:// の URL にする。
 // HTML は一時置き場に書かれ Markdown と同じ場所に無いので、絶対パスで参照させる。"C:/..." を素のまま出しても
 // file と解釈するかはブラウザと OS 次第なので明示する。相対パスはそのまま(HTML から見た相対)。
 // Markdown 側で file:// と書いたものは、リンクと同じく落とす(決定 2026-09-03。パスで書けばよい)。
-func imageSrc(p string) string {
+func localURL(p string) string {
 	p = strings.TrimSpace(p)
 	switch {
 	case driveRE.MatchString(p):
@@ -158,7 +158,7 @@ func inline(text string) string {
 		}
 		// alt は属性値なので、退避したコードは文字に戻し、タグは剥がし、" をエスケープする
 		alt := strings.ReplaceAll(tagRE.ReplaceAllString(restore(sm[1]), ""), `"`, "&quot;")
-		return keep(`<img src="` + imageSrc(sm[2]) + `" alt="` + alt + `">`)
+		return keep(`<img src="` + localURL(sm[2]) + `" alt="` + alt + `">`)
 	})
 	text = linkRE.ReplaceAllStringFunc(text, func(m string) string {
 		sm := linkRE.FindStringSubmatch(m)
@@ -166,7 +166,9 @@ func inline(text string) string {
 			// javascript: のようなスキームは href に出さず、文字だけ残す(リンクの文言は消さない)
 			return sm[1]
 		}
-		return `<a href="` + attrURL(sm[2]) + `" target="_blank" rel="noopener">` + sm[1] + `</a>`
+		// 画像と同じく、ローカルの絶対パスは file:// にする。素のまま出すと file:// のページからは
+		// 相対パスとして解決されて開けない(実測 2026-09-06)
+		return `<a href="` + localURL(sm[2]) + `" target="_blank" rel="noopener">` + sm[1] + `</a>`
 	})
 	text = boldRE.ReplaceAllString(text, "<strong>$1</strong>")
 	text = italic(text)
