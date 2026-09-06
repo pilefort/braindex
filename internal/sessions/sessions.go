@@ -49,6 +49,9 @@ type Turn struct {
 	Time  time.Time // ログの timestamp(UTC)。無ければゼロ値
 	Text  string    // 人間: 打った本文(<system-reminder> ブロックは除く)。アシスタント: text ブロックを改行で連結
 	Tools []ToolUse // アシスタントが呼んだツール(出現順)。人間は nil
+	// Boilerplate は「同じ冒頭の発話が複数セッションに現れる」= 機械が流し込んだ指示と判定された発話。
+	// MarkBoilerplate が立てる。retro・news・learn はこの発話を数えない。
+	Boilerplate bool
 }
 
 // Session は 1 つのセッションログ。
@@ -87,6 +90,11 @@ type Options struct {
 	// hub の root の外(索引に載らないリポ・OS のシステムディレクトリなど)で交わした会話が
 	// 訂正率や関心プロファイルに混ざるのを防ぐ(設計レビュー 2026-09-06 M2)。
 	UnderRoot string
+
+	// BoilerplateSessions は「同じ冒頭の発話が何セッションに出たら定型とみなすか」。
+	// 0 なら DefaultBoilerplateSessions。読み取りの最後に MarkBoilerplate を掛けるので、
+	// retro・news・learn のどこから読んでも同じ発話が定型になる。
+	BoilerplateSessions int
 }
 
 // Source はセッションログの供給元。
@@ -178,6 +186,8 @@ func (d Dir) Sessions(opts Options) ([]Session, []string, error) {
 	if unknownCwd > 0 {
 		warns = append(warns, fmt.Sprintf("作業ディレクトリが分からないセッション %d 件を除いた", unknownCwd))
 	}
+	// 定型(機械が流し込んだ指示)の印を付ける。数えるかどうかは呼び出し側が Turn.Boilerplate で決める
+	MarkBoilerplate(out, opts.BoilerplateSessions)
 	// 読んだログの版が確認済みの範囲の外なら伝える。除外規則は変えない。
 	warns = append(warns, unknownVersionWarnings(versions)...)
 	return out, warns, nil
@@ -403,6 +413,10 @@ func ExcludeReason(text string) string {
 		return "interrupt"
 	case strings.HasPrefix(t, "<task-notification>"):
 		return "task-notification"
+	case strings.HasPrefix(t, "[braindex-"):
+		// braindex 自身が claude -p で流し込んだプロンプト(news の LLM 補助など)。
+		// 人が打った発話ではないので数えない(設計レビュー 2026-09-06 M11)
+		return "braindex-tool"
 	}
 	return ""
 }
