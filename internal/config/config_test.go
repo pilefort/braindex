@@ -29,14 +29,19 @@ func TestLoad_Missing(t *testing.T) {
 
 // scan の項目を読む。
 func TestLoad_Fields(t *testing.T) {
-	p := write(t, `{"root": "..", "notes_dirs": ["docs/notes", "wiki"],
+	p := write(t, `{"root": "..", "repo_depth": 2, "notes_dirs": ["docs/notes", "wiki"],
 	  "extra": [{"repo": "r", "path": "x", "recursive": true, "kind": "k", "exclude": ["*.draft.md"]}]}`)
 	cfg, found, err := Load(p)
 	if err != nil || !found {
 		t.Fatalf("found=%v err=%v", found, err)
 	}
-	if cfg.Root != ".." || strings.Join(cfg.NotesDirs, ",") != "docs/notes,wiki" {
+	if cfg.Root != ".." || cfg.RepoDepth != 2 || strings.Join(cfg.NotesDirs, ",") != "docs/notes,wiki" {
 		t.Errorf("読み取り結果が不正: %+v", cfg)
+	}
+	// repo_depth を省略すると 0 のまま読め、有効な段数は 1(既定)
+	omitted, _, err := Load(write(t, `{"root": ".."}`))
+	if err != nil || omitted.RepoDepth != 0 || omitted.Depth() != 1 {
+		t.Errorf("repo_depth 省略: err=%v RepoDepth=%d Depth=%d", err, omitted.RepoDepth, omitted.Depth())
 	}
 	if len(cfg.Extra) != 1 || cfg.Extra[0].Kind != "k" || !cfg.Extra[0].Recursive || cfg.Extra[0].Exclude[0] != "*.draft.md" {
 		t.Errorf("extra が不正: %+v", cfg.Extra)

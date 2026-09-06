@@ -160,7 +160,7 @@ func Build(in Input) (Result, error) {
 	}
 
 	// 放置 TODO
-	todos, ws, err := StaleTodos(in.Cfg.Root, gp, todoCutoff)
+	todos, ws, err := StaleTodos(in.Cfg, gp, todoCutoff)
 	if err != nil {
 		return res, err
 	}
