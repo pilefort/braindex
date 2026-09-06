@@ -5,8 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/pilefort/braindex/internal/retro"
 )
 
 func execRetroExtract(t *testing.T, args ...string) (code int, stdout, stderr string) {
@@ -155,4 +158,66 @@ func TestRetroExtract_Rewrite(t *testing.T) {
 	if _, err := os.Stat(keep); err != nil {
 		t.Errorf("出力先の他のファイルが消えた: %v", err)
 	}
+}
+
+// ダイジェストと index.tsv の書き込みは、置き換えに失敗しても既にあるファイルを壊さない(半端な内容で上書きしない)。
+// index.tsv を次に読むのはレトロスペクティブの手順で、半端な索引は黙って途中までしか辿れない(設計レビュー 2026-09-06 M14)。
+// コマンド全体は前回の出力を先に消すので、ここでは書き出しの段(writeExtractOutput)だけを見る。
+func TestRetroExtract_書き込みに失敗しても既にあるファイルは壊れない(t *testing.T) {
+	for _, target := range []string{"index.tsv", "sessions/p/a.md"} {
+		t.Run(target, func(t *testing.T) {
+			out := t.TempDir()
+			old := retro.Result{Index: []byte("前回の索引\n"), Files: []retro.DigestFile{{RelPath: "sessions/p/a.md", Content: []byte("前回のダイジェスト\n")}}}
+			if err := writeExtractOutput(out, old); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(out, filepath.FromSlash(target))
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			blockReplace(t, path)
+
+			cur := retro.Result{Index: []byte("今回の索引\n"), Files: []retro.DigestFile{{RelPath: "sessions/p/a.md", Content: []byte("今回のダイジェスト\n")}}}
+			if err := writeExtractOutput(out, cur); err == nil {
+				t.Fatal("エラーにならない")
+			}
+			if after, _ := os.ReadFile(path); !bytes.Equal(before, after) {
+				t.Errorf("元のファイルが変わった: %q", after)
+			}
+			des, err := os.ReadDir(filepath.Dir(path))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, de := range des {
+				if strings.HasPrefix(de.Name(), ".") {
+					t.Errorf("一時ファイルが残った: %s", de.Name())
+				}
+			}
+		})
+	}
+}
+
+// blockReplace は path を「原子的には書き換えられない」状態にする。path そのものは書けるので、
+// 切り詰めてから書く os.WriteFile は成功して前回の内容を失い、一時ファイル経由の置き換えは失敗して前回の内容が残る。
+// Windows: path を開いたままにする(Go の os.Open は FILE_SHARE_DELETE を付けないので、置き換えと削除が失敗する)。
+// それ以外: 親ディレクトリの書き込み権限を外す(一時ファイルを作れない。root は権限を無視するので skip)。
+func blockReplace(t *testing.T, path string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		f, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { f.Close() })
+		return
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root は権限を無視するので、書けない置き場を作れない")
+	}
+	dir := filepath.Dir(path)
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
 }

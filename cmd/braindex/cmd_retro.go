@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/pilefort/braindex/internal/config"
+	"github.com/pilefort/braindex/internal/fsutil"
 	"github.com/pilefort/braindex/internal/retro"
 	"github.com/pilefort/braindex/internal/sessions"
 )
@@ -387,19 +388,7 @@ func runRetroExtract(args []string, stdout, stderr io.Writer) int {
 	if err := os.Remove(filepath.Join(outDir, "index.tsv")); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fail(err)
 	}
-	for _, f := range res.Files {
-		p := filepath.Join(outDir, filepath.FromSlash(f.RelPath))
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			return fail(err)
-		}
-		if err := os.WriteFile(p, f.Content, 0o644); err != nil {
-			return fail(err)
-		}
-	}
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return fail(err)
-	}
-	if err := os.WriteFile(filepath.Join(outDir, "index.tsv"), res.Index, 0o644); err != nil {
+	if err := writeExtractOutput(outDir, res); err != nil {
 		return fail(err)
 	}
 	fmt.Fprintf(stdout, "braindex retro extract: %d セッション・発話 %d・訂正 %d → %s\n", res.Sessions, res.UserTurns, res.CorrectionTurns, outDir)
@@ -408,6 +397,27 @@ func runRetroExtract(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return 0
+}
+
+// writeExtractOutput はダイジェストの各ファイルと index.tsv を outDir に書く(置き場が無ければ作る)。
+// 1 ファイルずつ書き切ってから置き換える(fsutil.WriteAtomic)ので、途中で失敗しても半端なファイルは残らない。
+// index.tsv を次に読むのはレトロスペクティブの手順(file 列を辿ってダイジェストを開く)で、
+// 半端な索引は黙って途中までしか辿れない(設計レビュー 2026-09-06 M14)。
+// 前回の出力を先に消す順序(消してから失敗すると「失敗なら何も書かない」にならない)はここでは扱わない。
+func writeExtractOutput(outDir string, res retro.Result) error {
+	for _, f := range res.Files {
+		p := filepath.Join(outDir, filepath.FromSlash(f.RelPath))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return err
+		}
+		if err := fsutil.WriteAtomic(p, f.Content, 0o644); err != nil {
+			return err
+		}
+	}
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return err
+	}
+	return fsutil.WriteAtomic(filepath.Join(outDir, "index.tsv"), res.Index, 0o644)
 }
 
 // retroWindow は -since / -window-days から窓と表示用の見出しを決める(-since > -window-days > 全期間)。

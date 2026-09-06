@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/pilefort/braindex/internal/fsutil"
 )
 
 // NewSuffix は、利用者が編集したファイルの隣に置く「今の版」の拡張子。
@@ -247,10 +249,12 @@ func InferFeatures(dst string) ([]Feature, error) {
 // writeFile はテストで差し替える(途中で書き込みが失敗する状況を再現するため)。
 var writeFile = writeFileToDisk
 
-// writeFileToDisk は親ディレクトリを作ってから書く。
+// writeFileToDisk は親ディレクトリを作ってから書く。書き切ってから置き換える(fsutil.WriteAtomic)ので、
+// 途中で失敗しても半端なファイルは残らない。台帳は配ったファイルのハッシュを覚えているので、
+// 半端なファイルは次の update で「利用者が編集した」と誤認される(設計レビュー 2026-09-06 M14)。
 func writeFileToDisk(path string, b []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0o644)
+	return fsutil.WriteAtomic(path, b, 0o644)
 }
