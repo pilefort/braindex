@@ -55,7 +55,7 @@ func TestExcludeReason(t *testing.T) {
 
 func TestDir_Sessions_OrderAndSkip(t *testing.T) {
 	got, _ := loadTestdata(t)
-	// 人間の発話が無い aaaa3333 と、<slug>/ の下に無い stray.jsonl は含めない。並びは開始時刻の昇順(時刻なしは先頭)。
+	// 人間の発話が無い aaaa3333・cccc0001 と、<slug>/ の下に無い stray.jsonl は含めない。並びは開始時刻の昇順(時刻なしは先頭)。
 	var ids []string
 	for _, s := range got {
 		ids = append(ids, s.ID)
@@ -112,8 +112,8 @@ func TestDir_Sessions_MainSession(t *testing.T) {
 	if h := s.HumanTurns(); len(h) != 3 || h[0].Index != 1 || h[2].Index != 3 {
 		t.Errorf("HumanTurns: got=%+v", h)
 	}
-	// JSON でない 1 行は警告して飛ばす(本文は出さない)
-	if len(warns) != 1 || !strings.Contains(warns[0], "aaaa1111.jsonl") || !strings.Contains(warns[0], "1 行") {
+	// JSON でない 1 行は警告して飛ばす(本文は出さない)。2 本目は cccc0001 の未確認の版
+	if len(warns) != 2 || !strings.Contains(warns[0], "aaaa1111.jsonl") || !strings.Contains(warns[0], "1 行") {
 		t.Errorf("warnings: got=%q", warns)
 	}
 }
@@ -231,5 +231,77 @@ func TestReaderLine_BadRows(t *testing.T) {
 		if len(r.s.Turns) != 0 {
 			t.Errorf("line[%s]: 発話が増えた: %+v", c.desc, r.s.Turns)
 		}
+	}
+}
+
+// ログの形式は Claude Code の版ごとに変わりうるので、確認済みの範囲の外の版は伝える。
+// 除外規則は変えない(合わない証拠が無いうちに挙動を変えると、確かめた版での結果まで動く)。
+func TestVersionInRange(t *testing.T) {
+	cases := []struct {
+		desc, v string
+		want    bool
+	}{
+		{"下限ちょうど", MinKnownVersion, true},
+		{"上限ちょうど", MaxKnownVersion, true},
+		{"下限より古い", "2.1.257", false},
+		{"上限より新しい", "2.1.264", false},
+		{"メジャーが古い", "1.9.999", false},
+		{"メジャーが新しい", "3.0.0", false},
+		{"桁の違いを数値で比べる(2.1.9 は 2.1.10 より小さい)", "2.1.9", false},
+		{"段が足りない", "2.1", false},
+		{"段が多い(下限と同じ 2.1.258 の後ろに 0)", "2.1.258.0", true},
+		{"空は不明として範囲内", "", true},
+		{"数値でないものは不明として範囲内", "2.1.258-beta", true},
+		{"数値でないものは不明として範囲内(語)", "unknown", true},
+		{"負の数は不明として範囲内", "2.-1.0", true},
+	}
+	for _, c := range cases {
+		if got := VersionInRange(c.v); got != c.want {
+			t.Errorf("VersionInRange[%s] %q: want=%v got=%v", c.desc, c.v, c.want, got)
+		}
+	}
+}
+
+func TestDir_Sessions_未確認の版を伝える(t *testing.T) {
+	_, warns := loadTestdata(t)
+	var hits []string
+	for _, w := range warns {
+		if strings.Contains(w, "確認済み(") {
+			hits = append(hits, w)
+		}
+	}
+	// testdata の版は 2.1.258(確認済み)・空(不明)・9.0.0(新しい側)。cccc0001 は人間の発話が
+	// 無くて一覧には出ないが、読んだファイルなので版は数える
+	if len(hits) != 1 {
+		t.Fatalf("版の警告: %q", hits)
+	}
+	for _, want := range []string{"より新しい版が 1 種・1 ファイル", "最も新しい 9.0.0", MinKnownVersion + "〜" + MaxKnownVersion} {
+		if !strings.Contains(hits[0], want) {
+			t.Errorf("警告に %q が無い: %q", want, hits[0])
+		}
+	}
+}
+
+func TestUnknownVersionWarnings(t *testing.T) {
+	// 古い側と新しい側で 1 行ずつ。確認済みの版・空・読めない版は数えない
+	got := unknownVersionWarnings(map[string]int{
+		"2.1.9": 3, "2.1.100": 1, "9.0.0": 2, "10.0.0": 1,
+		MinKnownVersion: 5, "": 4, "2.1.258-beta": 1,
+	})
+	if len(got) != 2 {
+		t.Fatalf("警告の数: %d %q", len(got), got)
+	}
+	for _, want := range []string{"より古い版が 2 種・4 ファイル", "最も古い 2.1.9"} {
+		if !strings.Contains(got[0], want) {
+			t.Errorf("古い側に %q が無い: %q", want, got[0])
+		}
+	}
+	for _, want := range []string{"より新しい版が 2 種・3 ファイル", "最も新しい 10.0.0", "MaxKnownVersion を上げる"} {
+		if !strings.Contains(got[1], want) {
+			t.Errorf("新しい側に %q が無い: %q", want, got[1])
+		}
+	}
+	if unknownVersionWarnings(map[string]int{MinKnownVersion: 1, "": 2}) != nil {
+		t.Error("範囲外が無ければ何も返さない")
 	}
 }

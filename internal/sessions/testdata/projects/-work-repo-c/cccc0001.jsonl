@@ -1,0 +1,2 @@
+{"type":"user","cwd":"/work/repo-c","version":"9.0.0","timestamp":"2026-08-21T01:00:00.000Z","isMeta":true,"message":{"role":"user","content":"人が打っていない行"},"uuid":"u1"}
+{"type":"assistant","cwd":"/work/repo-c","version":"9.0.0","timestamp":"2026-08-21T01:00:10.000Z","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"はい"}]},"uuid":"a1"}

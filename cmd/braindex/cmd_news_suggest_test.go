@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,7 +14,14 @@ import (
 func newsSuggest(t *testing.T, hub string, args ...string) (code int, so, se string) {
 	t.Helper()
 	var sob, seb bytes.Buffer
-	code = dispatch(append([]string{"news", "suggest", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-09-01"}, args...), &sob, &seb)
+	// セッションの置き場は空のディレクトリに固定する。既定に任せると開発者の ~/.claude/projects を
+	// 読むので、結果が機械ごとに変わる(実測 2026-09-06: 実行に 12 秒かかり、版の警告が混ざった)。
+	// このテストが見るのは keep と interests.md から出る候補なので、セッションは要らない
+	empty := filepath.Join(t.TempDir(), "projects")
+	if err := os.MkdirAll(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code = dispatch(append([]string{"news", "suggest", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-09-01", "-sessions", empty}, args...), &sob, &seb)
 	return code, sob.String(), seb.String()
 }
 

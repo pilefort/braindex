@@ -116,6 +116,7 @@ func (d Dir) Sessions(opts Options) ([]Session, []string, error) {
 	}
 	var out []Session
 	var warns []string
+	versions := map[string]int{} // 読んだファイルの版 → 件数
 	for _, slug := range slugs {
 		if !slug.IsDir() {
 			continue
@@ -137,6 +138,9 @@ func (d Dir) Sessions(opts Options) ([]Session, []string, error) {
 			}
 			s, w := readSession(filepath.Join(slugDir, f.Name()), slug.Name())
 			warns = append(warns, w...)
+			// 版は開いたファイル全部から数える。人間の発話が 0 のセッションも含めるのは、
+			// 形式が変わって発話を拾えなくなった回こそ「読んだのに使えなかった」側に落ちるため
+			versions[s.Version]++
 			if s.UserTurns == 0 {
 				continue
 			}
@@ -149,6 +153,8 @@ func (d Dir) Sessions(opts Options) ([]Session, []string, error) {
 		}
 		return out[i].ID < out[j].ID
 	})
+	// 読んだログの版が確認済みの範囲の外なら伝える。除外規則は変えない。
+	warns = append(warns, unknownVersionWarnings(versions)...)
 	return out, warns, nil
 }
 
