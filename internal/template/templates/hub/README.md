@@ -9,8 +9,13 @@
 
 - **引く**: `grep -i <語> index/catalog.md` で当たりを付け、ヒット行のパスの実ファイルを読む。
   要旨の列だけで答えない。要旨は 80 字の手がかりであって、内容の代わりではない。
+  索引に無ければ `braindex search <語>` でノート本文を引く（語を含む行を「パス:行」で出す）。
+  それでも無いときは、「無い」と言う前に `braindex diagnose` で読めなかった範囲が無いかを確かめる
+  （索引の先頭の「走査:」の行にも、生成時に読めなかった範囲が残る）。
 - **索引を再生成する**: このディレクトリで `braindex` を実行する。走査対象は `braindex.json` で決まる
-  （`root` は各リポの親ディレクトリ）。`index/catalog.md` をコミットすると、その `git diff` が前回からの差分になる。
+  （`root` は各リポの親ディレクトリ。`<group>/<name>` のように 1 段はさんで並べているなら `"repo_depth": 2` を書く）。
+  `index/catalog.md` をコミットすると、その `git diff` が前回からの差分になる。隣の `index/changes.json`（本文の変更の記録）も
+  一緒にコミットしてよい。本文の後半だけを直した更新は索引の行が変わらないので、この記録で見分ける。
 - **知識はそれが属するリポに書く**: 調べて分かった事実はそのリポの `docs/notes/`、決めたことは `docs/decisions.md`。
   どのリポにも属さない知識だけを、この hub の `docs/notes/` に書く。
 
@@ -56,20 +61,25 @@ hub と `braindex` 自身の絶対パスを埋め込むので、定期実行の�
 `news/keep/YYYY-MM.md` に追記する。keep は次の採点の出典になるので、選別がそのまま関心の推定に戻る。
 外へ出る通信はフィードの GET だけで、セッション内容もノート本文も送らない。
 定期実行は `schedule` 節の `news` ジョブ（毎日 07:30・`-no-open`）。朝に `news/digest_<日付>_daily.html` を自分で開く。
-`digest_*`・`.seen.json` などの作業ファイルは `.gitignore` の行が除外し、`keep/` は蓄積側なので版管理に残す。設定は `braindex.json` の `news` 節。
+`digest_*`・`.seen.json`・`.lock.json`（動いている印）・`.pending.json`（途中で止まった回の記録）などの作業ファイルは `.gitignore` の行が除外し、
+`keep/` は蓄積側なので版管理に残す。途中で止まった日は、同じ日の `braindex news fetch` をもう一度実行すれば書き直して完了する。設定は `braindex.json` の `news` 節。
 
 ## 学習の提案
 
-`braindex learn` が、索引・セッションログ・`news/keep` から「触れているがノートに無い」「訂正の文脈に繰り返し出る」「残した記事にあるがノートに無い」語を
-理由つきで出す。配布物は無く、材料が揃えばそのまま動く（索引が無い hub では先に `braindex` で索引を作る）。
+`braindex learn` が、索引・セッションログ・`news/keep` から「触れているが索引に無い」「訂正の文脈に繰り返し出る」「残した記事にあるが索引に無い」語を
+理由つきで出す。「索引に無い」語はノート本文でも照合し、本文で発見（`パス:行`）／本文でも未発見／確認不能（読めなかった範囲がある）を項目ごとに付ける。
+「ノートに無い」と言えるのは「本文でも未発見」だけ。配布物は無く、材料が揃えばそのまま動く（索引が無い hub では先に `braindex` で索引を作る）。
+要らない候補は `braindex learn answer <known|unwanted|later> <語>` で回答すると、次回からその候補は出なくなる（`later` は再提示日つき）。回答は `work/learn/answers.json` に残り、
+`braindex learn answers` で一覧、`learn answer clear <語>` で解除する。
 
 ## 地図
 
 | 場所 | 何が入るか |
 |---|---|
-| `index/catalog.md` | 索引。`braindex` が生成する。手で編集しない |
-| `braindex.json` | 走査の設定: `root`・`notes_dirs`・`extra`（段 0）。週次レビューの設定（記録の置き場と閾値）: `review`。振り返りの設定（窓・閾値・辞書）: `retro`。判断待ちフォームの置き場: `approvals`（`-add conventions`）。ニュース: `news`。定期実行のジョブ（名前・引数・時刻）: `schedule`。節は `braindex init -add` が足す |
+| `index/catalog.md` | 索引。`braindex` が生成する。手で編集しない。先頭の「走査:」の行が、生成時に読めなかった範囲の記録 |
+| `index/changes.json` | 本文の変更の記録（ノートごとの内容ハッシュと、その内容を最初に見た日）。`braindex` が索引と一緒に更新する。手で編集しない |
+| `braindex.json` | 走査の設定: `root`・`notes_dirs`・`extra`（段 0）。`repo_depth`（root の何段下をリポとみなすか。既定 1。2 段の配置のときだけ手で書く）。週次レビューの設定（記録の置き場と閾値）: `review`。振り返りの設定（窓・閾値・辞書）: `retro`。判断待ちフォームの置き場: `approvals`（`-add conventions`）。ニュース: `news`。定期実行のジョブ（名前・引数・時刻）: `schedule`。節は `braindex init -add` が足す |
 | `docs/` | 蓄積するもの: `overview.md`・`glossary.md`・`decisions.md`・`notes/`・`conventions.md`（`-add conventions`） |
-| `work/` | 揮発するもの: `APPROVALS.md`（判断待ち）・`TODO.md`（`-add conventions`）・`review/`（週次レビューの記録。`-add review`） |
-| `news/` | ニュース: `feeds.json`（自分で書く）・`keep/YYYY-MM.md`（残した見出し。版管理に残す）・`digest_*` と `.seen.json` などの作業ファイル（`.gitignore` が除外） |
+| `work/` | 揮発するもの: `APPROVALS.md`（判断待ち）・`TODO.md`（`-add conventions`）・`review/`（週次レビューの記録。`-add review`）・`learn/answers.json`（学習候補への回答。`braindex learn answer` が書く。版管理に残す） |
+| `news/` | ニュース: `feeds.json`（自分で書く）・`keep/YYYY-MM.md`（残した見出し。版管理に残す）・`digest_*`・`.seen.json`・`.lock.json`・`.pending.json` などの作業ファイル（`.gitignore` が除外） |
 | `.claude/skills/` | Claude Code のスキル: `record-lint`（ノート保存前の曖昧さ検査）・`contradiction-scan`（横断の矛盾検査）・`research-distill`（検証優先の調査。`braindex verify` で裏取り、`braindex answer` で HTML 化）は `-add conventions`。`braindex-review`（週次レビューの判断）は `-add review`。`retro`（振り返り）は `-add retro` |
