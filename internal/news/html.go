@@ -1,6 +1,7 @@
 package news
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -43,12 +44,38 @@ func RenderHTML(results []Result, o DigestOptions) []byte {
 	}
 	sort.Strings(cats)
 
-	var parts strings.Builder
+	var parts, overview strings.Builder
 	for _, cat := range cats {
+		category := cat
+		if category == "" {
+			category = "その他"
+		}
+		count := 0
+		var highlights []string
+		for _, r := range byCat[cat] {
+			count += len(r.New)
+			for _, e := range r.New {
+				if len(highlights) >= 2 {
+					break
+				}
+				title := e.Title
+				if a, ok := o.Annotations[e.ID]; ok && a.Title != "" {
+					title = a.Title
+				}
+				runes := []rune(title)
+				if len(runes) > 40 {
+					title = string(runes[:40]) + "…"
+				}
+				highlights = append(highlights, title)
+			}
+		}
+		fmt.Fprintf(&overview, `<button class="topic" data-category="%s"><strong>%s →</strong><span>%s</span><small>新着 %d 件</small></button>`, esc(cat), esc(category), esc(strings.Join(highlights, " ／ ")), count)
+		fmt.Fprintf(&parts, `<section class="category" data-category="%s">`, esc(cat))
 		if cat != "" {
 			fmt.Fprintf(&parts, "<h2>%s</h2>\n", esc(cat))
 		}
 		for _, r := range byCat[cat] {
+			parts.WriteString(`<section class="feed-group">`)
 			main, low := Split(r.New, o.Ranking, o.MinScore)
 			shown := capped(main, o.Cap)
 			totalMain += len(shown)
@@ -65,7 +92,7 @@ func RenderHTML(results []Result, o DigestOptions) []byte {
 				fmt.Fprintf(&parts, "<small>…他 %d 件は省略（上限 %d 件/フィード）</small>\n", len(main)-len(shown), o.Cap)
 			}
 			if len(low) > 0 {
-				fmt.Fprintf(&parts, "<details class=\"lowbox\"><summary>関心外と判定 %d 件（展開して確認。ここから「残す」＝採点の見逃しとして記録）</summary>\n<ul>\n", len(low))
+				fmt.Fprintf(&parts, "<details class=\"lowbox\"><summary>ほかの記事 %d 件（おすすめ以外も見る）</summary>\n<ul>\n", len(low))
 				lowShown := capped(low, o.Cap)
 				for _, e := range lowShown {
 					parts.WriteString(itemHTML(e, r, o, true))
@@ -76,7 +103,9 @@ func RenderHTML(results []Result, o DigestOptions) []byte {
 				}
 				parts.WriteString("</details>\n")
 			}
+			parts.WriteString("</section>\n")
 		}
+		parts.WriteString("</section>\n")
 	}
 	items := parts.String()
 	if items == "" {
@@ -127,8 +156,25 @@ func RenderHTML(results []Result, o DigestOptions) []byte {
 	foot = append(foot, fmt.Sprintf("生成: %s / braindex news fetch（%s。%s）", esc(o.Today), determinism, scoring))
 
 	title := fmt.Sprintf("ニュースダイジェスト %s（%s 層・新着 %d 件・主要 %d 件）", o.Today, o.Layer, totalNew, totalMain)
+	reading := Reading{Articles: map[string]*ReadingArticle{}, Receipts: map[string]string{}}
+	if o.Reading != nil {
+		reading = *o.Reading
+	}
+	rb, _ := json.Marshal(reading)
+	library := "false"
+	heading := "今日、気になる話を見つける。"
+	intro := "まず要点をつかんで、読みたい記事を「あとで読む」へ。"
+	if o.Library {
+		library = "true"
+		title = "あとで読む — ニュース"
+		heading = "気になった記事を、続きを読める場所へ。"
+		intro = "保存した記事と解説。分からないところは、同じ記事から続けて相談できます。"
+	}
 	out := strings.NewReplacer(
 		"__TITLE__", esc(title),
+		"__HEADING__", esc(heading), "__INTRO__", esc(intro), "__OVERVIEW__", overview.String(),
+		"__READING_JS__", string(rb), "__LIBRARY_JS__", library, "__LIBRARY_HREF__", esc(o.LibraryHref),
+		"__CSS__", uiCSS, "__JS__", uiJS,
 		"__DATE_JS__", jsString(o.Today),
 		"__LAYER_JS__", jsString(o.Layer),
 		"__ITEMS__", items,
@@ -164,148 +210,70 @@ func itemHTML(e feed.Entry, r Result, o DigestOptions, low bool) string {
 	if low {
 		cls, lowFlag = "item low", "1"
 	}
-	score, badge := "", ""
-	if s, ok := o.Ranking[e.ID]; ok { // 無い＝未採点(バッジを付けない)
+	score, reason := "", ""
+	if s, ok := o.Ranking[e.ID]; ok {
 		score = fmt.Sprint(s.Value)
-		tip := "関心度"
 		if len(s.Matched) > 0 {
-			tip += "（" + strings.Join(s.Matched, "・") + "）"
+			reason = "関心に合った語: " + strings.Join(s.Matched, "・")
+		} else {
+			reason = "関心度: " + score
 		}
-		badge = fmt.Sprintf("<span class=\"r r%d\" title=\"%s\">%d</span>", s.Value, esc(tip), s.Value)
-	}
-	date := ""
-	if e.Published != "" {
-		date = "<small> " + esc(e.Published) + "</small>"
-	}
-	sum := ""
-	if e.Summary != "" {
-		sum = "<div class=\"sum\">" + esc(e.Summary) + "</div>"
-	}
-	// LLM 補助の訳(見出し・概要)。原文の下に添える(原文は残す。訳の誤りを見比べられるように)
-	if a, ok := o.Annotations[e.ID]; ok && a.Title != "" {
-		tr := "訳: " + esc(a.Title)
-		if a.Summary != "" {
-			tr += " — " + esc(a.Summary)
+		if s.Value >= o.MinScore {
+			reason = "おすすめ · " + reason
 		}
-		sum = "<div class=\"sum\">" + tr + "</div>" + sum
 	}
-	// フィード由来のリンクは信用しない。http(s) でなければ表示にも選別 JSON(data-link)にも載せず、
-	// 題名だけを出す(決定 2026-09-03「生成物のリンクは http(s) 以外を落とす」)。
 	link := e.Link
 	if !weblink.Safe(link) {
 		link = ""
 	}
-	title := esc(e.Title)
-	if link != "" {
-		title = "<a href=\"" + esc(link) + "\" target=\"_blank\" rel=\"noopener\">" + title + "</a>"
+	title, summary := e.Title, e.Summary
+	translation := ""
+	if a, ok := o.Annotations[e.ID]; ok {
+		if a.Title != "" {
+			title = a.Title
+			translation = "日本語訳（自動）"
+		}
+		if a.Summary != "" {
+			summary = a.Summary
+			translation = "日本語訳（自動）"
+		}
 	}
-	return fmt.Sprintf("<li class=\"%s\" data-id=\"%s\" data-title=\"%s\" data-link=\"%s\" data-feed=\"%s\" data-cat=\"%s\" data-low=\"%s\" data-r=\"%s\">"+
-		"<span class=\"btns\"><button class=\"bk\">残す</button><button class=\"bd\">不要</button></span>%s"+
-		"<span>%s%s%s</span></li>\n",
-		cls, esc(e.ID), esc(e.Title), esc(link), esc(r.Source.Name), esc(r.Source.Category), lowFlag, score,
-		badge, title, date, sum)
+	if summary == "" {
+		summary = "概要がありません。原文を開くか、解説を相談できます。"
+	}
+	category := r.Source.Category
+	if category == "" {
+		category = "その他"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, `<li class="%s" data-id="%s" data-title="%s" data-link="%s" data-feed="%s" data-cat="%s" data-low="%s" data-r="%s" data-summary="%s">`, cls, esc(e.ID), esc(e.Title), esc(link), esc(r.Source.Name), esc(r.Source.Category), lowFlag, score, esc(summary))
+	fmt.Fprintf(&b, `<div class="meta"><span class="tag">%s</span><span>%s · %s</span></div><h3 class="article-title">%s</h3><p class="sum">%s</p>`, esc(category), esc(r.Source.Name), esc(e.Published), esc(title), esc(summary))
+	if translation != "" {
+		fmt.Fprintf(&b, `<small>%s</small>`, translation)
+	}
+	disabled := ""
+	if link == "" {
+		disabled = ` disabled title="安全な原文リンクが無いため保存・相談できません"`
+	}
+	fmt.Fprintf(&b, `<div class="btns"><button class="bk"%s>＋ あとで読む</button><button class="explain"%s>解説してもらう</button><button class="bd">今回は見送る</button>`, disabled, disabled)
+	if link != "" {
+		fmt.Fprintf(&b, `<a href="%s" target="_blank" rel="noopener">原文を開く ↗</a>`, esc(link))
+	}
+	b.WriteString(`</div><div class="reading-controls" hidden><label>読む状態 <select class="reading-status"><option value="later">あとで読む</option><option value="done">読了</option><option value="hold">保留</option><option value="try">試したい</option></select></label></div><p class="item-status" aria-live="polite"></p>`)
+	fmt.Fprintf(&b, `<details class="original"><summary>元の見出し・概要%s</summary><p>%s</p><p>%s</p><p>%s</p></details></li>`, func() string {
+		if reason != "" {
+			return "・おすすめの理由"
+		}
+		return ""
+	}(), esc(e.Title), esc(e.Summary), esc(reason))
+	return b.String() + "\n"
 }
 
-// htmlTemplate は原型(news_collect.py)の選別 UI を、固有の文言を外して移したもの。
-// 選別 JSON: {type, date, layer, exported_at, keeps: [{id, title, link, feed, category, score, rescued}], feed_stats: {feed: {shown, kept, dropped, hidden, rescued}}}
-const htmlTemplate = `<!doctype html>
-<html lang="ja"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>__TITLE__</title>
-<style>
-:root{color-scheme:light dark;--fg:#1a1a1a;--bg:#fff;--dim:#777;--line:#e4e4e4;--keep:#0a7a33;--keepbg:#e9f7ee;--drop:#a33;--accent:#0b62c4}
-@media(prefers-color-scheme:dark){:root{--fg:#ddd;--bg:#181a1b;--dim:#888;--line:#333;--keepbg:#12301c;--accent:#5aa2e8}}
-body{font-family:"Segoe UI","Hiragino Sans","Noto Sans JP",sans-serif;margin:0;background:var(--bg);color:var(--fg)}
-header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 16px;z-index:9}
-h1{font-size:1.05rem;margin:0 0 6px}
-.bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:.85rem}
-.bar .cnt b{font-weight:600}
-button.export{background:var(--accent);color:#fff;border:0;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:.85rem}
-.help{color:var(--dim);font-size:.75rem}
-main{max-width:960px;margin:0 auto;padding:12px 16px 60px}
-h2{font-size:1rem;border-bottom:1px solid var(--line);padding-bottom:4px;margin:26px 0 8px}
-h3{font-size:.85rem;color:var(--dim);margin:14px 0 4px;font-weight:600}
-ul{list-style:none;margin:0;padding:0}
-li.item{display:flex;gap:8px;align-items:baseline;padding:5px 6px;border-radius:6px;border-left:3px solid transparent}
-li.item.cur{outline:1px solid var(--accent)}
-li.item.keep{background:var(--keepbg);border-left-color:var(--keep)}
-li.item.drop{opacity:.42}
-li.item.drop a{text-decoration:line-through}
-.btns{display:flex;gap:4px;flex:none}
-.btns button{border:1px solid var(--line);background:transparent;color:var(--fg);border-radius:5px;cursor:pointer;font-size:.72rem;padding:1px 7px}
-li.keep .bk,li.drop .bd{background:var(--accent);color:#fff;border-color:var(--accent)}
-a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-small{color:var(--dim)}
-.sum{color:var(--dim);font-size:.8rem;margin:1px 0 0;line-height:1.45}
-.r{flex:none;font-size:.68rem;color:var(--dim);border:1px solid var(--line);border-radius:4px;padding:0 5px}
-.r3{color:var(--keep);border-color:var(--keep)}
-li.item.low{opacity:.75}
-details.lowbox{margin:4px 0 0 6px}
-details.lowbox>summary{cursor:pointer;color:var(--dim);font-size:.8rem;padding:3px 0}
-footer{max-width:960px;margin:0 auto;padding:10px 16px 40px;color:var(--dim);font-size:.8rem;border-top:1px solid var(--line)}
-.prune{color:var(--drop)}
-</style></head><body>
-<header>
-<h1>__TITLE__</h1>
-<div class="bar">
-<span class="cnt">残す <b id="nK">0</b> ／ 不要 <b id="nD">0</b> ／ 未 <b id="nU">0</b></span>
-<button class="export" id="exp">選別を書き出す</button>
-<span class="help">クリック or キー: j/k 移動・f 残す・x 不要・u 取消 ／ 書き出した JSON は braindex news apply（と次回の fetch）が取り込む（同じ日の再書き出しは上書き） ／ 数字バッジ=関心度。「関心外と判定」は折りたたみ、そこから残す＝採点の見逃しとして記録</span>
-</div>
-</header>
-<main>
-__ITEMS__</main>
-<footer>__FOOTER__</footer>
-<script>
-const META={date:__DATE_JS__,layer:__LAYER_JS__};
-const LSKEY="braindex-news-"+META.date+"-"+META.layer;
-let state={};try{state=JSON.parse(localStorage.getItem(LSKEY)||"{}")}catch(e){}
-const items=[...document.querySelectorAll("li.item")];let cur=-1;
-function paint(){let k=0,d=0;items.forEach(li=>{const s=state[li.dataset.id];li.classList.toggle("keep",s==="keep");li.classList.toggle("drop",s==="drop");if(s==="keep")k++;else if(s==="drop")d++});
-document.getElementById("nK").textContent=k;document.getElementById("nD").textContent=d;document.getElementById("nU").textContent=items.length-k-d;
-localStorage.setItem(LSKEY,JSON.stringify(state));}
-function setS(li,v){const id=li.dataset.id;if(v===null)delete state[id];else state[id]=v;paint();}
-items.forEach(li=>{li.querySelector(".bk").onclick=()=>setS(li,state[li.dataset.id]==="keep"?null:"keep");
-li.querySelector(".bd").onclick=()=>setS(li,state[li.dataset.id]==="drop"?null:"drop");});
-function move(d){if(items.length===0)return;if(cur>=0)items[cur].classList.remove("cur");cur=Math.min(items.length-1,Math.max(0,cur+d));const li=items[cur];li.classList.add("cur");const dt=li.closest("details");if(dt)dt.open=true;li.scrollIntoView({block:"center"});}
-document.addEventListener("keydown",e=>{if(e.target.tagName==="INPUT")return;
-if(e.key==="j")move(1);else if(e.key==="k")move(-1);
-else if(cur>=0&&e.key==="f")setS(items[cur],"keep");
-else if(cur>=0&&e.key==="x")setS(items[cur],"drop");
-else if(cur>=0&&e.key==="u")setS(items[cur],null);});
-const exportSel=()=>{
-const keeps=[],stats={};
-items.forEach(li=>{const f=li.dataset.feed,s=state[li.dataset.id],low=li.dataset.low==="1";
-const st=stats[f]=stats[f]||{shown:0,kept:0,dropped:0,hidden:0,rescued:0};
-if(low)st.hidden++;else st.shown++;
-if(s==="keep"){if(low)st.rescued++;else st.kept++;keeps.push({id:li.dataset.id,title:li.dataset.title,link:li.dataset.link,feed:f,category:li.dataset.cat,score:li.dataset.r||"",rescued:low});}
-else if(s==="drop"&&!low)st.dropped++;});
-const payload={type:"braindex-news-selection",date:META.date,layer:META.layer,exported_at:new Date().toISOString(),keeps,feed_stats:stats};
-const ts=new Date().toISOString().replace(/[-:T]/g,"").slice(0,14);
-const name="braindex-news-selection_"+META.date+"_"+META.layer+"_"+ts+".json";
-const body=JSON.stringify(payload,null,1);
-const btn=document.getElementById("exp");
-const done=t=>{btn.textContent=t;};
-// 保存ダイアログ(File System Access API)があれば置き場を自分で選べる。id を付けると Chrome と Edge は
-// 前回選んだディレクトリを覚えるので、初回に hub の news/inbox/ を選べば 2 回目からそこが既定になる。
-// 非対応のブラウザ(Firefox・Safari)と、ダイアログが出せなかったときは従来のダウンロードに落とす。
-const fallback=()=>{const a=document.createElement("a");
-a.href=URL.createObjectURL(new Blob([body],{type:"application/json"}));
-a.download=name;a.click();
-done("書き出し済み ✓（ダウンロード先から braindex news apply で反映）");};
-if(typeof window.showSaveFilePicker==="function"){
-btn.onclick=null;
-(async()=>{try{
-const h=await window.showSaveFilePicker({suggestedName:name,id:"braindex-news-inbox",
-types:[{description:"braindex の選別",accept:{"application/json":[".json"]}}]});
-const w=await h.createWritable();await w.write(body);await w.close();
-done("保存した ✓ "+h.name+"（braindex news apply で反映）");
-}catch(err){
-if(err&&err.name==="AbortError"){done("選別を書き出す");return;} // 人が閉じただけ。何もしない
-fallback();
-}finally{btn.onclick=exportSel;}})();
-}else fallback();};
-document.getElementById("exp").onclick=exportSel;
-paint();
-</script></body></html>
-`
+//go:embed ui.html
+var htmlTemplate string
+
+//go:embed ui.css
+var uiCSS string
+
+//go:embed ui.js
+var uiJS string

@@ -23,17 +23,21 @@ type Selection struct {
 	ExportedAt string               `json:"exported_at"`
 	Keeps      []Keep               `json:"keeps"`
 	FeedStats  map[string]FeedStats `json:"feed_stats"`
+	Reading    []ReadingUpdate      `json:"reading,omitempty"`
+	Library    bool                 `json:"library,omitempty"`
 }
 
 // Keep は「残す」にした記事。
 type Keep struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Link     string `json:"link"`
-	Feed     string `json:"feed"`
-	Category string `json:"category,omitempty"`
-	Score    string `json:"score,omitempty"`   // 関心度(文字列。採点なしは空)
-	Rescued  bool   `json:"rescued,omitempty"` // 「関心外と判定」から残した(採点の見逃し)
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	Link         string `json:"link"`
+	Feed         string `json:"feed"`
+	Category     string `json:"category,omitempty"`
+	Score        string `json:"score,omitempty"`   // 関心度(文字列。採点なしは空)
+	Rescued      bool   `json:"rescued,omitempty"` // 「関心外と判定」から残した(採点の見逃し)
+	Summary      string `json:"summary,omitempty"`
+	DisplayTitle string `json:"display_title,omitempty"` // 表示用の日本語訳。原見出しはTitleに保持する。
 }
 
 // FeedStats はダイジェスト 1 回のフィード別の数。shown/hidden は主要／折りたたみに出した数、
@@ -253,7 +257,12 @@ func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string
 		if dropped > 0 {
 			msgs = append(msgs, fmt.Sprintf("選別 JSON %s: feed_stats の %d 項目を落とした(feeds.json に無い取材先か、負の数)", filepath.Base(p), dropped))
 		}
-		if len(sel.Keeps) > 0 {
+		reading, err := LoadReading(newsDir)
+		if err != nil {
+			return msgs, err
+		}
+		reading.Merge(sel)
+		if len(sel.Keeps) > 0 && !sel.Library {
 			month := date
 			if len(month) >= 7 {
 				month = month[:7]
@@ -264,8 +273,16 @@ func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string
 		}
 		// 統計は 1 つ取り込むごとに書く(移す前に)。1 つも取り込めなかった回は統計を触らないので、
 		// 中身が全部 type 違い・date 違いのときに空の .stats.json だけができることもない
-		st.Digests[date+"_"+layer] = stats
+		if !sel.Library {
+			st.Digests[date+"_"+layer] = stats
+		}
 		if err := st.Save(statsPath); err != nil {
+			return msgs, err
+		}
+		if err := reading.Save(newsDir); err != nil {
+			return msgs, err
+		}
+		if err := WriteReading(newsDir, reading); err != nil {
 			return msgs, err
 		}
 		ingested := filepath.Join(newsDir, IngestedDir)
@@ -275,7 +292,11 @@ func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string
 		if err := moveFile(p, filepath.Join(ingested, filepath.Base(p))); err != nil {
 			return msgs, fmt.Errorf("取り込み済みへ移せない: %w", err)
 		}
-		msgs = append(msgs, fmt.Sprintf("取り込み: %s（残す %d 件）", filepath.Base(p), len(sel.Keeps)))
+		if sel.Library {
+			msgs = append(msgs, fmt.Sprintf("取り込み: %s（読書状態と相談を反映）", filepath.Base(p)))
+		} else {
+			msgs = append(msgs, fmt.Sprintf("取り込み: %s（残す %d 件）", filepath.Base(p), len(sel.Keeps)))
+		}
 	}
 	return msgs, nil
 }

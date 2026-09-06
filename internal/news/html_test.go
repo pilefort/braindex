@@ -26,9 +26,9 @@ func TestRenderHTML(t *testing.T) {
 	for _, s := range []string{
 		"<!doctype html>", "<title>ニュースダイジェスト 2026-08-15（daily 層・新着 4 件・主要 1 件）</title>", // 主要は表示した件数(A の 1 件。D は関心度 0)
 		"<h2>tech</h2>", "<h3>A（新着 3 件・主要 1 件）</h3>",
-		`<li class="item" data-id="1" data-title="ゴルーチン &lt;入門&gt;" data-link="https://x/1?a=1&amp;b=2" data-feed="A" data-cat="tech" data-low="0" data-r="2">`,
-		`<span class="r r2" title="関心度（ゴルーチン）">2</span>`, `<a href="https://x/1?a=1&amp;b=2" target="_blank" rel="noopener">ゴルーチン &lt;入門&gt;</a><small> 2026-08-14</small><div class="sum">概要 &amp; 説明</div>`,
-		"<summary>関心外と判定 2 件", `<li class="item low" data-id="2"`, "…他 1 件は省略</small>",
+		`<li class="item" data-id="1" data-title="ゴルーチン &lt;入門&gt;" data-link="https://x/1?a=1&amp;b=2" data-feed="A" data-cat="tech" data-low="0" data-r="2" data-summary="概要 &amp; 説明">`,
+		`おすすめ · 関心に合った語: ゴルーチン`, `<h3 class="article-title">ゴルーチン &lt;入門&gt;</h3><p class="sum">概要 &amp; 説明</p>`,
+		"<summary>ほかの記事 2 件", `<li class="item low" data-id="2"`, "…他 1 件は省略</small>",
 		"<h3>D（新着 1 件・主要 0 件）</h3>", `data-id="d"`,
 		"新着なし: C", `<b class="prune">取得失敗:</b> B: HTTP 404`, "生成: 2026-08-15 / braindex news fetch", "2 以上を主要表示",
 		`const META={date:"2026-08-15",layer:"daily"};`, `type:"braindex-news-selection"`,
@@ -87,10 +87,10 @@ func TestRenderHTML_リンクのスキームを絞る(t *testing.T) {
 	if !strings.Contains(h, `data-id="1" data-title="危ない" data-link=""`) {
 		t.Error("落としたリンクの data-link が空になっていない")
 	}
-	if !strings.Contains(h, `data-low="0" data-r=""><span class="btns"><button class="bk">残す</button><button class="bd">不要</button></span><span>危ない</span>`) {
+	if !strings.Contains(h, `<h3 class="article-title">危ない</h3>`) {
 		t.Error("題名がそのまま(リンクなしで)出ていない")
 	}
-	if !strings.Contains(h, `<a href="https://x/2" target="_blank" rel="noopener">普通</a>`) {
+	if !strings.Contains(h, `<a href="https://x/2" target="_blank" rel="noopener">原文を開く ↗</a>`) {
 		t.Error("http(s) のリンクまで落としている")
 	}
 }

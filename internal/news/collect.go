@@ -139,6 +139,9 @@ type DigestOptions struct {
 	MinScore    int                  // 主要に入れる最低の関心度(Ranking が nil なら使わない)
 	Totals      map[string]FeedStats // 選別の累積(フィード別)。HTML の脚注に出す。nil なら出さない
 	Annotations Annotations          // LLM 補助の注釈(訳)。nil なら訳を出さない
+	Reading     *Reading             // 記事の相談・回答・取り込み確認。
+	Library     bool                 // 日付をまたぐ保存記事の一覧。
+	LibraryHref string               // 生成先から読書一覧への相対URL（CLIが組む）。
 }
 
 // Digest は新着のダイジェスト(Markdown・LF)を組む。
