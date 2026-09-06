@@ -22,6 +22,11 @@ var (
 	isoRe = regexp.MustCompile(`(\d{4})-(\d{2})-(\d{2})`)
 	jpRe  = regexp.MustCompile(`(\d{4})年(\d{1,2})月(\d{1,2})日`)
 	fn8Re = regexp.MustCompile(`20\d{6}`)
+	// 要旨の候補にしない行(日付だけの行)。「結論を先頭に」の規約では日付行が結論の前に来ることがあり、
+	// そのまま拾うと索引の要旨が全部「記録日: …」になる
+	dateLineRe = regexp.MustCompile(`^(記録日|日付|更新日|作成日|Date)\s*[:：]`)
+	// decisions.md の各決定に付く記録日の行
+	recordDateRe = regexp.MustCompile(`^記録日\s*[:：]`)
 )
 
 // Extract は name(ファイル名)・content(本文)・kind から Meta を作る。
@@ -32,11 +37,62 @@ func Extract(name string, content []byte, kind string) Meta {
 		Date:  extractDate(name, lines),
 	}
 	if kind == "decisions" {
-		m.Summary = summarizeDecisions(lines)
+		// decisions.md は 1 ファイルに決定が積み上がる追記式なので、他のノートと索引の作り方を変える。
+		// 日付はファイル名や先頭 10 行でなく「一番新しい記録日」(最後に何か決めた日)、
+		// タイトルには件数、要旨は末尾の 1 件(最後に決まったこと)。
+		h2 := headings2(lines)
+		m.Title = fmt.Sprintf("%s（%d 件）", m.Title, len(h2))
+		if d := latestRecordDate(lines); d != "" {
+			m.Date = d
+		}
+		if len(h2) > 0 {
+			m.Summary = truncateRunes(h2[len(h2)-1], summaryRunes)
+		}
 	} else {
 		m.Summary = summarize(lines, firstH1Index(lines))
 	}
 	return m
+}
+
+// headings2 は H2 見出しを出現順に返す(コードフェンスの中は数えない)。
+func headings2(lines []string) []string {
+	var out []string
+	inFence := false
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+		if strings.HasPrefix(t, "## ") {
+			out = append(out, strings.TrimSpace(t[3:]))
+		}
+	}
+	return out
+}
+
+// latestRecordDate は「記録日:」で始まる行に書かれた日付のうち最も新しいものを返す。無ければ ""。
+// decisions.md は追記式で、ファイルの日付は「最後に何か決めた日」が知りたい情報なので、
+// 先頭 10 行だけでなく全文を見る。
+func latestRecordDate(lines []string) string {
+	best := ""
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		if !recordDateRe.MatchString(t) {
+			continue
+		}
+		d := isoDate(t)
+		if d == "" {
+			d = jpDate(t)
+		}
+		if d > best { // "YYYY-MM-DD" は文字列の大小がそのまま日付の大小
+			best = d
+		}
+	}
+	return best
 }
 
 // splitLines は BOM を除去し CRLF/CR を LF に正規化して行に分割する。
@@ -160,7 +216,7 @@ func summarize(lines []string, titleIdx int) string {
 			}
 			continue
 		}
-		if strings.HasPrefix(t, "|") {
+		if strings.HasPrefix(t, "|") || dateLineRe.MatchString(t) {
 			continue
 		}
 		return truncateRunes(t, summaryRunes)
@@ -169,22 +225,6 @@ func summarize(lines []string, titleIdx int) string {
 		return truncateRunes(strings.Join(h2, " / "), summaryRunes)
 	}
 	return ""
-}
-
-// summarizeDecisions は decisions.md 用。末尾側の H2 見出し 3 件を連結する
-// (追記式なので末尾が最新の決定)。
-func summarizeDecisions(lines []string) string {
-	var h2 []string
-	for _, l := range lines {
-		t := strings.TrimSpace(l)
-		if strings.HasPrefix(t, "## ") {
-			h2 = append(h2, strings.TrimSpace(t[3:]))
-		}
-	}
-	if len(h2) > 3 {
-		h2 = h2[len(h2)-3:]
-	}
-	return truncateRunes(strings.Join(h2, " / "), summaryRunes)
 }
 
 // truncateRunes は rune 単位で n 文字に切り、切ったら … を付ける。

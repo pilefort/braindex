@@ -67,13 +67,47 @@ func TestExtract_Summary(t *testing.T) {
 		{"コードフェンスをスキップ", "# T\n\n```\ncode line\n```\n要旨はここ\n", "", "要旨はここ"},
 		{"80rune切り", "# T\n\n" + long + "\n", "", wantLong},
 		{"見出しと表だけ→H2連結", "# T\n\n## 見出しA\n| x |\n|---|\n\n## 見出しB\n", "", "見出しA / 見出しB"},
-		{"decisions末尾3件", "# 設計判断\n\n## D1\n## D2\n## D3\n## D4\n", "decisions", "D2 / D3 / D4"},
-		{"decisions3件未満", "# 決定\n\n## A\n## B\n", "decisions", "A / B"},
+		{"日付行は要旨にしない", "# T\n\n記録日: 2026-09-06\n結論: ここが要旨。\n", "", "結論: ここが要旨。"},
+		{"日付行しか無ければ空", "# T\n\n更新日: 2026-09-06\n", "", ""},
+		{"decisionsは末尾の1件", "# 設計判断\n\n## D1\n## D2\n## D3\n## D4\n", "decisions", "D4"},
+		{"decisions1件", "# 決定\n\n## A\n", "decisions", "A"},
+		{"decisionsは決定が無ければ空", "# 決定\n\n本文だけ\n", "decisions", ""},
 	}
 	for _, c := range cases {
 		got := Extract("f.md", []byte(c.content), c.kind).Summary
 		if got != c.want {
 			t.Errorf("Summary[%s]: want=%q got=%q", c.desc, c.want, got)
 		}
+	}
+}
+
+// decisions.md は追記式なので、他のノートと索引の作り方を変える(設計レビュー 2026-09-06 M4)。
+// 日付は「一番新しい記録日」(最後に何か決めた日)・タイトルに件数・要旨は末尾の 1 件。
+func TestExtract_Decisions(t *testing.T) {
+	content := "# 設計判断\n\n## 古い決定\n記録日: 2026-07-01\n理由: …\n\n" +
+		"## 新しい決定\n記録日: 2026-09-06\n理由: …\n\n" +
+		"## 後から書き足した古い決定\n記録日: 2026-08-01\n理由: …\n"
+	m := Extract("decisions.md", []byte(content), "decisions")
+	if m.Title != "設計判断（3 件）" {
+		t.Errorf("Title: %q", m.Title)
+	}
+	// 末尾の記録日(2026-08-01)ではなく最大(2026-09-06)。先頭 10 行にも無い
+	if m.Date != "2026-09-06" {
+		t.Errorf("Date: %q", m.Date)
+	}
+	if m.Summary != "後から書き足した古い決定" {
+		t.Errorf("Summary: %q", m.Summary)
+	}
+
+	// 記録日が無ければ従来の日付規則(ファイル名 → 先頭 10 行)に落ちる
+	m = Extract("20260704_decisions.md", []byte("# 決定\n\n## A\n## B\n"), "decisions")
+	if m.Date != "2026-07-04" || m.Title != "決定（2 件）" || m.Summary != "B" {
+		t.Errorf("記録日なし: %+v", m)
+	}
+
+	// コードフェンスの中の ## は決定として数えない
+	m = Extract("decisions.md", []byte("# 決定\n\n## A\n\n```\n## これは見出しではない\n```\n"), "decisions")
+	if m.Title != "決定（1 件）" || m.Summary != "A" {
+		t.Errorf("フェンス内: %+v", m)
 	}
 }

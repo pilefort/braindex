@@ -30,7 +30,7 @@ parent/                            ← braindex.json の root（既定 ".."＝hu
 │   └── work/review/               週次レビューの下書き（-add review）
 ├── alpha/                         ← 各プロジェクトのリポ。知識の正本はこちら
 │   ├── docs/notes/**/*.md         索引に載る
-│   ├── docs/decisions.md          索引に載る（末尾の H2 見出し 3 件）
+│   ├── docs/decisions.md          索引に載る（最新の記録日・件数つきタイトル・末尾の決定 1 件）
 │   └── work/ISSUE-*.md            braindex lint が検査する（索引には載せない）
 └── beta/
 ```
