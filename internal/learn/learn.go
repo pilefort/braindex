@@ -161,6 +161,30 @@ func Build(in Input) Report {
 			prefixSessions[k][s.ID] = true
 		}
 	}
+	// 1 パス目: 窓の中の訂正発話が当てた語を全部 exclude に集める。
+	// 数えながら足すと、後のセッションで足された語が前のセッションでは効かず、
+	// セッションの並び順で出力が変わる(設計レビュー 2026-09-06 M3c)。
+	for _, s := range in.Sessions {
+		for _, t := range s.HumanTurns() {
+			if !in.Window.Contains(t.Time) {
+				continue
+			}
+			ms := retro.Classify(t.Text, dicts...)
+			if len(ms) == 0 {
+				continue
+			}
+			if k, ok := prefix(t.Text); ok && len(prefixSessions[k]) >= o.BoilerplateSessions {
+				continue // 定型は数えないので、除外語も取らない
+			}
+			for _, m := range ms {
+				for _, w := range interest.Words(m.Text) {
+					exclude[w] = true
+				}
+			}
+		}
+	}
+
+	// 2 パス目: 数える。exclude はもう動かない
 	words := map[string]*acc{}
 	total, boiler := 0, 0
 	for _, s := range in.Sessions {
@@ -174,11 +198,6 @@ func Build(in Input) Report {
 				continue
 			}
 			total++
-			for _, m := range retro.Classify(t.Text, dicts...) {
-				for _, w := range interest.Words(m.Text) {
-					exclude[w] = true
-				}
-			}
 			seen := map[string]bool{}
 			ctx := t.Text
 			if i > 0 {

@@ -222,3 +222,34 @@ func TestReview_BadArgs(t *testing.T) {
 		t.Errorf("カレントディレクトリに work/ が作られた")
 	}
 }
+
+// 前回の索引が読めなくても下書きは出す。増減の代わりに理由を 1 行書き、終了コード 2
+// (設計レビュー 2026-09-06 M3c)。読めない理由は前回の版が違う・手で壊した等で、
+// 増減が出せないだけで差分ファイル・放置 TODO・アーカイブ候補は作れる。
+func TestReview_前回の索引が読めなくても続ける(t *testing.T) {
+	_, hub := hubWithRepo(t)
+	cfg := filepath.Join(hub, "braindex.json")
+	// ディスクの索引を「表の列が足りない古い形」にする(git 管理外なのでここが前回の索引になる)
+	writeFile(t, filepath.Join(hub, "index", "catalog.md"),
+		"# 知識カタログ\n\n## repo-a\n| 日付 | 種別 | タイトル |\n|---|---|---|\n| 2026-01-02 | notes | A |\n")
+
+	var so, se bytes.Buffer
+	code := dispatch([]string{"review", "-config", cfg, "-date", "2026-09-02"}, &so, &se)
+	if code != 2 {
+		t.Fatalf("exit=%d want 2\nstderr=%s", code, se.String())
+	}
+	mustContain(t, "stderr", se.String(), "前回の索引を読めなかった")
+	got := readFile(t, filepath.Join(hub, "work", "review", "2026-09-02.md"))
+	mustContain(t, "下書き", got,
+		"## 索引（件数と増減）\n",
+		"前回の索引を読めなかった（",
+		"増減は出さない。",
+		// 増減が出なくても他の機械節は埋まる
+		"## 差分ファイル（リポ別）\n",
+		"## 放置 TODO\n",
+		"## アーカイブ候補（機械条件のみ）\n",
+	)
+	if strings.Contains(got, "前回 0 件 → 今回") {
+		t.Errorf("読めなかったのに 0 件として増減を出している:\n%s", got)
+	}
+}
