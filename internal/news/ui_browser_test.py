@@ -123,6 +123,26 @@ with sync_playwright() as p:
     page.locator("#question").fill("もう少し身近な例で")
     page.locator("#prepareQuestion").click()
     assert "プログラムが作業中" in page.locator("#requestText").input_value()
+    # 概要の画面: 記事ごとに仕分け、詳しく知りたい分だけの相談文を作る。仕分けは開き直しても残る。
+    page.goto((root / "overview.html").as_uri(), wait_until="domcontentloaded")
+    expect(page.locator(".art")).to_have_count(2)
+    expect(page.locator("#ask")).to_be_disabled()
+    expect(page.locator("#progress")).to_contain_text("2 件中 0 件を仕分け済み")
+    page.locator('.art[data-id="abc123"] input[value="deep"]').check()
+    page.locator('.art[data-id="def456"] input[value="none"]').check()
+    expect(page.locator("#n")).to_have_text("1")
+    expect(page.locator("#progress")).to_contain_text("2 件中 2 件を仕分け済み")
+    page.locator("#ask").click()
+    req = page.locator("#req").input_value()
+    assert "news reading -id abc123 -ask detail" in req, req
+    assert "def456" not in req, req
+    assert "1 件ずつ詳しく解説してください" in req, req
+    page.locator("#close").click()
+    page.reload()
+    expect(page.locator("#n")).to_have_text("1")
+    expect(page.locator('.art[data-id="abc123"] input[value="deep"]')).to_be_checked()
+    print("overview checks passed", flush=True)
+
     # ストレージの破損・利用不可でも読書とファイルへの退避は続けられる。
     page.close()
     page = context.new_page()

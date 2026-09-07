@@ -52,6 +52,7 @@ func runNews(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "  apply    HTML で書き出した選別 JSON を取り込む(keep に追記・統計を更新)")
 		fmt.Fprintln(stderr, "  suggest  関心プロファイルに当たる取材先(RSS)を同梱の目録から候補として出す")
 		fmt.Fprintln(stderr, "  reading  保存記事と相談・解説を読む。会話で作成した回答を記事へ登録する")
+		fmt.Fprintln(stderr, "  overview 会話で書いた概要の Markdown を、記事ごとに仕分けできる HTML にして開く")
 		fmt.Fprintln(stderr, "フラグは braindex news <サブコマンド> -h")
 	}
 	if len(args) == 0 {
@@ -69,6 +70,8 @@ func runNews(args []string, stdout, stderr io.Writer) int {
 		return runNewsSuggest(args[1:], stdout, stderr)
 	case "reading":
 		return runNewsReading(args[1:], stdout, stderr)
+	case "overview":
+		return runNewsOverview(args[1:], stdout, stderr)
 	case "-h", "-help", "--help":
 		usage()
 		return 0
