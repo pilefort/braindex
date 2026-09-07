@@ -206,6 +206,27 @@ func (r *Reading) Merge(s Selection) {
 	}
 }
 
+// Ask は記事に新しい相談を足し、その ID を返す。概要の画面から詳しい解説を頼むときに使う
+// (選別 HTML を経由しないので、相談を作る口がここに要る)。
+func (r Reading) Ask(id, mode string) (string, error) {
+	a := r.Articles[id]
+	if a == nil {
+		return "", fmt.Errorf("記事 %q が無い（選別を先に取り込む）", id)
+	}
+	if !validQuestionMode(mode) {
+		return "", fmt.Errorf("相談の種類が違う: %q（overview / stuck / relate / try / detail）", mode)
+	}
+	now := time.Now()
+	qid := fmt.Sprintf("q%x", now.UnixNano())
+	for _, q := range a.Questions {
+		if q.ID == qid { // 同じナノ秒に 2 回作った場合の保険
+			qid += "x"
+		}
+	}
+	a.Questions = append(a.Questions, Question{ID: qid, Mode: mode, Created: now.Format(time.RFC3339Nano)})
+	return qid, nil
+}
+
 func (r Reading) Answer(id, qid, answer string) error {
 	if strings.TrimSpace(answer) == "" {
 		return errors.New("回答が空")
