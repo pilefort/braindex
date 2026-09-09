@@ -87,8 +87,9 @@ func RenderOverview(id, title, intro string, arts []OverviewArticle) []byte {
 	fmt.Fprintf(&b, "<title>%s</title>\n<style>%s</style>\n</head>\n<body>\n", esc(title), overviewCSS)
 	b.WriteString(`<main class="doc">`)
 	fmt.Fprintf(&b, "<h1>%s</h1>\n", esc(title))
-	if intro != "" {
-		fmt.Fprintf(&b, `<div class="intro">%s</div>`+"\n", mdhtml.Linkify(mdhtml.Body(intro)))
+	// 前書きの先頭が `# 見出し` なら落とす。題名は上の h1 に出ているので、そのまま描くと 2 回並ぶ。
+	if _, body := mdhtml.SplitH1(intro); body != "" {
+		fmt.Fprintf(&b, `<div class="intro">%s</div>`+"\n", mdhtml.Linkify(mdhtml.Body(body)))
 	}
 	b.WriteString(`<ol class="arts">` + "\n")
 	for _, a := range arts {

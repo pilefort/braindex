@@ -75,3 +75,15 @@ func TestRenderOverview(t *testing.T) {
 		t.Error("外部を読み込んでいる")
 	}
 }
+
+// 前書きの先頭の見出しは落とす。題名は画面の見出しに出るので、そのまま描くと同じ題名が 2 回並ぶ。
+func TestRenderOverviewDropsIntroHeading(t *testing.T) {
+	intro, arts := ParseOverview(overviewMD)
+	got := string(RenderOverview("k1", "ニュース概要 2026-09-07", intro, arts))
+	if n := strings.Count(got, "<h1>"); n != 1 {
+		t.Fatalf("h1 が %d 個ある(題名の重複)", n)
+	}
+	if !strings.Contains(got, "選んだ 2 件の概要です。") {
+		t.Fatal("前書きの本文が消えている")
+	}
+}
