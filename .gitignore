@@ -10,3 +10,7 @@ __pycache__/
 
 # Claude Code のマシン固有設定(push 許可など)。共有しない
 /.claude/settings.local.json
+
+# 設計文書と作業状態は別の private リポで管理する(2026-09-04 決定)
+/docs/
+/work/
