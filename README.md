@@ -15,6 +15,43 @@
 
 コマンドごとの詳しい説明は [`manual/`](manual/README.md) にある。
 
+## 画面
+
+索引・検索・診断は端末の中で終わるが、**人が読む・選ぶ・決める**ところは HTML を書き出して既定のブラウザで開く。
+どれも 1 枚で完結した HTML をローカルに置くだけで、常駐するサーバも外部への送信も無い。
+以下は架空のサンプルから作った実物で、`BRAINDEX_SCREENSHOT=1 go test ./internal/screenshots` で作り直せる。
+
+**判断待ちを聞く（`braindex approvals serve`）** — `work/APPROVALS.md` の 5 欄がそのまま質問になる。選んで送ると
+`docs/decisions.md` に理由ごと記録され、承認待ちから消える。
+
+![承認フォーム。決めたいこと・なぜ今決めるか・決めないとどうなるかの 3 欄と、A/B/その他/保留のラジオボタンが並ぶ](assets/screenshots/approvals-form.png)
+
+**ニュースを選ぶ（`braindex news`）** — 関心で採点した新着を、あとで読む／今回は見送る／解説してもらう、で仕分ける。
+選んだ結果はブラウザの中に残り、書き出して次の収集で取り込む。
+
+![ニュースの選別画面。分類ごとに記事カードが並び、右側に保存と取り込みの手順が出ている](assets/screenshots/news-digest.png)
+
+**回答を読む（`braindex answer -append`）** — 同じ話題への回答が上に積まれ、開いたままのタブに続きが出る。
+
+![回答のスレッド。新しい質問と回答が上に積まれ、表やコードを含む本文が読める](assets/screenshots/answer-thread.png)
+
+<details>
+<summary>ほかの画面（概要の仕分け・保存した記事・1 枚ものの回答）</summary>
+
+**概要を読んで仕分ける（`braindex news overview`）** — まず概要だけ読み、詳しく知りたい分をまとめて頼む。
+
+![ニュース概要の画面。記事ごとに概要と、詳しく知りたい／概要で足りた／興味なしの選択肢が出ている](assets/screenshots/news-overview.png)
+
+**保存した記事と相談（`braindex news reading`）** — 日付をまたいで残る一覧。読む状態を変え、分からないところを続けて相談できる。
+
+![保存した記事の一覧。記事ごとに読む状態の選択と、相談・回答の有無が出ている](assets/screenshots/news-reading.png)
+
+**1 枚ものの回答（`braindex answer`）** — Markdown 1 ファイルを自己完結の HTML にする。
+
+![1 枚ものの回答 HTML。見出し・表・コードブロック・引用が整形されている](assets/screenshots/answer.png)
+
+</details>
+
 ## 構成
 
 `root`（既定は hub の親ディレクトリ）の直下にリポジトリを並べ、そのうち 1 つを hub にする
