@@ -2,3 +2,6 @@
 # git の自動 CRLF 変換が入ると「生成結果」と「checkout 結果」がズレて毎回 diff になり、
 # 「git diff = 前回からの差分」という決定性の設計が壊れる。それを防ぐ。
 * text=auto eol=lf
+
+# 画像はバイナリ。改行変換の対象にしない(README のスクリーンショット)
+*.png binary
