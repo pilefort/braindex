@@ -11,12 +11,34 @@
 braindex approvals serve -apply   # フォームを開いて回答を待ち、そのまま反映する
 braindex approvals status         # 件数・記載漏れ・未反映の回答（書き込みなし）
 braindex approvals apply          # 受けた回答を反映する（聞くのと分けたいとき）
+braindex approvals hook           # 停止フックから呼ぶ。残っていれば serve を切り離して起動する
 ```
 
 選んだ項目は `docs/decisions.md` に 3 段（結論 → 理由 → 根拠）で追記して `APPROVALS.md` から消し、保留は項目を残して
 「**保留（日付）:**」を付ける。反映した回答 JSON は `.applied.json` に改名するので、2 回反映されない。
 フラグ: `-file`（判断待ちのファイル）`-dir`（回答 JSON の置き場。既定は OS の一時ディレクトリの `braindex-approvals`）
 `-config`（設定ファイル。既定はカレントの `braindex.json`。無くてもよい）`-timeout 秒`（0 で無期限）`-no-open` `-apply` `-decisions` `-date` `-reply`。
+
+### 開き忘れを拾う（`hook`）
+
+積んだのにフォームを開かず、文章で「判断待ちが残っています」と書くだけで終わってしまうことがある。
+`hook` はそれを機械で拾う。エディタの**停止フック**（アシスタントの発話が終わるたびに走る仕掛け）から呼ぶと、
+判断待ちが残っているときだけ `approvals serve -apply` を切り離して起動する。
+
+```json
+{ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "braindex approvals hook" } ] } ] } }
+```
+
+- stdin の JSON から `cwd`（判断待ちを探す場所）と `stop_hook_active`（既に指示で続きを書いている印）を読む。
+  渡されなければカレントで代用する。`-file` を明示すればそちらが勝つ
+- **同じ内容では一度しか開かない。** 開いた印は回答 JSON と同じ一時置き場に `hook-<id>.json` として置く。
+  回答が入れば `APPROVALS.md` が変わるので、次の判断待ちではまた開く
+- 起動したら stdout に `{"systemMessage":…,"decision":"block","reason":…}` を返し、アシスタントに
+  「何を判断してほしいかを利用者に伝える」よう促す。`stop_hook_active` が真のときは促さない（往復が終わらなくなる）
+- **終了コードは常に 0。** 判断待ちが無い・ファイルが無い・起動できない、のいずれでも会話を止めない
+- フラグ: `-timeout 秒`（起動するフォームが待つ秒数。既定 3600。放置されたフォームを畳んでプロセスを残さない）
+  `-reason`（促し文の上書き。利用側の規約に合わせたいとき）`-no-open`（ブラウザを開かない。動作確認・画面の無い環境）
+  ／`-file` `-dir` `-config` は他のサブコマンドと同じ
 
 設定（`braindex.json` の `approvals` 節。節ごと省略してよく、設定ファイルが無くても動く）:
 
