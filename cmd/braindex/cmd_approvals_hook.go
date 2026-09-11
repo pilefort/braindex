@@ -140,10 +140,12 @@ func runApprovalsHook(args []string, stdout, stderr io.Writer) int {
 // コマンド名は hook 自身が呼ばれた名前(os.Args[0])を使う。停止フックに絶対パスで登録している
 // 環境では、アシスタントのシェルでも `braindex` だけでは見つからないことがあるため。
 // 置き場は -file(と既定以外の -dir)で明示し、アシスタントのカレントに依らず同じ回答を待たせる。
+// パスはすべて / 区切りにする。Git Bash では引用符の外の \ が消えてコマンド名が見つからなくなるため
+// (Go は Windows でも / 区切りのパスを受け付ける)。
 func approvalsWaitCommand(p approvals.Paths) string {
-	cmd := quoteIfSpace(os.Args[0]) + ` approvals wait -file "` + p.Approvals + `"`
+	cmd := quoteIfSpace(filepath.ToSlash(os.Args[0])) + ` approvals wait -file "` + filepath.ToSlash(p.Approvals) + `"`
 	if dir := filepath.Dir(p.Reply); dir != approvals.DefaultDir() {
-		cmd += ` -dir "` + dir + `"`
+		cmd += ` -dir "` + filepath.ToSlash(dir) + `"`
 	}
 	return "`" + cmd + "`"
 }
