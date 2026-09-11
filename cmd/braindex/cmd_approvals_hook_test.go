@@ -106,7 +106,16 @@ func TestApprovalsHook_OpensFormAndAsksToTell(t *testing.T) {
 	}
 	mustContain(t, "reason", out.Reason, "1 件", "リンクを置くだけで終えない")
 	// 回答が届いたらアシスタントが続きに戻れるよう、待つコマンドを置き場ごと渡す
-	mustContain(t, "reason", out.Reason, "approvals wait -file \""+h.file+"\"", "-dir \""+h.dir+"\"", "バックグラウンド")
+	mustContain(t, "reason", out.Reason, "approvals wait -file \""+filepath.ToSlash(h.file)+"\"", "-dir \""+filepath.ToSlash(h.dir)+"\"", "バックグラウンド")
+	// Git Bash では引用符の外の \ が消え、コマンド名が見つからなくなる。パスは / 区切りで渡す
+	// (Go は Windows でも / 区切りを受け付ける)。
+	start, end := strings.Index(out.Reason, "`"), strings.LastIndex(out.Reason, "`")
+	if start < 0 || end <= start {
+		t.Fatalf("コマンド行が ` で囲まれていない: %s", out.Reason)
+	}
+	if cmd := out.Reason[start+1 : end]; strings.Contains(cmd, `\`) {
+		t.Errorf("コマンド行に \\ が残っている: %s", cmd)
+	}
 }
 
 func TestApprovalsHook_SameContentOpensOnce(t *testing.T) {
