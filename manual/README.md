@@ -42,11 +42,11 @@
 | 読めないものを飛ばした | 索引の生成（読めないファイル・ディレクトリ。本文の変更の記録を読めない・書けない）・`review`・`retro`（読めないログ）・`news fetch`（フィード・選別 JSON・統計）・`news profile`／`learn`（索引やセッションの置き場が無い・本文の変更の記録を読めない） |
 | 確認できなかった範囲がある | `search`（読めなかった範囲は結果に列挙）・`learn`（本文照合が確認不能。本文照合を飛ばした・回答ファイルを読めないときも） |
 | 読めなかった範囲・警告・索引の欠落や不一致がある。設定の値の誤りで走査できない | `diagnose` |
-| 指摘・不一致があった | `lint`（指摘あり）・`verify`（NOT FOUND あり）・`approvals status`（記載漏れ・未反映の回答）・`approvals apply`（反映できなかった項目） |
+| 指摘・不一致があった | `lint`（指摘あり）・`verify`（NOT FOUND あり）・`approvals status`（記載漏れ・未反映の回答）・`approvals apply`（反映できなかった項目）・`approvals wait`（届いた回答が未反映のまま） |
 | 利用者の編集を残して `.new` を置いた | `update` |
 | 突き合わせる相手がいない | `scope`（対象が 2 件未満） |
 | 前回の判断の節が空のまま | `review` |
 | 残留したロックを外した・別の日の未完了が残っている | `news fetch`・`news apply` |
 
-3 を使うのは 2 つだけ: `retro check`（閾値超え）と `approvals serve`（時間切れ）。
+3 を使うのは 3 つだけ: `retro check`（閾値超え）と、`approvals serve`・`approvals wait`（時間切れ）。
 フラグの要約は `braindex -h`、各コマンドは `braindex <コマンド> -h`。

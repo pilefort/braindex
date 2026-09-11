@@ -16,7 +16,7 @@ import (
 )
 
 // runApprovalsApply は braindex approvals apply を実行する。
-// 一時置き場の回答(-reply で差し替え可)を APPROVALS.md と docs/decisions.md に反映し、回答を .applied.json に改名する。
+// 一時置き場の回答(-reply で差し替え可)を APPROVALS.md と docs/decisions.md に反映し、結果を書き足して回答を .applied.json に移す。
 // 回答が無ければ何もせず 0 で終わる(セッション開始時に毎回呼べる)。
 // 終了コード: 0 反映した・回答なし / 1 失敗(何も書かない) / 2 反映したが未反映の項目がある。
 func runApprovalsApply(args []string, stdout, stderr io.Writer) int {
@@ -31,7 +31,7 @@ func runApprovalsApply(args []string, stdout, stderr io.Writer) int {
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方: braindex approvals apply [-config braindex.json] [-file work/APPROVALS.md] [-reply <json>] [-decisions docs/decisions.md] [-date YYYY-MM-DD] [-dir <置き場>]")
 		fmt.Fprintln(stderr, "  serve が受けた回答を反映する。選んだ項目は docs/decisions.md に 3 段(結論 → 理由 → 根拠)で追記して APPROVALS.md から消し、")
-		fmt.Fprintln(stderr, "  保留は項目を残して「**保留（日付）:**」を付ける。反映した回答は .applied.json に改名する(2 回反映しない)。")
+		fmt.Fprintln(stderr, "  保留は項目を残して「**保留（日付）:**」を付ける。反映した回答は結果(件数・警告)を書き足して .applied.json に移す(2 回反映しない)。")
 		fmt.Fprintln(stderr, "  回答が無ければ何もしない(終了コード 0)。終了コード: 0 反映した・回答なし / 1 失敗 / 2 未反映の項目がある")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
@@ -65,7 +65,7 @@ func runApprovalsApply(args []string, stdout, stderr io.Writer) int {
 }
 
 // applyReply は回答 JSON を読んで APPROVALS.md と decisions.md に反映し、結果を stdout に書く。
-// replyPath が空なら置き場の既定(p.Reply)を使い、反映後に .applied.json へ改名する(手で指定した JSON は動かさない)。
+// replyPath が空なら置き場の既定(p.Reply)を使い、反映後に結果を書き足して .applied.json へ移す(手で指定した JSON は動かさない)。
 // serve -apply からも呼ぶ。終了コード: 0 反映した・回答なし / 1 失敗 / 2 反映したが未反映の項目がある。
 //
 // 未反映(回答の項目が見つからない・選択が選択肢に無い)は stderr に出して 2 を返す。stdout の要約に混ぜて 0 で終わると、
@@ -75,7 +75,7 @@ func applyReply(p approvals.Paths, replyPath, decisionsPath, today string, stdou
 		fmt.Fprintln(stderr, "braindex approvals apply:", err)
 		return 1
 	}
-	rename := replyPath == ""
+	move := replyPath == ""
 	if replyPath == "" {
 		replyPath = p.Reply
 	}
@@ -117,17 +117,19 @@ func applyReply(p approvals.Paths, replyPath, decisionsPath, today string, stdou
 	if err := os.WriteFile(p.Approvals, res.Approvals, 0o644); err != nil {
 		return fail(err)
 	}
-	if rename {
-		if err := os.Rename(p.Reply, p.Applied); err != nil {
-			fmt.Fprintf(stderr, "note: 回答を .applied.json に改名できない(%v)。次回 serve の前に消す\n", err)
+	var warnings []string
+	for _, line := range res.Summary {
+		if strings.HasPrefix(line, "警告:") {
+			warnings = append(warnings, line)
 		}
 	}
+	if move {
+		moveToApplied(p, rep, approvals.AppliedResult{Decided: res.Decided, Held: res.Held, Warnings: warnings}, stderr)
+	}
 	fmt.Fprintf(stdout, "反映: 決定 %d 件 → %s ／ 保留 %d 件 ／ %s を更新\n", res.Decided, decisionsPath, res.Held, p.Approvals)
-	warned := 0
 	for _, line := range res.Summary {
 		if strings.HasPrefix(line, "警告:") {
 			fmt.Fprintln(stderr, line)
-			warned++
 			continue
 		}
 		fmt.Fprintln(stdout, line)
@@ -135,9 +137,27 @@ func applyReply(p approvals.Paths, replyPath, decisionsPath, today string, stdou
 	if res.Decided > 0 {
 		fmt.Fprintln(stdout, "next: decisions.md の見出しを結論文に整え、決定に沿って止まっていた作業を再開する")
 	}
-	if warned > 0 {
-		fmt.Fprintf(stderr, "braindex approvals apply: 警告 %d 件(未反映の項目がある・終了コード 2)\n", warned)
+	if len(warnings) > 0 {
+		fmt.Fprintf(stderr, "braindex approvals apply: 警告 %d 件(未反映の項目がある・終了コード 2)\n", len(warnings))
 		return 2
 	}
 	return 0
+}
+
+// moveToApplied は回答に反映の結果を書き足して .applied.json に移す。
+//
+// apply は未反映の項目があっても回答を移す(同じ回答を 2 回反映しないため)。だから「移ったか」では
+// 反映できたか分からない。approvals wait はここで書き足した結果を読んで、未反映を 0 と誤報しない。
+// 書き足せないときは、従来どおり改名だけする(2 回反映しないことを優先する)。
+func moveToApplied(p approvals.Paths, rep approvals.Reply, result approvals.AppliedResult, stderr io.Writer) {
+	rep.Result = &result
+	if err := approvals.WriteReply(p.Applied, rep); err != nil {
+		if rerr := os.Rename(p.Reply, p.Applied); rerr != nil {
+			fmt.Fprintf(stderr, "note: 回答を .applied.json に移せない(%v)。次回 serve の前に消す\n", rerr)
+		}
+		return
+	}
+	if err := os.Remove(p.Reply); err != nil {
+		fmt.Fprintf(stderr, "note: 反映済みの回答を消せない(%v)。次回 serve の前に消す: %s\n", err, p.Reply)
+	}
 }

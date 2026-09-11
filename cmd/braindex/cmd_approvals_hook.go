@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pilefort/braindex/internal/approvals"
@@ -22,9 +23,14 @@ import (
 const approvalsHookDefaultTimeout = 3600
 
 // approvalsHookReason は フォームを開いたときにアシスタントへ返す指示。
-// -reason で上書きできる(利用側の規約に合わせた文面にしたいとき)。
+// -reason で上書きできる(利用側の規約に合わせた文面にしたいとき。上書きした文には wait の起動も含める)。
+//
+// フォームは切り離して起動するので、回答が届いてもアシスタントには伝わらない。
+// 回答で続きに戻れるよう、待つコマンド(approvals wait)をアシスタントに起動させる。
 const approvalsHookReason = "判断待ちのフォームを既定ブラウザで開きました(%d 件)。" +
-	"何を判断してほしいか・どう回答するかを利用者に伝えてください。リンクを置くだけで終えないこと。"
+	"何を判断してほしいか・どう回答するかを利用者に伝えてください。リンクを置くだけで終えないこと。" +
+	"回答が届いたら続きに戻れるよう、発話を終える前に %s をバックグラウンドで起動してください" +
+	"(回答が届くと要約を出して終わります)。"
 
 // approvalsHookStdin と approvalsHookSpawn はテストで差し替える。
 var (
@@ -51,10 +57,12 @@ type hookOutput struct {
 }
 
 // hookState は「この内容の判断待ちはもうフォームにした」という印。
+// Reported は approvals wait が最後に知らせた回答の受信時刻(同じ回答を 2 回知らせないため)。
 type hookState struct {
-	SHA    string `json:"sha"`
-	PID    int    `json:"pid"`
-	Opened string `json:"opened"`
+	SHA      string `json:"sha"`
+	PID      int    `json:"pid"`
+	Opened   string `json:"opened"`
+	Reported string `json:"reported,omitempty"`
 }
 
 // runApprovalsHook は braindex approvals hook を実行する。
@@ -75,6 +83,7 @@ func runApprovalsHook(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "  stdin の JSON(cwd / stop_hook_active)を読み、判断待ちが残っていれば")
 		fmt.Fprintln(stderr, "  approvals serve -apply を切り離して起動する。エディタの停止フックから呼ぶ。")
 		fmt.Fprintln(stderr, "  同じ内容では一度しか開かない。終了コードは常に 0(会話を止めない)。")
+		fmt.Fprintln(stderr, "  アシスタントへの指示には、回答を待つ approvals wait の起動を含める。")
 		fmt.Fprintln(stderr)
 		fs.PrintDefaults()
 	}
@@ -115,7 +124,7 @@ func runApprovalsHook(args []string, stdout, stderr io.Writer) int {
 		out.Decision = "block"
 		out.Reason = *reason
 		if out.Reason == "" {
-			out.Reason = fmt.Sprintf(approvalsHookReason, len(doc.Items))
+			out.Reason = fmt.Sprintf(approvalsHookReason, len(doc.Items), approvalsWaitCommand(p))
 		}
 	}
 	b, err := json.Marshal(out)
@@ -124,6 +133,26 @@ func runApprovalsHook(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprint(stdout, string(b))
 	return 0
+}
+
+// approvalsWaitCommand は アシスタントに起動させる approvals wait のコマンド行を返す。
+//
+// コマンド名は hook 自身が呼ばれた名前(os.Args[0])を使う。停止フックに絶対パスで登録している
+// 環境では、アシスタントのシェルでも `braindex` だけでは見つからないことがあるため。
+// 置き場は -file(と既定以外の -dir)で明示し、アシスタントのカレントに依らず同じ回答を待たせる。
+func approvalsWaitCommand(p approvals.Paths) string {
+	cmd := quoteIfSpace(os.Args[0]) + ` approvals wait -file "` + p.Approvals + `"`
+	if dir := filepath.Dir(p.Reply); dir != approvals.DefaultDir() {
+		cmd += ` -dir "` + dir + `"`
+	}
+	return "`" + cmd + "`"
+}
+
+func quoteIfSpace(s string) string {
+	if strings.ContainsAny(s, " \t") {
+		return `"` + s + `"`
+	}
+	return s
 }
 
 // readHookInput は stdin の JSON を読む。読めない・空でも既定値で続ける
@@ -168,20 +197,26 @@ func approvalsHookStatePath(p approvals.Paths) string {
 	return filepath.Join(filepath.Dir(p.Reply), "hook-"+p.ID+".json")
 }
 
+// readHookState は開いた印を読む。無い・壊れているときは false。
+func readHookState(statePath string) (hookState, bool) {
+	b, err := os.ReadFile(statePath)
+	if err != nil {
+		return hookState{}, false
+	}
+	var st hookState
+	if err := json.Unmarshal(b, &st); err != nil {
+		return hookState{}, false
+	}
+	return st, true
+}
+
 // hookAlreadyOpened は この内容の判断待ちを既にフォームにしたかを返す。
 //
 // 内容が同じうちは開き直さない(発話のたびにタブが増えるのを防ぐ)。回答が入れば
 // APPROVALS.md が変わるので、次の判断待ちではまた開く。
 func hookAlreadyOpened(statePath, sha string) bool {
-	b, err := os.ReadFile(statePath)
-	if err != nil {
-		return false
-	}
-	var st hookState
-	if err := json.Unmarshal(b, &st); err != nil {
-		return false
-	}
-	return st.SHA == sha
+	st, ok := readHookState(statePath)
+	return ok && st.SHA == sha
 }
 
 func writeHookState(statePath string, st hookState) {

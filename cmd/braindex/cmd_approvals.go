@@ -35,6 +35,7 @@ var approvalsSubs = []struct {
 	{"apply", "受けた回答を docs/decisions.md(3 段で追記)と APPROVALS.md(消し込み・保留)に反映する", runApprovalsApply},
 	{"status", "id・置き場・項目数・未反映の回答・記載漏れを表示する(書き込みなし)", runApprovalsStatus},
 	{"hook", "停止フックから呼ぶ。判断待ちが残っていれば serve を切り離して起動する(同じ内容では一度だけ)", runApprovalsHook},
+	{"wait", "hook が開いたフォームの回答を待ち、届いたら要約を出して終わる(アシスタントがバックグラウンドで起動する)", runApprovalsWait},
 }
 
 // approvalsOnReady はテスト用のフック。serve が待ち受けを始めた URL を受け取る。

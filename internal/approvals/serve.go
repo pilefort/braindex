@@ -22,6 +22,16 @@ type Reply struct {
 	Nonce      string      `json:"nonce"`
 	ReceivedAt string      `json:"received_at"` // RFC 3339(受信時刻)
 	Items      []ReplyItem `json:"items"`
+	// Result は apply が反映したときに書き足す結果(.applied.json にだけ入る)。
+	// approvals wait は、改名されたかでなくこれを見て「反映できたか」を伝える。
+	Result *AppliedResult `json:"result,omitempty"`
+}
+
+// AppliedResult は回答を反映した結果。Warnings は未反映の項目(見つからない・選択肢に無い)。
+type AppliedResult struct {
+	Decided  int      `json:"decided"`
+	Held     int      `json:"held"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // ReplyItem は 1 項目の答え。Choice は選択肢の Key(A/B/…)か "other"(コメントに結論)か "hold"(保留)。
