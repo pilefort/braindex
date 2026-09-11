@@ -105,6 +105,8 @@ func TestApprovalsHook_OpensFormAndAsksToTell(t *testing.T) {
 		t.Errorf("decision=%q", out.Decision)
 	}
 	mustContain(t, "reason", out.Reason, "1 件", "リンクを置くだけで終えない")
+	// 回答が届いたらアシスタントが続きに戻れるよう、待つコマンドを置き場ごと渡す
+	mustContain(t, "reason", out.Reason, "approvals wait -file \""+h.file+"\"", "-dir \""+h.dir+"\"", "バックグラウンド")
 }
 
 func TestApprovalsHook_SameContentOpensOnce(t *testing.T) {

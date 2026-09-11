@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,6 +51,10 @@ func TestApprovalsApply_RoundTrip(t *testing.T) {
 	if _, err := os.Stat(p.Applied); err != nil {
 		t.Error("applied.json が無い")
 	}
+	// 反映の結果を applied.json に残す(approvals wait が「反映できたか」をこれで伝える)
+	if res := readAppliedResult(t, p.Applied); res == nil || res.Decided != 1 || res.Held != 0 || len(res.Warnings) != 0 {
+		t.Errorf("applied.json の result = %+v", res)
+	}
 	// 2 回目は回答が無いので何もしない(冪等)
 	so.Reset()
 	if code := dispatch([]string{"approvals", "apply", "-file", ap, "-dir", tmp}, &so, &se); code != 0 || !strings.Contains(so.String(), "回答はない") {
@@ -83,6 +88,21 @@ func TestApprovalsApply_未反映は警告と2(t *testing.T) {
 	if got := readFile(t, ap); got != sampleApprovals {
 		t.Error("未反映なのに APPROVALS.md が変わった")
 	}
+	// 未反映でも回答は applied.json に移るので、警告を結果として残す(wait が 0 と誤報しないように)
+	res := readAppliedResult(t, p.Applied)
+	if res == nil || res.Decided != 0 || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "存在しない項目") {
+		t.Errorf("applied.json の result = %+v", res)
+	}
+}
+
+// readAppliedResult は applied.json の反映結果を読む(無ければ nil)。
+func readAppliedResult(t *testing.T, path string) *approvals.AppliedResult {
+	t.Helper()
+	var rep approvals.Reply
+	if err := json.Unmarshal([]byte(readFile(t, path)), &rep); err != nil {
+		t.Fatalf("applied.json を読めない: %v", err)
+	}
+	return rep.Result
 }
 
 // decisions.md に書けなかったら、APPROVALS.md からも消さず回答も残す。
