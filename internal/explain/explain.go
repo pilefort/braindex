@@ -31,8 +31,9 @@ var (
 // Render は解説の md を 1 枚の HTML にする。
 // 返す problems は本文にも印を出した問題(図が無い等)。呼び出し側がこれを警告と終了コードにする。
 func Render(md, title string, opt Options) (string, []string) {
-	r := &renderer{opt: opt, md: mdhtml.Options{BaseDir: opt.BaseDir}}
-	body, items := addHeadingIDs(r.body(md))
+	r := &renderer{opt: opt, md: mdhtml.Options{BaseDir: opt.BaseDir}, figNums: map[string]bool{}}
+	// 図番号のリンクは本文を全部読んでから張る。「図1」が図より前に出てくることがあるため。
+	body, items := addHeadingIDs(linkFigureRefs(r.body(md), r.figNums))
 	return mdhtml.Shell(title, tocHTML(items)+body, mdhtml.Parts{CSS: css, JS: js, MainClass: "explain"}), r.problems
 }
 
@@ -41,6 +42,7 @@ type renderer struct {
 	opt      Options
 	md       mdhtml.Options
 	figs     int
+	figNums  map[string]bool // 本文に出てきた図番号(「図1」からのリンクを張れるか見る)
 	problems []string
 }
 
@@ -54,7 +56,7 @@ func (r *renderer) body(md string) string {
 	var out, prose []string
 	flush := func() {
 		if len(prose) > 0 {
-			out = append(out, mdhtml.RenderBody(strings.Join(prose, "\n"), r.md))
+			out = append(out, wrapTables(mdhtml.RenderBody(strings.Join(prose, "\n"), r.md)))
 			prose = nil
 		}
 	}
@@ -100,6 +102,7 @@ func (r *renderer) figure(alt, src string) string {
 	caption := alt
 	if m := figAltRE.FindStringSubmatch(alt); m != nil {
 		id = "fig-" + m[1]
+		r.figNums[m[1]] = true
 		caption = "図" + m[1]
 		if rest := strings.TrimSpace(m[2]); rest != "" {
 			caption += ": " + rest
@@ -133,6 +136,82 @@ func (r *renderer) resolve(src string) string {
 		return p
 	}
 	return filepath.Join(r.opt.BaseDir, p)
+}
+
+// wrapTables は表を横スクロールできる箱に入れる。広い表が本文の幅を押し広げると、
+// 表以外の行まで横に流れて読めなくなる(SPEC「表は横に溢れたらその表だけ横スクロールする」)。
+// mdhtml が出す表は属性の無い <table> で、本文の文字は escapeText を通っているので取り違えない。
+func wrapTables(html string) string {
+	html = strings.ReplaceAll(html, "<table>", `<div class="bx-tw"><table>`)
+	return strings.ReplaceAll(html, "</table>", "</table></div>")
+}
+
+// figRefRE は本文中の図番号の参照(「図1」「図 1」)。
+var figRefRE = regexp.MustCompile(`図\s?([0-9]+)`)
+
+// linkFigureRefs は本文の「図1」から、その図へ飛べるリンクを張る。
+// 張るのは実際にある図番号だけ。タグの中と、<figure>・<a>・<code>・<pre>・見出しの中は触らない
+// (figcaption の「図1:」が自分自身へのリンクになるのを避ける)。
+func linkFigureRefs(html string, nums map[string]bool) string {
+	if len(nums) == 0 {
+		return html
+	}
+	text := func(s string) string {
+		return figRefRE.ReplaceAllStringFunc(s, func(m string) string {
+			n := figRefRE.FindStringSubmatch(m)[1]
+			if !nums[n] {
+				return m
+			}
+			return `<a class="bx-ref" href="#fig-` + n + `">` + m + "</a>"
+		})
+	}
+	var b strings.Builder
+	i := 0
+	for i < len(html) {
+		j := strings.IndexByte(html[i:], '<')
+		if j < 0 {
+			b.WriteString(text(html[i:]))
+			break
+		}
+		b.WriteString(text(html[i : i+j]))
+		i += j
+		rest := html[i:]
+		if skip := closerFor(rest); skip != "" {
+			if k := strings.Index(rest, skip); k >= 0 {
+				b.WriteString(rest[:k+len(skip)])
+				i += k + len(skip)
+				continue
+			}
+		}
+		k := strings.IndexByte(rest, '>')
+		if k < 0 {
+			b.WriteString(rest)
+			break
+		}
+		b.WriteString(rest[:k+1])
+		i += k + 1
+	}
+	return b.String()
+}
+
+// closerFor は中身を触らずに飛ばす要素なら、その閉じタグを返す。
+func closerFor(rest string) string {
+	switch {
+	case strings.HasPrefix(rest, "<figure"):
+		return "</figure>"
+	case strings.HasPrefix(rest, "<a "), strings.HasPrefix(rest, "<a>"):
+		return "</a>"
+	case strings.HasPrefix(rest, "<code"):
+		return "</code>"
+	case strings.HasPrefix(rest, "<pre"):
+		return "</pre>"
+	}
+	for _, lv := range []string{"1", "2", "3", "4", "5", "6"} {
+		if strings.HasPrefix(rest, "<h"+lv+">") {
+			return "</h" + lv + ">"
+		}
+	}
+	return ""
 }
 
 // tocItem は目次の 1 行。level は 2(節) か 3(小節)。

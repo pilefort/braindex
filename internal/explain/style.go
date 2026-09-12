@@ -5,8 +5,20 @@ package explain
 const tocWide = "(min-width:1360px)"
 
 // css は mdhtml の共通 CSS の後ろに足す分。目次・図の見せ方を決める。
+// 本文の行長。日本語は全角 1 文字が 1em なので、em が読みやすさの目安になる
+// (35〜45 字が読みやすいとされる範囲)。図・表・グラフはこれより広く使ってよいので、
+// 箱の幅(.doc.explain)と本文の幅(.bx-measure)を分ける。
+const measure = "38em"
+
 const css = `
-.doc.explain{padding-bottom:180px}
+.doc.explain{max-width:900px;padding-bottom:180px}
+.doc.explain p,.doc.explain ul,.doc.explain ol,.doc.explain blockquote,
+.doc.explain h1,.doc.explain h2,.doc.explain h3,.doc.explain h4{max-width:` + measure + `}
+.doc.explain pre{max-width:100%}
+.bx-tw{overflow-x:auto;max-width:100%}
+.bx-tw table{margin:1em 0}
+.doc.explain .bx-ref{text-decoration:none;border-bottom:1px dotted var(--accent);word-break:keep-all}
+.bx-fig:target,.bx-graph:target{outline:2px solid var(--accent);outline-offset:10px;border-radius:6px}
 .bx-toc{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:4px 12px;
   margin:0 0 26px;font-size:13px;line-height:1.6}
 .bx-toc>summary{cursor:pointer;color:var(--sub);font-weight:700;padding:7px 0;list-style:none}
@@ -27,12 +39,16 @@ const css = `
 .bx-fig figcaption{margin-top:.6em;color:var(--sub);font-size:13px;text-align:center}
 .bx-miss{border:1px dashed var(--line);border-radius:10px;padding:22px;text-align:center;
   color:var(--mut);background:var(--line2)}
+@media (prefers-reduced-motion:reduce){
+  .bx-fig svg,.bx-fig svg *{animation:none!important;transition:none!important}}
 `
 
 // js は mdhtml の共通 JS の後ろに足す分。
 //  1. 狭い画面では目次を畳む(広い画面では横に固定されるので開いたまま)。
 //     CSS だけでは details の開閉を画面幅で変えられないので JS で外す。JS が動かなくても開いたまま読める。
 //  2. 読んでいる節の見出しを目次で示す(画面の上端を越えた最後の見出し)。
+//  3. prefers-reduced-motion の環境では、埋め込んだ図の動きを止める。CSS の animation は
+//     上の @media が止めるが、SVG の <animate>(SMIL)は CSS では止まらないので pauseAnimations を呼ぶ。
 const js = `
 (function(){
 var d=document.getElementById('bx-toc');if(!d)return;
@@ -45,4 +61,10 @@ function upd(){var cur=ps[0][1];
 for(var i=0;i<ps.length;i++){if(ps[i][0].getBoundingClientRect().top<=80)cur=ps[i][1];}
 for(var i=0;i<ps.length;i++){var a=ps[i][1];if((a===cur)!==a.classList.contains('cur'))a.classList.toggle('cur');}}
 upd();addEventListener('scroll',upd);addEventListener('resize',upd);
+})();
+(function(){
+var m=false;try{m=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){}
+if(!m)return;
+var ss=document.querySelectorAll('.bx-fig svg');
+for(var i=0;i<ss.length;i++){if(ss[i].pauseAnimations)ss[i].pauseAnimations();}
 })();`
