@@ -68,6 +68,7 @@ func runLint(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "  パスを渡せばそのファイル(ディレクトリなら直下の ISSUE-*.md。-kind note なら直下の *.md)を、渡さなければ root の各リポ")
 		fmt.Fprintln(stderr, "  (設定の repo_depth 段下。既定は直下)の work/ISSUE-*.md を検査する。ISSUE-*.md は規約の形を、それ以外の .md は曖昧さ(数量詞・日付なし・出典なき数字・裸のヘッジ・")
 		fmt.Fprintln(stderr, "  なぜ欠落・根拠欠落・未定義用語)を見る。指摘は stdout に「パス:行: 内容」で出す。終了コード: 0 指摘なし / 1 失敗 / 2 指摘あり")
+		fmt.Fprintln(stderr, "  decisions.md は ## 見出し直下の失効・一部失効行の書式、絶対日付、後継見出しの実在(前方一致)も検査する")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
 		fs.PrintDefaults()

@@ -214,7 +214,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		progress = stderr
 	}
 
-	// 出力先は取得の前に確かめる。既にあれば書かない(braindex review と同じ規則・決定 2026-09-03)。
+	// 出力先は取得の前に確かめる。既にあれば書かない(braindex review と同じ規則・決定 2026-09-03 → manual/news.md「決めたこと」)。
 	// 取得の後に落とすと、既読だけ進んで手元に何も残らない回ができる。
 	// 例外は前回の fetch が途中で止まった出力先(news/.pending.json に記録が残っている): 完了していないので書き直す。
 	pendingPath := filepath.Join(newsDir, news.PendingFile)
@@ -301,7 +301,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "braindex news fetch: 警告:", w)
 		}
 		profileWarnings = len(ws)
-		// 不要ばかり付く取材先は点の上限を下げて主要表示から下ろす(決定 2026-09-06)
+		// 不要ばかり付く取材先は点の上限を下げて主要表示から下ろす(決定 2026-09-06 → manual/news.md「決めたこと」)
 		demoted = news.DemotedFeeds(stats.Totals())
 		ranking = news.Rank(results, p, demoted)
 		if ranking == nil {
@@ -444,7 +444,7 @@ func resumeCommand(r news.PendingRun) string {
 // unusedPath は path が無ければそのまま、あれば拡張子の前に -2, -3 … を付けた未使用の名前を返す。
 // reserved はこれから書く名前(まだ無いが使えない)。大文字小文字は区別しない(Windows に合わせる)。
 // 使うのは -out に .html を渡された場合だけ: md と html を同じ名前に書くと md を消してしまう。
-// 同じ日の 2 回目そのものは、出力先が既にあれば書かない(決定 2026-09-03)。
+// 同じ日の 2 回目そのものは、出力先が既にあれば書かない(決定 2026-09-03 → manual/news.md「決めたこと」)。
 func unusedPath(path string, reserved ...string) (string, error) {
 	ext := filepath.Ext(path)
 	base := path[:len(path)-len(ext)]

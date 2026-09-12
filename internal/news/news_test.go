@@ -29,7 +29,7 @@ func TestSettings_Defaults(t *testing.T) {
 }
 
 // show_min_score は 0(全件を主要表示)を設定できる。他のキーのように 0 を未設定とみなすと、
-// 「全部見たい」を恒久設定にできない(決定 2026-09-03)。
+// 「全部見たい」を恒久設定にできない(決定 2026-09-03 → manual/news.md「決めたこと」)。
 func TestSettings_ShowMinScore(t *testing.T) {
 	if got := (Settings{}).MinScore(); got != DefaultShowMinScore {
 		t.Errorf("未設定は既定 %d: got=%d", DefaultShowMinScore, got)

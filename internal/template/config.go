@@ -16,7 +16,7 @@ const ConfigPath = "braindex.json"
 var configKeyOrder = []string{"root", "notes_dirs", "extra", "review", "retro", "approvals", "news", "schedule"}
 
 // configSections はテンプレの braindex.json を最上位キーごとに切り出す。テンプレは「全機能を足した完成形」
-// 1 枚だけを正として持ち(決定 2026-09-03「設定の雛形はテンプレ 1 つ」)、機能ごとの節はそこから取る。
+// 1 枚だけを正として持ち(決定 2026-09-03「設定の雛形はテンプレ 1 つ」 → manual/init-update.md「決めたこと」)、機能ごとの節はそこから取る。
 func configSections() (map[string]json.RawMessage, error) {
 	b, err := templates.ReadFile(path.Join("templates", string(KindHub), ConfigPath))
 	if err != nil {
@@ -164,7 +164,7 @@ func addScheduleJobs(cur, tmpl map[string]json.RawMessage, added map[string]bool
 
 // MissingConfigKeys は cfg(節を足したあとの braindex.json)に対し、feats の節のうち雛形の節の中にあって cfg に無いキーを
 // 「節.キー」の形で返す(昇順)。節そのものが無いものは含めない(BuildConfig が足す)。配列(schedule.jobs)の中は見ない。
-// update が「.new を置く必要があるか」を決めるのに使う(決定 2026-09-05)。
+// update が「.new を置く必要があるか」を決めるのに使う(決定 2026-09-05 → manual/init-update.md「決めたこと」)。
 func MissingConfigKeys(cfg []byte, feats []Feature) ([]string, error) {
 	feats, _ = Resolve(feats)
 	var cur map[string]json.RawMessage

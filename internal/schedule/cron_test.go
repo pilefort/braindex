@@ -184,7 +184,7 @@ func TestMerge_改行の正規化(t *testing.T) {
 }
 
 // crontab -l の失敗が「まだ crontab が無い」ことかを、出力の文言だけで見分ける。
-// 権限などの失敗まで「無い」と読むと、書き戻しで利用者の crontab を全消しする(決定 2026-09-03 A')。
+// 権限などの失敗まで「無い」と読むと、書き戻しで利用者の crontab を全消しする(決定 2026-09-03 A' → manual/schedule.md「決めたこと」)。
 func TestIsNoCrontab(t *testing.T) {
 	cases := []struct {
 		in   string

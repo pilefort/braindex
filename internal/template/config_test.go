@@ -11,7 +11,7 @@ import (
 )
 
 // 雛形の braindex.json は、全機能を足して組み立てた結果とバイト一致する。設定の雛形は 1 枚だけを正とし
-// (決定 2026-09-03)、節はそこから切り出すので、雛形を直したらこの整形(固定キー順・インデント 2)に揃える。
+// (決定 2026-09-03 → manual/init-update.md「決めたこと」)、節はそこから切り出すので、雛形を直したらこの整形(固定キー順・インデント 2)に揃える。
 func TestBuildConfig_AllEqualsTemplate(t *testing.T) {
 	got, changed, err := BuildConfig(nil, []Feature{FeatureAll})
 	if err != nil {
