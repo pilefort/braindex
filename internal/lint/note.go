@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/pilefort/braindex/internal/extract"
 )
@@ -78,6 +79,92 @@ var hedgeTokens = []string{
 	"気がする", "はず", "らしい", "ようだ", "っぽい",
 }
 
+// 曖昧な数量詞・裸のヘッジは日本語のひらがな語で、日本語に単語区切りが無いぶん「語の途中」で偶然当たることがある
+// (例: 「超えたぶん」の「たぶん」は 超え+た+ぶん の活用語尾+名詞に過ぎない。「含まれる」の「まれ」は 含+まれる の
+// 活用語尾の内部)。形態素解析は入れない方針(このファイル冒頭のコメント)なので、直前・直後 1 文字だけを見る後処理で
+// 「語の境界に収まっているか」を判定する。2026-09-12 決定: 見逃し(取りこぼし)より誤検出の方が読み手の邪魔になるため、
+// 境界が怪しい一致は拾わない方に倒す(検出が warn でなく candidate なので、多少の取りこぼしは許容する)。
+//
+// 判定規則:
+//   - 直前・直後がひらがな以外(漢字・カタカナ・英数字・記号・空白)、または行頭・行末なら境界とみなす。
+//     漢字からひらがなへの切り替わりは活用語尾の始まりでもあり得る(「含|まれる」)ので、これだけでは境界と言い切れない。
+//   - 直前・直後がひらがなの場合は、それが助詞(boundaryParticles)のときだけ境界とみなす。
+//     動詞・形容詞の活用語尾はひらがなが連続する(「超え|た|ぶん」「含|ま|れ|る」)ため、ひらがなが続くというだけでは
+//     語の内部にいるのか、助詞をはさんで次の語に移ったのかを区別できない。助詞は他の語の一部にならない閉じた
+//     語彙なので、それが隣接していれば安全に「ここで語が切れている」と言える。
+var boundaryParticles = map[rune]bool{
+	'は': true, 'が': true, 'も': true, 'で': true, 'と': true,
+	'を': true, 'に': true, 'へ': true, 'の': true, 'や': true,
+}
+
+// isHiragana は r がひらがな(結合用の濁点・繰り返し記号を含む)かどうか。
+func isHiragana(r rune) bool {
+	return r >= 0x3041 && r <= 0x309F
+}
+
+// isBoundaryRune は隣接する 1 文字(無ければ ok=false)が語の境界とみなせるかを判定する。規則は boundaryParticles の説明を参照。
+func isBoundaryRune(r rune, ok bool) bool {
+	if !ok {
+		return true // 行頭・行末
+	}
+	if !isHiragana(r) {
+		return true
+	}
+	return boundaryParticles[r]
+}
+
+// boundaryWords は数量詞・ヘッジの語彙をまとめたもの(隣接判定に使う。すぐ下のコメント参照)。
+var boundaryWords = append(append([]string{}, vagueQuantifiers...), hedgeTokens...)
+
+// isBoundarySide は adjacent(前なら [:pos]、後なら [pos:])が語の境界とみなせるかを判定する。
+// 通常は隣接 1 文字を isBoundaryRune で見るが、それに加えて「対象語彙(数量詞・ヘッジ)のどれかがちょうどこの位置で
+// 始まる/終わっている」場合も境界とみなす。「最近かなり増えた」のように、対象語彙どうしは助詞を挟まず隣接することが
+// 普通にある(最近の直後は「かなり」の頭)。この隣接をひらがな連続として弾くと、この種の実在の用法まで取りこぼす。
+func isBoundarySide(adjacent string, hasPrefix bool) bool {
+	if adjacent == "" {
+		return true // 行頭・行末
+	}
+	var r rune
+	if hasPrefix {
+		r, _ = utf8.DecodeRuneInString(adjacent)
+	} else {
+		r, _ = utf8.DecodeLastRuneInString(adjacent)
+	}
+	if isBoundaryRune(r, true) {
+		return true
+	}
+	for _, w := range boundaryWords {
+		if hasPrefix && strings.HasPrefix(adjacent, w) {
+			return true
+		}
+		if !hasPrefix && strings.HasSuffix(adjacent, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// isWordBoundaryMatch は l 内の [start,end) の一致が、前後とも語の境界に収まっているかを判定する(語の途中の一致を除くため)。
+func isWordBoundaryMatch(l string, start, end int) bool {
+	return isBoundarySide(l[:start], false) && isBoundarySide(l[end:], true)
+}
+
+// wordBoundaryMatches は l 中の w の出現(非重複)のうち、語の境界に収まっているものの開始バイト位置を返す。
+func wordBoundaryMatches(l, w string) []int {
+	var out []int
+	for start := 0; ; {
+		idx := strings.Index(l[start:], w)
+		if idx < 0 {
+			return out
+		}
+		pos := start + idx
+		if isWordBoundaryMatch(l, pos, pos+len(w)) {
+			out = append(out, pos)
+		}
+		start = pos + len(w)
+	}
+}
+
 var (
 	// 日付表記(ISO / スラッシュ / 和式)
 	reDate = regexp.MustCompile(`\d{4}-\d{1,2}-\d{1,2}|\d{4}/\d{1,2}/\d{1,2}|\d{4}\s*年\s*\d{1,2}\s*月`)
@@ -113,13 +200,13 @@ func CheckNote(path string, content []byte, o NoteOptions) []Warning {
 		})
 	}
 
-	// 曖昧な数量詞(warn)
+	// 曖昧な数量詞(warn)。語の途中で当たったものは除く(isWordBoundaryMatch 参照)。
 	for i, l := range lines {
 		if skip[i] {
 			continue
 		}
 		for _, w := range vagueQuantifiers {
-			for n := strings.Count(l, w); n > 0; n-- {
+			for range wordBoundaryMatches(l, w) {
 				add(i+1, KindVagueQuantifier, SeverityWarn, "〔%s〕 %s", w, strings.TrimSpace(l))
 			}
 		}
@@ -156,7 +243,7 @@ func CheckNote(path string, content []byte, o NoteOptions) []Warning {
 			continue
 		}
 		for _, w := range hedgeTokens {
-			if strings.Contains(l, w) {
+			if len(wordBoundaryMatches(l, w)) > 0 {
 				add(i+1, KindBareHedge, SeverityCandidate, "〔%s〕 %s", w, s)
 				break
 			}
