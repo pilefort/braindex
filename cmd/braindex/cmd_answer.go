@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pilefort/braindex/internal/fsutil"
 	"github.com/pilefort/braindex/internal/mdhtml"
 )
 
@@ -70,7 +71,7 @@ func runAnswer(args []string, stdout, stderr io.Writer) int {
 	}
 	dir := answersDir()
 	if showDir {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			fmt.Fprintf(stderr, "braindex answer: %v\n", err)
 			return 1
 		}
@@ -137,11 +138,11 @@ func runAnswer(args []string, stdout, stderr io.Writer) int {
 	if out == "" {
 		out = filepath.Join(dir, base+".html")
 	}
-	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(out), 0o700); err != nil {
 		fmt.Fprintf(stderr, "braindex answer: %v\n", err)
 		return 1
 	}
-	if err := os.WriteFile(out, []byte(page(md, title)), 0o644); err != nil {
+	if err := fsutil.WriteAtomic(out, []byte(page(md, title)), 0o600); err != nil {
 		fmt.Fprintf(stderr, "braindex answer: %v\n", err)
 		return 1
 	}
@@ -191,10 +192,10 @@ func appendToThread(path, name, question, md string, now time.Time) (string, err
 	}
 	e := mdhtml.Entry{At: now.Format(time.RFC3339), Q: question, Body: body}
 	thread := mdhtml.Prepend(string(prev), fallback, e)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(path, []byte(thread), 0o644); err != nil {
+	if err := fsutil.WriteAtomic(path, []byte(thread), 0o600); err != nil {
 		return "", err
 	}
 	return thread, nil

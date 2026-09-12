@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/pilefort/braindex/internal/explain"
+	"github.com/pilefort/braindex/internal/fsutil"
 	"github.com/pilefort/braindex/internal/mdhtml"
 )
 
@@ -87,11 +88,11 @@ func runExplain(args []string, stdout, stderr io.Writer) int {
 		base := strings.TrimSuffix(filepath.Base(src), filepath.Ext(src))
 		out = filepath.Join(dir, base+".html")
 	}
-	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(out), 0o700); err != nil {
 		fmt.Fprintf(stderr, "braindex explain: %v\n", err)
 		return 1
 	}
-	if err := os.WriteFile(out, []byte(page), 0o644); err != nil {
+	if err := fsutil.WriteAtomic(out, []byte(page), 0o600); err != nil {
 		fmt.Fprintf(stderr, "braindex explain: %v\n", err)
 		return 1
 	}

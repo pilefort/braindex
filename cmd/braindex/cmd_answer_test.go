@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -203,5 +204,34 @@ func TestAnswer_RelativePathResolvedFromMarkdownDir(t *testing.T) {
 	want := `<img src="file:///` + strings.TrimPrefix(filepath.ToSlash(abs), "/") + `"`
 	if !strings.Contains(string(got), want) {
 		t.Errorf("出力に %s が無い", want)
+	}
+}
+
+func TestAnswer_OutputPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows では POSIX 権限を検査しない")
+	}
+	dir, _ := stubAnswer(t)
+	src := filepath.Join(t.TempDir(), "memo.md")
+	writeFile(t, src, "# 題\n本文")
+	var so, se bytes.Buffer
+	if code := runAnswer([]string{"-no-open", "-append", "topic", src}, &so, &se); code != 0 {
+		t.Fatalf("code=%d %s", code, &se)
+	}
+	for _, name := range []string{"topic.md", "topic.html"} {
+		fi, err := os.Stat(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fi.Mode().Perm() != 0o600 {
+			t.Errorf("%s: %o", name, fi.Mode().Perm())
+		}
+	}
+	fi, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o700 {
+		t.Errorf("dir: %o", fi.Mode().Perm())
 	}
 }
