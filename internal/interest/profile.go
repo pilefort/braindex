@@ -227,7 +227,8 @@ func round3(f float64) float64 {
 }
 
 // Marshal は人が読む表(Markdown・LF)。top 件まで。top <= 0 なら全件。
-func (p Profile) Marshal(top int) []byte {
+// moreHint は省略件数の後に添える案内。省略時は件数だけを出す。
+func (p Profile) Marshal(top int, moreHint ...string) []byte {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# 関心プロファイル %s（直近 %d 日）\n\n", p.Today, p.Days)
 	notes := fmt.Sprintf("%d", p.Sources[SourceIndex])
@@ -239,10 +240,14 @@ func (p Profile) Marshal(top int) []byte {
 	sb.WriteString("| 語 | 重み | index | sessions | keep | extra |\n|---|---:|---:|---:|---:|---:|\n")
 	for i, t := range p.Terms {
 		if top > 0 && i >= top {
-			fmt.Fprintf(&sb, "\n（上位 %d 語。残り %d 語は -top で増やす）\n", top, len(p.Terms)-top)
+			hint := ""
+			if len(moreHint) > 0 {
+				hint = moreHint[0]
+			}
+			fmt.Fprintf(&sb, "\n（上位 %d 語。残り %d 語%s）\n", top, len(p.Terms)-top, hint)
 			break
 		}
-		fmt.Fprintf(&sb, "| %s | %.3f |", t.Word, t.Weight)
+		fmt.Fprintf(&sb, "| %s | %.3f |", strings.ReplaceAll(t.Word, "|", `\|`), t.Weight)
 		for _, s := range sourceOrder {
 			if c, ok := t.Counts[s]; ok {
 				fmt.Fprintf(&sb, " %s |", trimFloat(c))
@@ -270,7 +275,7 @@ func trimFloat(f float64) string {
 	return s
 }
 
-var keepLine = regexp.MustCompile(`^- \[(.+?)\]\(\S*\)`)
+var keepLine = regexp.MustCompile(`^- \[(.+?)\]\((?:<[^>\r\n]*>|\S*)\)`)
 
 // bom は UTF-8 の BOM。Windows の編集で付くことがあり、付いたままだと 1 行目の解析が外れる(決定 2026-08-07)。
 const bom = "\uFEFF"

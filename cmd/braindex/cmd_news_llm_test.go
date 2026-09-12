@@ -105,7 +105,7 @@ func TestNewsFetch_LLM(t *testing.T) {
 	}
 	mustContain(t, "stderr", se, "LLM 補助: 2 件を聞いて 2 件に注釈・訳が返らず 1 件を聞き直し")
 	// 記事2 が 3(LLM)で主要、記事1 は 0(LLM)で関心外。訳が添えられる
-	mustContain(t, "stdout", so, "[記事2](https://example.com/2) ★3（LLM）／訳: 記事二の訳", "関心外と判定 1 件:", "[記事1](https://example.com/1) ★0（LLM）")
+	mustContain(t, "stdout", so, "[記事2](https://example.com/2) ★3（LLM）／訳: 記事二の訳", "関心外と判定 1 件:", "[記事1](https://example.com/1) ★0（LLM・ゴルーチン）")
 	if _, err := os.Stat(filepath.Join(hub, "news", news.LLMCacheFile)); err != nil {
 		t.Errorf("キャッシュが書かれていない: %v", err)
 	}
@@ -254,7 +254,7 @@ func TestNewsFetch_LLMの点でも下げた取材先の上限は効く(t *testin
 		t.Fatalf("exit=%d\n%s%s", code, so, se)
 	}
 	mustContain(t, "stdout", so, "不要が多い取材先 1 本は関心度の上限を 1 に下げた",
-		"[記事1](https://example.com/1) ★1（LLM）", "[記事2](https://example.com/2) ★1（LLM）")
+		"[記事1](https://example.com/1) ★1（LLM・ゴルーチン）", "[記事2](https://example.com/2) ★1（LLM）")
 	if strings.Contains(so, "★3") {
 		t.Errorf("下げた取材先の記事が LLM の点で戻った:\n%s", so)
 	}

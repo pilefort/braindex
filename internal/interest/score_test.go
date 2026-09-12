@@ -5,6 +5,16 @@ import (
 	"testing"
 )
 
+func TestRate_ZeroScoreMatchedOrder(t *testing.T) {
+	for _, weights := range [][2]float64{{1, -1}, {0, -1}} {
+		p := Profile{Terms: []Term{{Word: "alpha", Weight: weights[0]}, {Word: "zebra", Weight: weights[1]}}}
+		got := Rate(p, "zebra alpha")
+		if got.Value != 0 || !reflect.DeepEqual(got.Matched, []string{"alpha", "zebra"}) {
+			t.Errorf("weights=%v score=%+v", weights, got)
+		}
+	}
+}
+
 func TestRate(t *testing.T) {
 	p := Profile{Terms: []Term{{Word: "ゴルーチン", Weight: 2.0}, {Word: "パース", Weight: 1.0}, {Word: "rust", Weight: 0.4}}}
 	cases := []struct {

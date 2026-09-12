@@ -99,7 +99,7 @@ type newsFetchOptions struct {
 
 // runNewsFetch は braindex news fetch を実行する。
 //
-// 終了コード: 0 成功 / 1 失敗(出力先が既にある・-out と -stdout の同時指定・別の braindex news が動いている・全フィードの取得失敗を含む。何も書かない) /
+// 終了コード: 0 成功 / 1 失敗(出力先が既にある・-out と -stdout の同時指定・別の braindex news が動いている・全フィードの取得失敗・保存失敗を含む。書き込み済みの場合もある) /
 // 2 警告つきで完了(一部のフィードが取得できなかった・採点の出典(索引・セッションの置き場)が無かった・
 // 選別や統計を取り込めなかった・残留したロックを外した・別の日の未完了が残っている)。
 //
@@ -133,7 +133,8 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "  結果は news/.llm_cache.json に覚えて同じ記事を 2 回聞かない。CLI が無い・失敗した分は語の点のまま(警告・終了コード 2)。")
 		fmt.Fprintln(stderr, "  途中で止まった回は news/.pending.json に記録が残り、同じ日をもう一度実行すると書き直して既読まで進める(完了した回は「既にある」で止まる)。")
 		fmt.Fprintln(stderr, "  並行起動は news/.lock.json で片方だけにする(1 時間より古い残留は外して進む)。")
-		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗(出力先が既にある・-out と -stdout の同時指定・別の braindex news が動いている・全フィードの取得失敗。何も書かない) / 2 警告つきで完了(一部のフィードが取得できなかった・")
+		fmt.Fprintln(stderr, "  既読の保存に失敗した場合も、ダイジェストは書き込み済み。同じ日を再実行すると未完了の記録から書き直す。")
+		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗(出力先が既にある・-out と -stdout の同時指定・別の braindex news が動いている・全フィードの取得失敗・保存失敗。書き込み済みの場合もある) / 2 警告つきで完了(一部のフィードが取得できなかった・")
 		fmt.Fprintln(stderr, "  採点の出典(索引・セッションの置き場)が無かった・選別や統計を取り込めなかった・残留したロックを外した・別の日の未完了が残っている)")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")

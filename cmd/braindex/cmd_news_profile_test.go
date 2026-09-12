@@ -3,13 +3,64 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/pilefort/braindex/internal/config"
 	"github.com/pilefort/braindex/internal/retro"
 )
+
+func TestLoadProfileInput_SessionsPaths(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	hub := t.TempDir()
+	for _, base := range []string{home, hub} {
+		if err := os.MkdirAll(filepath.Join(base, "logs"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, source := range []string{"news", "retro", "flag"} {
+		for _, path := range []string{"~/logs", `~\logs`, "logs"} {
+			if source == "flag" && path == "logs" {
+				continue
+			}
+			t.Run(source+path, func(t *testing.T) {
+				var fc config.Config
+				flagPath := ""
+				switch source {
+				case "news":
+					fc.News.SessionsDir = path
+				case "retro":
+					fc.Retro.SessionsDir = path
+				case "flag":
+					flagPath = path
+					fc.News.SessionsDir = "missing"
+				}
+				_, warnings, err := loadProfileInput(fc, hub, "2026-09-01", 14, flagPath, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, w := range warnings {
+					if strings.Contains(w, "セッションログの置き場") {
+						t.Errorf("unresolved path: %s", w)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestNewsProfile_TopHint(t *testing.T) {
+	hub := profileHub(t)
+	_, so, _ := newsProfile(t, hub, "-sessions", retroTestdata, "-all-projects", "-top", "1")
+	if !strings.Contains(so, "語は -top で増やす）") {
+		t.Fatalf("output=%s", so)
+	}
+}
 
 // profileHub は hub に 索引(窓内のノート 1 件)・keep 履歴・補助ファイル を置く。セッションは retro と同じ testdata を使う。
 func profileHub(t *testing.T) (hub string) {
@@ -128,12 +179,12 @@ func TestNewsProfile_SessionsDirFallback(t *testing.T) {
 	if _, _, se := newsProfile(t, hub, "-sessions", "from-flag"); !strings.Contains(se, "置き場 from-flag が無い") {
 		t.Errorf("-sessions が最優先でない:\n%s", se)
 	}
-	if _, _, se := newsProfile(t, hub); !strings.Contains(se, "置き場 from-news が無い") {
+	if _, _, se := newsProfile(t, hub); !strings.Contains(se, "置き場 "+filepath.Join(hub, "from-news")+" が無い") {
 		t.Errorf("news.sessions_dir が retro より優先されない:\n%s", se)
 	}
 
 	writeFile(t, cfg, `{"root": "..", "retro": {"sessions_dir": "from-retro"}}`)
-	if _, _, se := newsProfile(t, hub); !strings.Contains(se, "置き場 from-retro が無い") {
+	if _, _, se := newsProfile(t, hub); !strings.Contains(se, "置き場 "+filepath.Join(hub, "from-retro")+" が無い") {
 		t.Errorf("retro.sessions_dir に落ちない:\n%s", se)
 	}
 }

@@ -174,7 +174,23 @@ func TestApplyAnnotations(t *testing.T) {
 	ann := Annotations{"a1": {Score: intp(3)}, "a2": {Title: "訳のみ"}, "b1": {Score: intp(0)}}
 	rk := Ranking{"a1": {Value: 1, Matched: []string{"x"}}, "a2": {Value: 2, Matched: []string{"y"}}, "a3": {Value: 0}, "b1": {Value: 2}}
 	got := ApplyAnnotations(rk, rs, ann)
-	if got["a1"].Value != 3 || !reflect.DeepEqual(got["a1"].Matched, []string{LLMMark}) {
+	if LLMScored(rs, got) != 2 {
+		t.Errorf("scored=%d", LLMScored(rs, got))
+	}
+	if !reflect.DeepEqual(rk["a1"].Matched, []string{"x"}) {
+		t.Error("input ranking changed")
+	}
+	if twice := ApplyAnnotations(got, rs, ann); !reflect.DeepEqual(twice, got) {
+		t.Errorf("repeat changed ranking: %v", twice)
+	}
+	o := DigestOptions{Cap: 10, Ranking: got}
+	if md := string(Digest(rs, o)); !strings.Contains(md, "LLM・x") {
+		t.Errorf("missing evidence: %s", md)
+	}
+	if h := string(RenderHTML(rs, o)); !strings.Contains(h, "LLM") || !strings.Contains(h, "関心に合った語: x") {
+		t.Error("HTML missing score provenance or words")
+	}
+	if got["a1"].Value != 3 || !got["a1"].LLM || !reflect.DeepEqual(got["a1"].Matched, []string{"x"}) {
 		t.Errorf("a1 = %+v", got["a1"])
 	}
 	if got["a2"].Value != 2 || got["a2"].Matched[0] != "y" {
