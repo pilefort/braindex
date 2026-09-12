@@ -119,9 +119,9 @@ func ThreadPageWith(md, title string, opt Options) string {
 			b.WriteString(`<span class="ent-q">` + escapeText(q) + `</span>`)
 		}
 		b.WriteString(`<span class="ent-n">新着</span></summary>` + "\n")
-		b.WriteString(`<div class="ent-b">` + renderBody(e.Body, opt) + "</div>\n</details>\n")
+		b.WriteString(`<div class="ent-b">` + RenderBody(e.Body, opt) + "</div>\n</details>\n")
 	}
-	return shell(title, b.String(), threadJS)
+	return Shell(title, b.String(), Parts{JS: threadJS})
 }
 
 // IsThread は .md がスレッド(エントリのマーカーを持つ)かどうかを返す。

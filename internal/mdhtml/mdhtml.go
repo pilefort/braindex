@@ -21,6 +21,12 @@ type Options struct {
 	// BaseDir は md に書かれた相対パスを解決する基準ディレクトリ(ふつうは md の置き場所)。
 	// 空なら相対パスをそのまま出す。
 	BaseDir string
+
+	// SoftWrap は段落・引用の中の改行を「エディタの折り返し」として扱う。
+	// 文の終わりで終わる行と、行末に空白 2 つを置いた行の後ろだけ <br> にし、
+	// 途中で切れた行は次の行と続ける(→ softwrap.go)。
+	// 既定(false)は 1 行 1 <br> で、answer の md の書き方を変えない。
+	SoftWrap bool
 }
 
 var (
@@ -352,15 +358,16 @@ func BodyWith(md string, opt Options) string {
 		}
 
 		if strings.HasPrefix(lstrip(line), ">") {
-			var parts []string
+			var parts, raw []string
 			for i < n && strings.HasPrefix(lstrip(lines[i]), ">") {
 				b := quoteRE.ReplaceAllString(lines[i], "")
 				if strings.TrimSpace(b) != "" {
 					parts = append(parts, inline(b, opt))
+					raw = append(raw, b)
 				}
 				i++
 			}
-			out = append(out, "<blockquote>"+strings.Join(parts, "<br>")+"</blockquote>")
+			out = append(out, "<blockquote>"+joinLines(parts, raw, opt)+"</blockquote>")
 			continue
 		}
 
@@ -395,7 +402,7 @@ func BodyWith(md string, opt Options) string {
 			continue
 		}
 
-		var buf []string
+		var buf, raw []string
 		for i < n && strings.TrimSpace(lines[i]) != "" && !isFence(lines[i]) {
 			l2 := lines[i]
 			if headingRE.MatchString(l2) || hrRE.MatchString(l2) || listItemRE.MatchString(l2) ||
@@ -403,10 +410,11 @@ func BodyWith(md string, opt Options) string {
 				break
 			}
 			buf = append(buf, inline(strings.TrimSpace(l2), opt))
+			raw = append(raw, l2)
 			i++
 		}
 		if len(buf) > 0 {
-			out = append(out, "<p>"+strings.Join(buf, "<br>")+"</p>")
+			out = append(out, "<p>"+joinLines(buf, raw, opt)+"</p>")
 		}
 	}
 	return strings.Join(out, "\n")
