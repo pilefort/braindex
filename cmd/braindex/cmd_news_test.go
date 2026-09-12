@@ -116,6 +116,7 @@ func TestNewsFetch_Open(t *testing.T) {
 
 	// 開けない: 警告して 2
 	openInBrowser = func(string) error { return errors.New("ブラウザで開けない: なし") }
+	so.Reset()
 	se.Reset()
 	out3 := filepath.Join(hub, "news", "third.md")
 	code = dispatch([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-layer", "weekly", "-no-score", "-replay", "-out", out3}, &so, &se)
