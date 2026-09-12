@@ -83,12 +83,37 @@ func Lock(newsDir, op string) (unlock func(), stale string, err error) {
 		if age <= LockStaleAfter {
 			return nil, "", fmt.Errorf("%w: %s(%s。終わるのを待つ。動いている braindex news が無ければ、このファイルを消す)", ErrLocked, path, info)
 		}
-		stale = fmt.Sprintf("残留していたロックを外した: %s(%s。%s 以上たっても終わっていないので、前の実行は途中で落ちている)", path, info, LockStaleAfter)
-		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		stolen, err := stealStale(path, info)
+		if err != nil {
 			return nil, "", fmt.Errorf("残留したロックを外せない: %w", err)
 		}
+		if !stolen {
+			continue // 別の実行が先に外して取り直した → 取り直す(次の周回でその新しいロックを見る)
+		}
+		stale = fmt.Sprintf("残留していたロックを外した: %s(%s。%s 以上たっても終わっていないので、前の実行は途中で落ちている)", path, info, LockStaleAfter)
 	}
 	return nil, "", fmt.Errorf("%w: %s", ErrLocked, path)
+}
+
+// stealStale は残留とみなしたロックを外す。外すのは want(古いと判断したときに読んだ中身)が今もあるときだけで、
+// 別の実行が先に外して取り直していれば false を返す(その新しいロックを消さない)。
+// 確かめずに消すと、同じ残留ロックを見つけた 2 つの実行が両方ともロックを取れてしまう。
+// 「同じなら消す」を 1 回で行う手立てが os に無いので、確かめてから消すまでの隙間は残る(窓を狭めるところまで)。
+func stealStale(path string, want lockInfo) (bool, error) {
+	now, _, err := readLock(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil // 先に誰かが外した
+	}
+	if err != nil {
+		return false, err
+	}
+	if now != want {
+		return false, nil // 別の実行が取り直した後のロック。これは残留ではない
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return false, err
+	}
+	return true, nil
 }
 
 // tryLock は O_EXCL でロックを作る。既にあれば false(エラーにしない)。
