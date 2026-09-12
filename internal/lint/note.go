@@ -13,7 +13,7 @@ import (
 //
 // 幻覚の温床になる書き方を規則ベースで検出する。価値判断はしない(判断は skill record-lint の手順で人かエージェントが行う)。
 // 検出は 2 段階の確度で返す:
-//   - warn      … 機械的に高確度(曖昧な数量詞・日付なし)。ほぼそのまま指摘してよい
+//   - warn      … 機械的に高確度(曖昧な数量詞・日付なし・失効行の違反)。ほぼそのまま指摘してよい
 //   - candidate … ヒューリスティックで低確度(出典なき数字・裸のヘッジ・なぜ欠落・根拠欠落・未定義用語)。本文の意味で真偽を確かめる候補
 //
 // 語彙表(数量詞・ヘッジ・出典マーカー)はこのファイルに埋め込む。日本語のみ。
@@ -33,6 +33,9 @@ const (
 	KindMissingWhy      = "missing_why"
 	KindMissingEvidence = "missing_evidence"
 	KindUndefinedTerm   = "undefined_term"
+	KindSupersedeFormat = "supersede_format"
+	KindSupersedeDate   = "supersede_date"
+	KindSupersedeTarget = "supersede_target"
 )
 
 var kindLabel = map[string]string{
@@ -43,6 +46,9 @@ var kindLabel = map[string]string{
 	KindMissingWhy:      "なぜ欠落(候補)",
 	KindMissingEvidence: "根拠欠落(候補)",
 	KindUndefinedTerm:   "未定義用語(候補)",
+	KindSupersedeFormat: "失効行の書式",
+	KindSupersedeDate:   "失効行の日付",
+	KindSupersedeTarget: "失効行の後継",
 }
 
 // NoteOptions はノート検査の入力。
@@ -165,6 +171,11 @@ func CheckNote(path string, content []byte, o NoteOptions) []Warning {
 		if !reEvidenceLine.MatchString(b.body) {
 			add(b.line, KindMissingEvidence, SeverityCandidate, "## %s(根拠: 行が無い。notes/データ/URL/「会話 YYYY-MM-DD」のいずれかへ)", b.head)
 		}
+	}
+
+	// 失効行(warn。decisions.md の ## 直下だけ)
+	if baseName(path) == "decisions.md" {
+		checkSupersedeLines(lines, skip, add)
 	}
 
 	// 未定義用語(candidate。用語集があるときだけ)

@@ -39,6 +39,8 @@ func runExplain(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "使い方: braindex explain [フラグ] <md>")
 		fmt.Fprintln(stderr, "  論文・記事の解説の md を、目次・図・グラフつきの自己完結 HTML にして開く。")
 		fmt.Fprintln(stderr, "  図は別の .svg に置き、md からは ![図1: 説明](fig1.svg) で参照する(中身を HTML に埋め込む)。")
+		fmt.Fprintln(stderr, `  図の色は本文に合わせる: <svg class="bxfig"> にして fill="var(--fg)" のように名前で書く(値は書かない)。`)
+		fmt.Fprintln(stderr, "  使える名前: fg fg2 mono edge groove surf / c1〜c4(系列の色) / s1〜s4(系列の面)")
 		fmt.Fprintln(stderr, "  表の直前に <!-- graph: bar x=手法 y=Recall@1 unit=% --> を置くと、その表から棒/折れ線を描く。")
 		fmt.Fprintln(stderr, "  正本の md と .svg は docs/notes/ に置く(HTML は表示用の一時物)。終了コード: 0 成功 / 1 失敗")
 		fmt.Fprintln(stderr)
