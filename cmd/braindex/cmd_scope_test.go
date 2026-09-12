@@ -158,6 +158,10 @@ func TestScope_DefaultCatalog_RootUnset(t *testing.T) {
 func TestScope_BadArgs(t *testing.T) {
 	c := scopeCatalog(t)
 	for _, args := range [][]string{
+		{"scope", "-dir", "unused", "-topic", "x"},
+		{"scope", "-dir", "unused", "-repo", "repo-a"},
+		{"scope", "-dir", "unused", "-topic", "x", "-repo", "repo-a"},
+		{"scope", "-full", "-topic", "x", "-repo", "repo-a"},
 		{"scope", "-catalog", c},
 		{"scope", "-catalog", c, "-topic", "x", "-full"},
 		{"scope", "-catalog", c, "-full", "-size", "0"},
@@ -171,5 +175,22 @@ func TestScope_BadArgs(t *testing.T) {
 	var so, se bytes.Buffer
 	if code := dispatch([]string{"scope", "-h"}, &so, &se); code != 0 || !strings.Contains(se.String(), "使い方") {
 		t.Errorf("-h: exit=%d stderr=%s", code, se.String())
+	}
+}
+
+func TestScope_TopicAndRepo(t *testing.T) {
+	for _, format := range []string{"markdown", "json"} {
+		var so, se bytes.Buffer
+		args := []string{"scope", "-catalog", scopeCatalog(t), "-topic", "長さ", "-repo", "repo-a"}
+		if format == "json" {
+			args = append(args, "-json")
+		}
+		if code := dispatch(args, &so, &se); code != 2 {
+			t.Fatalf("exit=%d stdout=%s stderr=%s", code, &so, &se)
+		}
+		out := so.String()
+		if !strings.Contains(out, "topic:長さ+repo:repo-a") || !strings.Contains(out, "length.md") || strings.Contains(out, "heading.md") || strings.Contains(out, "measure.md") {
+			t.Errorf("出力が違う: %s", out)
+		}
 	}
 }

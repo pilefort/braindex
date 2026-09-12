@@ -222,7 +222,7 @@ func TestBuild_DirTopic(t *testing.T) {
 	}
 }
 
-// mode の表示: full / repo:<名> / topic:<語>(topic が優先)。
+// mode の表示は、併用時には topic と repo の両方を含む。
 func TestBuild_Mode(t *testing.T) {
 	for _, c := range []struct {
 		o    Options
@@ -231,7 +231,7 @@ func TestBuild_Mode(t *testing.T) {
 	}{
 		{Options{}, "full", 3},
 		{Options{Repo: "repo-a"}, "repo:repo-a", 2},
-		{Options{Topic: "長さ", Repo: "repo-a"}, "topic:長さ", 1},
+		{Options{Topic: "長さ", Repo: "repo-a"}, "topic:長さ+repo:repo-a", 1},
 	} {
 		r, err := Build(fixture(t), c.o)
 		if err != nil {

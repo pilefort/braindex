@@ -235,6 +235,7 @@ braindex verify -json github pilefort/braindex   # フラグは種別より前�
 
 ```sh
 braindex scope -topic 長さ         # タイトル・要旨・パスに語を含む行(大小無視)
+braindex scope -topic 長さ -repo alpha # 両方の条件を満たす行だけ
 braindex scope -repo alpha         # その見出し(リポ名)の行だけ
 braindex scope -full -size 20      # 全件を 20 件ずつの chunk に分ける
 braindex scope -dir docs/notes     # 索引を使わず、ディレクトリ配下の *.md を列挙する
@@ -243,7 +244,9 @@ braindex scope -dir docs/notes     # 索引を使わず、ディレクトリ配�
 出力のパスは、どちらのモードでもそのまま開ける形で出る——索引を使うときは索引の行と同じ `root` 相対、
 `-dir` のときは渡したディレクトリと結合した形。`-dir` の列挙は `archive` セグメントと `.` で始まるディレクトリの
 配下を対象にしない（起点として直接渡したときだけは中を見る）。`archive` の扱いは索引と同じで、
-`.` で始まるディレクトリは索引より広く除く（索引が `.` を見るのはリポ名の各段だけ）。
+`.` で始まるディレクトリも索引と同じく置き場の中まで除く。
+`-topic` と `-repo` は併用でき、結果の `mode` は `topic:<語>+repo:<名>` になる。
+`-dir` と `-full` はそれぞれ単独で指定する。他の絞り込みとの併用は終了コード 1。
 フラグ: `-topic` `-repo` `-dir` `-full` `-size N`（既定 12）`-json`（`mode`・`n_entries`・`chunks`）`-catalog` `-config`。
 終了コード: 0 ／1 失敗／2 対象が 2 件未満（突き合わせる相手がいない）。
 
