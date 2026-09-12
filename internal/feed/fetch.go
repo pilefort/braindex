@@ -72,5 +72,13 @@ func (f Fetcher) Fetch(ctx context.Context, url string) (Document, error) {
 	if int64(len(b)) > max {
 		return Document{}, fmt.Errorf("%w(%d バイト超)", ErrTooLarge, max)
 	}
-	return ParseBytes(b)
+	doc, err := ParseBytes(b)
+	if err != nil {
+		return Document{}, err
+	}
+	for i := range doc.Entries {
+		e := &doc.Entries[i]
+		e.ID = EntryID(e.Link, e.Title, url)
+	}
+	return doc, nil
 }

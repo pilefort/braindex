@@ -17,7 +17,7 @@ import (
 
 // Entry はフィードの記事 1 件。
 type Entry struct {
-	ID        string // 正規化したリンク(無ければタイトル)の SHA-256 先頭 16 桁。既読・選別の鍵
+	ID        string // 正規化したリンクの SHA-256 先頭 16 桁。リンクが無ければ取得元 URL と題名で作る
 	Title     string // タグ・実体参照・連続空白を整えたタイトル。無ければ "(無題)"
 	Link      string // 記事の URL(フィードの記載どおり。正規化は ID の計算にだけ使う)
 	Published string // 公開日 YYYY-MM-DD(UTC)。published → updated の順に採り、読めなければ空
@@ -176,16 +176,25 @@ func (t *atomText) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 		switch v := tok.(type) {
 		case xml.StartElement:
 			depth++
-			sb.WriteByte(' ')
+			writeAtomBoundary(&sb, v.Name.Local)
 		case xml.EndElement:
 			depth--
-			sb.WriteByte(' ')
+			writeAtomBoundary(&sb, v.Name.Local)
 		case xml.CharData:
 			sb.Write(v)
 		}
 	}
 	t.Text = sb.String()
 	return nil
+}
+
+// 段落境界は概要のメタデータ判定まで残す。インライン要素は空白で区切る。
+func writeAtomBoundary(sb *strings.Builder, name string) {
+	if summaryBreakRe.MatchString("<" + name + ">") {
+		sb.WriteByte('\n')
+	} else {
+		sb.WriteByte(' ')
+	}
 }
 
 type atomLink struct {

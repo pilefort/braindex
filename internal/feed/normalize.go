@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"html"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -48,11 +49,15 @@ func NormalizeLink(u string) string {
 	return strings.TrimRight(u, "/?&")
 }
 
-// EntryID は記事の識別子。正規化したリンク(無ければタイトル)の SHA-256 の先頭 16 桁(16 進)。
-func EntryID(link, title string) string {
+// EntryID は記事の識別子。リンクが無ければ取得元 URL と題名で作る。
+// feedURL の省略は取得元を持たない Parse 用。Fetch では取得元を必ず渡す。
+func EntryID(link, title string, feedURL ...string) string {
 	basis := NormalizeLink(link)
 	if basis == "" {
 		basis = strings.TrimSpace(title)
+		if len(feedURL) > 0 {
+			basis = strings.TrimSpace(feedURL[0]) + "\x00" + basis
+		}
 	}
 	sum := sha256.Sum256([]byte(basis))
 	return hex.EncodeToString(sum[:8])
@@ -72,12 +77,44 @@ func cleanText(raw string) string {
 // CleanSummary は description / summary(HTML 混じり)を素のテキストにして limit 文字で切り詰める。
 // limit <= 0 なら切らない。切ったときは末尾に "…" を付ける(文字数は limit+1)。
 func CleanSummary(raw string, limit int) string {
+	if metadataOnly(raw) {
+		return ""
+	}
 	t := cleanText(raw)
 	if limit <= 0 || utf8.RuneCountInString(t) <= limit {
 		return t
 	}
 	r := []rune(t)
 	return strings.TrimRight(string(r[:limit]), " ") + "…"
+}
+
+var summaryBreakRe = regexp.MustCompile(`(?i)<\s*/?\s*(?:p|div|li|br|tr|h[1-6])\b[^>]*>`)
+
+// metadataOnly は段落と改行を保って平文にし、リンク情報だけかを判定する。
+func metadataOnly(raw string) bool {
+	plain := html.UnescapeString(tagRe.ReplaceAllString(summaryBreakRe.ReplaceAllString(raw, "\n"), " "))
+	for _, line := range strings.Split(plain, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		metadata := false
+		for _, prefix := range []string{"Article URL:", "Comments URL:", "Points:", "# Comments:"} {
+			if strings.HasPrefix(line, prefix) {
+				metadata = true
+				break
+			}
+		}
+		if metadata {
+			continue
+		}
+		u, err := url.Parse(line)
+		if err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && len(strings.Fields(line)) == 1 {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // dateLayouts はフィードで見かける日付の書式。RSS 2.0 は RFC 822 系、Atom と dc:date は RFC 3339 系。

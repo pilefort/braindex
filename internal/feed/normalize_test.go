@@ -103,3 +103,14 @@ func TestParseDate_IndependentOfLocalZone(t *testing.T) {
 		}
 	}
 }
+
+func TestCleanSummaryMetadataOnly(t *testing.T) {
+	for _, raw := range []string{"Article URL: https://example.com/a\nComments URL: https://example.com/c\nPoints: 12\n# Comments: 3", "<p>Article URL: <a href='https://example.com'>https://example.com</a></p><p>Points: 12</p>", "https://example.com/a\n\nhttps://example.com/b"} {
+		if got := CleanSummary(raw, 20); got != "" {
+			t.Errorf("got %q", got)
+		}
+	}
+	if got := CleanSummary("Points: 12\nActual explanation.", 0); got != "Points: 12 Actual explanation." {
+		t.Fatalf("got %q", got)
+	}
+}

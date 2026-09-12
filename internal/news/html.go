@@ -272,13 +272,10 @@ func itemHTML(e feed.Entry, r Result, o DigestOptions, low bool) string {
 			title = a.Title
 			translation = "日本語訳（自動）"
 		}
-		if a.Summary != "" {
+		if a.Summary != "" && e.Summary != "" {
 			summary = a.Summary
 			translation = "日本語訳（自動）"
 		}
-	}
-	if summary == "" {
-		summary = "概要がありません。原文を開くか、解説を相談できます。"
 	}
 	category := r.Source.Category
 	if category == "" {
@@ -286,7 +283,12 @@ func itemHTML(e feed.Entry, r Result, o DigestOptions, low bool) string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, `<li class="%s" data-id="%s" data-title="%s" data-link="%s" data-feed="%s" data-cat="%s" data-low="%s" data-r="%s" data-summary="%s">`, cls, esc(e.ID), esc(e.Title), esc(link), esc(r.Source.Name), esc(r.Source.Category), lowFlag, score, esc(summary))
-	fmt.Fprintf(&b, `<div class="meta"><span class="tag">%s</span>%s<span>%s · %s</span></div><h3 class="article-title">%s</h3><p class="sum">%s</p>`, esc(category), badge, esc(r.Source.Name), esc(e.Published), esc(title), esc(summary))
+	fmt.Fprintf(&b, `<div class="meta"><span class="tag">%s</span>%s<span>%s · %s</span></div><h3 class="article-title">%s</h3>`, esc(category), badge, esc(r.Source.Name), esc(e.Published), esc(title))
+	if summary != "" {
+		fmt.Fprintf(&b, `<p class="sum">%s</p>`, esc(summary))
+	} else {
+		b.WriteString(`<p class="sum">概要がありません。原文を開くか、解説を相談できます。</p>`)
+	}
 	if translation != "" {
 		fmt.Fprintf(&b, `<small>%s</small>`, translation)
 	}
