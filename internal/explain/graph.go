@@ -11,8 +11,22 @@ import (
 // 本文の数値と食い違っても気づけない。表の数値から目盛りと長さを計算すれば、その食い違いは起きない。
 // 描くのは棒と折れ線の 2 種類だけで、概念図は手書きの .svg のまま。
 
-// graphColors は系列の色。色覚の差でも見分けられる 5 色(Okabe-Ito の並びから)。
-var graphColors = []string{"#0072B2", "#E69F00", "#009E73", "#CC79A7", "#56B4E9"}
+// 系列の色は 5 つで、色相は Okabe-Ito（色覚の差でも見分けられる並び）から取る。
+// **明るい配色と暗い配色で別の値を使う。** Okabe-Ito をそのまま白い背景に置くと、橙(#E69F00)が 2.1、
+// 空(#56B4E9)が 2.2 しかなく、細い折れ線が背景に沈む(利用者の指摘 2026-09-12)。
+// 明るい配色では暗く寄せ、暗い配色では元の明るい値を使う。どちらも背景との比は 3.0 以上、
+// 系列どうしの見分けやすさは Okabe-Ito と同等以上にする。実際の値は contrast_test.go が測る。
+//
+// 色は SVG に直接書かず CSS の class で当てる（→ style.go の seriesCSS）。配色の切り替えに追従させるため。
+var (
+	graphColorsLight = []string{"#0067A0", "#D55E00", "#007656", "#C86D9F", "#3B4047"}
+	graphColorsDark  = []string{"#56B4E9", "#E69F00", "#009E73", "#CC79A7", "#C9D1DC"}
+)
+
+// seriesClass は k 番目の系列に当てる class。色の数を超えたら先頭へ戻る。
+func seriesClass(kind string, k int) string {
+	return "bx-" + kind + strconv.Itoa(k%len(graphColorsLight))
+}
 
 // lineDashes は系列が色の数を超えたときの線種。6 つ目からは色が一巡するので、線種でも見分けられるようにする。
 var lineDashes = []string{"", "7 4", "2 3", "11 4 2 4", "1 5", "9 3 2 3"}
@@ -296,9 +310,8 @@ func chartSVG(spec graphSpec, header []string, rows [][]string) (string, []strin
 				}
 				x := xOf(i) - inner/2 + float64(k)*bw
 				y0, y1 := yOf(v), zero // 0 の線から伸ばす(負の値は下へ)
-				b.WriteString(`<rect class="bx-bar" x="` + f1(x+1) + `" y="` + f1(math.Min(y0, y1)) +
+				b.WriteString(`<rect class="bx-bar ` + seriesClass("fill", k) + `" x="` + f1(x+1) + `" y="` + f1(math.Min(y0, y1)) +
 					`" width="` + f1(math.Max(bw-2, 1)) + `" height="` + f1(math.Abs(y1-y0)) +
-					`" fill="` + graphColors[k%len(graphColors)] +
 					`" style="animation-delay:` + strconv.FormatFloat(delay, 'f', 2, 64) + `s"/>`)
 				delay = math.Min(delay+0.03, 0.6)
 			}
@@ -317,14 +330,14 @@ func chartSVG(spec graphSpec, header []string, rows [][]string) (string, []strin
 			if dash && lineDashes[k%len(lineDashes)] != "" {
 				attr = ` stroke-dasharray="` + lineDashes[k%len(lineDashes)] + `"`
 			}
-			b.WriteString(`<polyline class="bx-line" points="` + strings.Join(pts, " ") +
-				`" stroke="` + graphColors[k%len(graphColors)] + `"` + attr + `/>`)
+			b.WriteString(`<polyline class="bx-line ` + seriesClass("stroke", k) + `" points="` +
+				strings.Join(pts, " ") + `"` + attr + `/>`)
 			for i, v := range s.vals {
 				if math.IsNaN(v) {
 					continue
 				}
-				b.WriteString(`<circle class="bx-dot" cx="` + f1(xOf(i)) + `" cy="` + f1(yOf(v)) +
-					`" r="3.2" fill="` + graphColors[k%len(graphColors)] + `"/>`)
+				b.WriteString(`<circle class="bx-dot ` + seriesClass("fill", k) + `" cx="` + f1(xOf(i)) +
+					`" cy="` + f1(yOf(v)) + `" r="3.2"/>`)
 			}
 		}
 	}
@@ -334,8 +347,8 @@ func chartSVG(spec graphSpec, header []string, rows [][]string) (string, []strin
 		x := padL
 		y := 14.0 + float64(row)*19.0
 		for _, k := range idxs {
-			b.WriteString(`<rect x="` + f1(x) + `" y="` + f1(y-9) + `" width="12" height="12" rx="3" fill="` +
-				graphColors[k%len(graphColors)] + `"/>`)
+			b.WriteString(`<rect class="` + seriesClass("fill", k) + `" x="` + f1(x) + `" y="` + f1(y-9) +
+				`" width="12" height="12" rx="3"/>`)
 			b.WriteString(`<text class="bx-leg" x="` + f1(x+17) + `" y="` + f1(y+1) + `">` +
 				escapeText(ss[k].name) + `</text>`)
 			x += legendItemW(ss[k].name)

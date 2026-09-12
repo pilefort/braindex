@@ -9,12 +9,15 @@ import (
 var urlRE = regexp.MustCompile(`https?://[^\s<>"'|)]+`)
 
 // css は回答 HTML に埋め込むスタイル。外部読み込み無し。data-theme="dark" で配色が切り替わる。
+//
+// 文字と背景の組み合わせは、明・暗のどちらでもコントラスト比 4.5 以上にする(利用者の指摘 2026-09-12)。
+// 実際の比は contrast_test.go が測る。色を変えるときはそのテストを通してから入れる。
 const css = `
-:root{--bg:#f6f7f9;--panel:#fff;--ink:#1c2230;--sub:#5a6472;--mut:#8a93a3;--line:#e5e8ee;--line2:#eef1f5;
-  --accent:#1c7ed6;--accent-soft:#e7f1fb;--code:#f0f2f6;
+:root{--bg:#f6f7f9;--panel:#fff;--ink:#1c2230;--sub:#5a6472;--mut:#677183;--line:#e5e8ee;--line2:#eef1f5;
+  --accent:#196FBC;--accent-soft:#e7f1fb;--on-accent:#fff;--code:#f0f2f6;
   --jp:"Hiragino Kaku Gothic ProN","Yu Gothic Medium","Yu Gothic",Meiryo,"Noto Sans JP",system-ui,sans-serif}
-:root[data-theme="dark"]{--bg:#12151b;--panel:#1a1e26;--ink:#e8ebf1;--sub:#a6afbe;--mut:#727c8c;
-  --line:#2a2f3a;--line2:#232833;--accent:#4dabf7;--accent-soft:#16283b;--code:#232833}
+:root[data-theme="dark"]{--bg:#12151b;--panel:#1a1e26;--ink:#e8ebf1;--sub:#a6afbe;--mut:#7D8695;
+  --line:#2a2f3a;--line2:#232833;--accent:#4dabf7;--accent-soft:#16283b;--on-accent:#0e1116;--code:#232833}
 *{box-sizing:border-box}html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font-family:var(--jp);line-height:1.85;font-feature-settings:"palt" 1;
   -webkit-font-smoothing:antialiased}
@@ -57,7 +60,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--jp);line-height:1.8
 .ent[open]>summary{border-bottom:1px solid var(--line2);border-radius:12px 12px 0 0}
 .ent-w{color:var(--mut);font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .ent-q{font-weight:800;flex:1 1 12em;overflow-wrap:anywhere}
-.ent-n{background:var(--accent);color:#fff;border-radius:999px;padding:1px 9px;font-size:11px;white-space:nowrap}
+.ent-n{background:var(--accent);color:var(--on-accent);border-radius:999px;padding:1px 9px;font-size:11px;white-space:nowrap}
 .ent-b{padding:2px 16px 10px}
 .ent-b>:first-child{margin-top:.6em}
 .ent-b h2{font-size:17px}

@@ -1,5 +1,10 @@
 package explain
 
+import (
+	"strconv"
+	"strings"
+)
+
 // tocWide は目次を横に固定する画面幅。CSS と JS で同じ値を使う(片方だけ直すとずれる)。
 // この幅からは目次を画面の左端に置き、本文をその右へずらす。中央に置いたまま左へ回り込ませると、
 // 本文との間が数 px しか空かない(2026-09-12 の指摘・実測で 8px だった)。
@@ -14,7 +19,7 @@ const tocCenter = "(min-width:1560px)"
 // 図・表・グラフはこれより広く使ってよいので、箱の幅(.doc.explain)と本文の幅を分ける。
 const measure = "40rem"
 
-const css = `
+var css = seriesCSS() + `
 .doc.explain{max-width:900px;padding-bottom:180px}
 .doc.explain p,.doc.explain ul,.doc.explain ol,.doc.explain blockquote,
 .doc.explain h1,.doc.explain h2,.doc.explain h3,.doc.explain h4{max-width:` + measure + `}
@@ -91,3 +96,20 @@ if(!m)return;
 var ss=document.querySelectorAll('.bx-fig svg');
 for(var i=0;i<ss.length;i++){if(ss[i].pauseAnimations)ss[i].pauseAnimations();}
 })();`
+
+// seriesCSS は系列の色を出す。明るい配色と暗い配色で値が違うので、SVG に直接書かず class で当てる。
+// 塗り(棒・点・凡例の印)と線(折れ線)を別の class に分けてあるのは、`.bx-line{fill:none}` と
+// 取り合いにならないようにするため。
+func seriesCSS() string {
+	var b strings.Builder
+	write := func(prefix string, colors []string) {
+		for i, c := range colors {
+			n := strconv.Itoa(i)
+			b.WriteString(prefix + ".bx-fill" + n + "{fill:" + c + "}\n")
+			b.WriteString(prefix + ".bx-stroke" + n + "{stroke:" + c + "}\n")
+		}
+	}
+	write("", graphColorsLight)
+	write(`:root[data-theme="dark"] `, graphColorsDark)
+	return b.String()
+}

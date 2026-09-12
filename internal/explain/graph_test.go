@@ -166,7 +166,7 @@ func TestGraph_系列が6つ以上で線種が変わる(t *testing.T) {
 // 棒は読み込み時に伸びる。動きを嫌う設定では止める。
 func TestGraph_棒が伸びる(t *testing.T) {
 	html := mustRender(t, graphMD, Options{})
-	if !strings.Contains(html, `class="bx-bar"`) || !strings.Contains(html, "animation:bx-grow") {
+	if !strings.Contains(html, `class="bx-bar bx-fill0"`) || !strings.Contains(html, "animation:bx-grow") {
 		t.Error("棒が伸びる指定が無い")
 	}
 	if !strings.Contains(html, "@media (prefers-reduced-motion:reduce)") ||
