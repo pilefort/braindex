@@ -46,5 +46,14 @@ func sessionRoot(cfgRoot, baseDir string, allProjects, hasConfig bool) (dir, why
 		}
 		return "", "設定に root が無いのでセッションを絞れない(root の外の会話も数える)"
 	}
-	return joinIfRelative(baseDir, filepath.FromSlash(cfgRoot)), ""
+	// 絶対パスにしてから返す。セッションログの cwd は絶対パスなので、相対のまま渡すと
+	// sessions 側の filepath.Rel が突き合わせに失敗し、配下のセッションまで「root の外」として
+	// 全件除かれる(hub のカレントで既定の braindex.json を使うと設定の置き場が "." になり、
+	// root: ".." がそのまま ".." になる。Codex レビュー 2026-09-12)
+	dir = joinIfRelative(baseDir, filepath.FromSlash(cfgRoot))
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Sprintf("root %s の絶対パスを解決できない(%v)のでセッションを絞れない(root の外の会話も数える)", dir, err)
+	}
+	return abs, ""
 }

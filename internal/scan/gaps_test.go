@@ -183,3 +183,29 @@ func TestCovers(t *testing.T) {
 		t.Errorf("空パスは対象外")
 	}
 }
+
+// notes_dirs に "./docs/notes" と書いても、走査と Covers の答えが揃う。
+// 走査は filepath.Join が "./" を落とすので拾うが、Covers は文字列の前方一致なので落としていなかった。
+// 食い違うと、前回の索引にある行が「対象外」に分類されて削除件数に入らない(Codex レビュー 2026-09-12)。
+func TestCovers_notes_dirsの余分な区切りを走査と同じに畳む(t *testing.T) {
+	for _, nd := range []string{"./docs/notes", "docs//notes", "docs/notes/", "./"} {
+		cfg := Config{Root: "testdata/root-wiki", NotesDirs: []string{nd}}
+		files, err := scanFiles(cfg)
+		if err != nil {
+			t.Fatalf("Scan[%s]: %v", nd, err)
+		}
+		found := 0
+		for _, f := range files {
+			if f.Kind == "decisions" {
+				continue // decisions は notes_dirs と無関係に拾う
+			}
+			found++
+			if !Covers(cfg, f.Rel) {
+				t.Errorf("notes_dirs=%q: 走査は拾ったのに Covers(%s)=false", nd, f.Rel)
+			}
+		}
+		if found == 0 {
+			t.Errorf("notes_dirs=%q: 走査が 1 件も拾っていない(テストの前提が崩れている)", nd)
+		}
+	}
+}

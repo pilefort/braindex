@@ -218,8 +218,7 @@ func effectiveNotesDirs(cfg scan.Config) []string {
 	}
 	out := []string{}
 	for _, nd := range cfg.NotesDirs {
-		nd = strings.Trim(filepath.ToSlash(nd), "/")
-		if nd != "" {
+		if nd = scan.NormalizeNotesDir(nd); nd != "" {
 			out = append(out, nd)
 		}
 	}
@@ -544,7 +543,9 @@ func describe(e indexdata.Entry) string {
 
 // WhichRule は対象のパスに当たった規則を言う(docs/decisions.md・notes_dirs・extra の順。scan.Covers と同じ順序)。
 func WhichRule(cfg scan.Config, notesDirs []string, rel string) string {
-	repo, inRepo, _ := strings.Cut(rel, "/")
+	// リポ名の段数は repo_depth で決まる(2 なら group/name)。1 段で切ると group をリポ名と読み、
+	// 普通のノートまで「規則を特定できない」に落ちる。走査と同じ scan.SplitRepo で切る
+	repo, inRepo, _ := scan.SplitRepo(cfg, rel)
 	if inRepo == "docs/decisions.md" {
 		return "docs/decisions.md（決定記録）"
 	}
@@ -554,7 +555,9 @@ func WhichRule(cfg scan.Config, notesDirs []string, rel string) string {
 		}
 	}
 	for _, ex := range cfg.Extra {
-		if ex.Repo == repo && scan.Covers(scan.Config{NotesDirs: cfg.NotesDirs, Extra: []scan.ExtraRule{ex}}, rel) {
+		// RepoDepth も渡す。落とすと Covers が 1 段で切って extra に当たらない
+		sub := scan.Config{RepoDepth: cfg.RepoDepth, NotesDirs: cfg.NotesDirs, Extra: []scan.ExtraRule{ex}}
+		if ex.Repo == repo && scan.Covers(sub, rel) {
 			return fmt.Sprintf("extra %s/%s", ex.Repo, ex.Path)
 		}
 	}
@@ -574,12 +577,24 @@ func WhyNotCovered(cfg scan.Config, rel string) string {
 	if hasArchiveSeg(rel) {
 		return "パスに archive セグメントを含む（アーカイブは索引から外れる）"
 	}
-	repo, inRepo, ok := strings.Cut(rel, "/")
-	if !ok || inRepo == "" {
+	// リポ名の段数は repo_depth で決まる(2 なら group/name)。走査と同じ scan.SplitRepo で切る
+	repo, inRepo, ok := scan.SplitRepo(cfg, rel)
+	if !ok {
+		// SplitRepo が false になる理由を分ける(段数が足りない／リポ名にドットか空のセグメント)
+		parts := strings.Split(rel, "/")
+		depth := cfg.Depth()
+		if len(parts) <= depth {
+			return "リポ名だけで、リポ内のパスが無い"
+		}
+		for _, seg := range parts[:depth] {
+			if seg == "" {
+				return "パスの形が不正（空のセグメント・. ・..）"
+			}
+			if strings.HasPrefix(seg, ".") {
+				return "ドットで始まるリポは見ない"
+			}
+		}
 		return "リポ名だけで、リポ内のパスが無い"
-	}
-	if strings.HasPrefix(repo, ".") {
-		return "ドットで始まるリポは見ない"
 	}
 	for _, seg := range strings.Split(inRepo, "/") {
 		if seg == "" || seg == "." || seg == ".." {

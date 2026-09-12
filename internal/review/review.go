@@ -199,11 +199,12 @@ func Build(in Input) (Result, error) {
 	b.WriteString("\n## 次アクション\n\n（1〜3 件）\n")
 	// 前回の判断の節が空のままなら、今回の「次アクション」の直下に書く。機械節は毎週埋まるので
 	// 回っているように見えるが、判断の節が空なら回路は動いていない(設計レビュー 2026-09-06 M7)。
+	// 書く行には AutoNoteMark を付ける。付けないと翌週この行を人の記入と数えて警告が消える。
 	empty, ws := emptyJudgementSections(in.PrevPath)
 	res.Warnings = append(res.Warnings, ws...)
 	if len(empty) > 0 {
 		msg := fmt.Sprintf("前回（%s）の判断の節が空のまま: %s", in.Since, strings.Join(empty, "・"))
-		fmt.Fprintf(&b, "\n- %s\n", msg)
+		fmt.Fprintf(&b, "\n- %s%s\n", AutoNoteMark, msg)
 		res.Warnings = append(res.Warnings, msg)
 	}
 	res.Report = []byte(b.String())
@@ -247,8 +248,7 @@ func pathspecs(cfg scan.Config) []string {
 	}
 	out := make([]string, 0, len(dirs)+1)
 	for _, d := range dirs {
-		d = strings.Trim(filepath.ToSlash(d), "/")
-		if d != "" {
+		if d = scan.NormalizeNotesDir(d); d != "" {
 			out = append(out, d)
 		}
 	}

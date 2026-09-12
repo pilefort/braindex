@@ -8,6 +8,11 @@ import (
 	"strings"
 )
 
+// AutoNoteMark は braindex 自身が判断の節に書き足した行の頭に付ける印。
+// 印が無いと、自分で書いた「判断の節が空のまま」の警告を翌週に人の記入と数えてしまい、
+// 誰も埋めていないのに警告が消える(Codex レビュー 2026-09-12)。読み手にも誰が書いた行かが分かる。
+const AutoNoteMark = "（braindex）"
+
 // JudgementSections は人が埋める節の見出し(下書きの節 5〜7)。機械節と違い、braindex は中身を作らない。
 var JudgementSections = []string{
 	"今週の差分ダイジェスト（リポ別）",
@@ -48,7 +53,7 @@ func emptyJudgementSections(path string) (empty []string, warnings []string) {
 			seen[cur] = true
 			continue
 		}
-		if cur == "" || t == "" || isTemplateLine(t) {
+		if cur == "" || t == "" || isTemplateLine(t) || isAutoNote(t) {
 			continue
 		}
 		filled[cur] = true
@@ -64,4 +69,9 @@ func emptyJudgementSections(path string) (empty []string, warnings []string) {
 // isTemplateLine は braindex が節に置いた案内の行(全角括弧で囲んだ 1 行)。
 func isTemplateLine(t string) bool {
 	return strings.HasPrefix(t, "（") && strings.HasSuffix(t, "）")
+}
+
+// isAutoNote は braindex が書き足した行(AutoNoteMark 付き)。箇条書きの記号は有っても無くてもよい。
+func isAutoNote(t string) bool {
+	return strings.HasPrefix(strings.TrimPrefix(t, "- "), AutoNoteMark)
 }

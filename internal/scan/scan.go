@@ -162,6 +162,20 @@ type Result struct {
 // DefaultNotesDir は notes_dirs 未指定時のノート置き場。
 const DefaultNotesDir = "docs/notes"
 
+// NormalizeNotesDir は notes_dirs の 1 件を、走査が実際に使う形(リポ相対・スラッシュ区切り・
+// 先頭の "./" と重複した区切りを畳んだ形)にする。空の指定は "" を返す(呼び出し側で飛ばす)。
+//
+// 走査は filepath.Join で起点を作るので "./docs/notes" が "docs/notes" になる。
+// 対象判定(Covers)や診断の表示が文字列のまま前方一致していると、走査は拾ったパスを
+// 「対象外」と答えてしまう。同じ設定に同じ答えを返すため、正規化はこの 1 か所に集める。
+func NormalizeNotesDir(nd string) string {
+	nd = strings.Trim(filepath.ToSlash(nd), "/")
+	if nd == "" {
+		return ""
+	}
+	return path.Clean(nd)
+}
+
 // Scan は cfg に従って対象ファイルを発見する。
 //
 // 戻り値の Warnings は「飛ばしたもの」の説明(読めないディレクトリ・存在しない extra の起点など)。
@@ -232,7 +246,7 @@ func Scan(cfg Config) (Result, error) {
 
 		// notes_dirs の各 N について D/N/**/*.md
 		for _, nd := range notesDirs {
-			nd = strings.Trim(filepath.ToSlash(nd), "/")
+			nd = NormalizeNotesDir(nd)
 			if nd == "" {
 				continue
 			}
@@ -333,8 +347,7 @@ func Covers(cfg Config, rel string) bool {
 		notesDirs = []string{DefaultNotesDir}
 	}
 	for _, nd := range notesDirs {
-		nd = strings.Trim(filepath.ToSlash(nd), "/")
-		switch {
+		switch nd = NormalizeNotesDir(nd); {
 		case nd == "":
 			continue
 		case nd == ".": // リポ直下を置き場にする指定。リポ内の全部が対象
