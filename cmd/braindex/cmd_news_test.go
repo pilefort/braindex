@@ -125,6 +125,20 @@ func TestNewsFetch_Open(t *testing.T) {
 	}
 }
 
+// -stdout はファイルに書かないので -out は使われない。黙って無視せず、フラグの誤り(終了コード 1)にする。
+func TestNewsFetch_OutとStdoutの同時指定は拒否(t *testing.T) {
+	hub, _ := newsHub(t)
+	out := filepath.Join(hub, "news", "mine.md")
+	code, so, se := newsFetch(t, hub, "-layer", "weekly", "-stdout", "-out", out)
+	if code != 1 {
+		t.Fatalf("exit=%d want 1\n%s%s", code, so, se)
+	}
+	mustContain(t, "stderr", se, "-out", "-stdout")
+	if _, err := os.Stat(out); err == nil {
+		t.Error("-out が無視されずファイルを書いてしまった")
+	}
+}
+
 func feedIDOf(link string) string { return feed.EntryID(link, "") }
 
 // -out に .html を渡しても Markdown を上書きしない(html は md と同じ連番の規則で別名にする)。
