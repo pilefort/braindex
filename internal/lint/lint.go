@@ -18,6 +18,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/pilefort/braindex/internal/textutil"
 )
 
 // Warning は 1 件の指摘。
@@ -137,13 +139,7 @@ func Check(path string, content []byte, o Options) []Warning {
 
 // splitLines は BOM を除去し CRLF/CR を LF に正規化して行に分割する(internal/extract と同じ規則)。
 func splitLines(content []byte) []string {
-	if len(content) >= 3 && content[0] == 0xEF && content[1] == 0xBB && content[2] == 0xBF {
-		content = content[3:]
-	}
-	s := string(content)
-	s = strings.ReplaceAll(s, "\r\n", "\n")
-	s = strings.ReplaceAll(s, "\r", "\n")
-	return strings.Split(s, "\n")
+	return textutil.SplitLines(content)
 }
 
 func firstH1(lines []string) int {

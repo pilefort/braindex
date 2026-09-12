@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/pilefort/braindex/internal/textutil"
 )
 
 // Meta は 1 ファイルから抽出した索引メタ情報。
@@ -97,14 +99,7 @@ func latestRecordDate(lines []string) string {
 
 // splitLines は BOM を除去し CRLF/CR を LF に正規化して行に分割する。
 func splitLines(content []byte) []string {
-	// UTF-8 BOM (EF BB BF) を除去。ソースに BOM リテラルを置かず、バイトで判定する。
-	if len(content) >= 3 && content[0] == 0xEF && content[1] == 0xBB && content[2] == 0xBF {
-		content = content[3:]
-	}
-	s := string(content)
-	s = strings.ReplaceAll(s, "\r\n", "\n")
-	s = strings.ReplaceAll(s, "\r", "\n")
-	return strings.Split(s, "\n")
+	return textutil.SplitLines(content)
 }
 
 func firstH1Index(lines []string) int {
