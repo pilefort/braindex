@@ -19,7 +19,7 @@ const tocCenter = "(min-width:1560px)"
 // 図・表・グラフはこれより広く使ってよいので、箱の幅(.doc.explain)と本文の幅を分ける。
 const measure = "40rem"
 
-var css = seriesCSS() + `
+var css = seriesCSS() + figCSS() + `
 .doc.explain{max-width:900px;padding-bottom:180px}
 .doc.explain p,.doc.explain ul,.doc.explain ol,.doc.explain blockquote,
 .doc.explain h1,.doc.explain h2,.doc.explain h3,.doc.explain h4{max-width:` + measure + `}
@@ -112,4 +112,62 @@ func seriesCSS() string {
 	write("", graphColorsLight)
 	write(`:root[data-theme="dark"] `, graphColorsDark)
 	return b.String()
+}
+
+// figMono は図の中の等幅の文字(ファイル名・コマンド)の色。明るい配色・暗い配色の順。
+// 本文に対応する変数が無いので、図のためにここで持つ。値は contrast_test.go が測る。
+var figMono = [2]string{"#0f6b8f", "#7dcfff"}
+
+// figSurfAlpha は系列の面(--s1〜)の濃さ。明るい配色・暗い配色の順。
+// 暗い配色で濃いのは、暗い地の上では同じ濃さだと面が見えないため。
+var figSurfAlpha = [2]float64{0.09, 0.12}
+
+// figCSS は図(svg.bxfig)が使える色の名前を出す。
+//
+// **図の側は名前だけを書き、色の値は書かない。** 値を図ごとに書き写すと、書き忘れた図が
+// 本文と違う配色のまま出る(2026-09-12 に実際に起きた。暗い配色前提の図を明るい本文へ入れて
+// 文字と背景の比が 1.13 になった)。ここに 1 か所だけ置けば、図はそれを参照するだけで済む。
+//
+// 本文にある色は本文の変数へ寄せてあるので、明暗の切り替えに自動でついてくる。
+// 図だけが使う色(等幅の文字・系列・系列の面)は明暗の 2 組を出す。
+func figCSS() string {
+	const alias = "--fg:var(--ink);--fg2:var(--sub);--edge:var(--mut);" +
+		"--groove:var(--line);--surf:var(--line2);"
+	return ".bx-fig svg.bxfig{" + alias + figVars(0) + "}\n" +
+		`:root[data-theme="dark"] .bx-fig svg.bxfig{` + figVars(1) + "}\n"
+}
+
+// figVars は図だけが使う色を 1 組分並べる。i は 0 が明るい配色、1 が暗い配色。
+func figVars(i int) string {
+	colors := graphColorsLight
+	if i == 1 {
+		colors = graphColorsDark
+	}
+	var b strings.Builder
+	b.WriteString("--mono:" + figMono[i] + ";")
+	for n, c := range colors {
+		b.WriteString("--c" + strconv.Itoa(n+1) + ":" + c + ";")
+	}
+	// 面は系列の色を薄く敷く。枠線と同じ色にするため、別の値を持たない。
+	for n, c := range colors[:len(colors)-1] {
+		b.WriteString("--s" + strconv.Itoa(n+1) + ":" + rgba(c, figSurfAlpha[i]) + ";")
+	}
+	return b.String()
+}
+
+// rgba は #rrggbb を rgba(r,g,b,a) にする。読めない色は黒として扱う(CSS が壊れないようにする)。
+func rgba(hex string, a float64) string {
+	h := strings.TrimPrefix(hex, "#")
+	ch := func(k int) string {
+		if len(h) < k+2 {
+			return "0"
+		}
+		v, err := strconv.ParseInt(h[k:k+2], 16, 0)
+		if err != nil {
+			return "0"
+		}
+		return strconv.FormatInt(v, 10)
+	}
+	return "rgba(" + ch(0) + "," + ch(2) + "," + ch(4) + "," +
+		strconv.FormatFloat(a, 'f', -1, 64) + ")"
 }
