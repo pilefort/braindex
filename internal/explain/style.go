@@ -1,20 +1,28 @@
 package explain
 
-// tocWide は目次を横に固定する画面幅。CSS とJS で同じ値を使う(片方だけ直すとずれる)。
-// 本文は 820px を中央に置くので、その左に 240px の目次と余白が入る幅を境にする。
-const tocWide = "(min-width:1360px)"
+// tocWide は目次を横に固定する画面幅。CSS と JS で同じ値を使う(片方だけ直すとずれる)。
+// この幅からは目次を画面の左端に置き、本文をその右へずらす。中央に置いたまま左へ回り込ませると、
+// 本文との間が数 px しか空かない(2026-09-12 の指摘・実測で 8px だった)。
+const tocWide = "(min-width:1240px)"
 
-// css は mdhtml の共通 CSS の後ろに足す分。目次・図の見せ方を決める。
-// 本文の行長。日本語は全角 1 文字が 1em なので、em が読みやすさの目安になる
-// (35〜45 字が読みやすいとされる範囲)。図・表・グラフはこれより広く使ってよいので、
-// 箱の幅(.doc.explain)と本文の幅(.bx-measure)を分ける。
-const measure = "38em"
+// tocCenter は本文を中央に戻せる画面幅。ここまで広ければ、中央の本文の左にも目次が余裕で入る。
+const tocCenter = "(min-width:1560px)"
+
+// measure は本文の行長。日本語は全角 1 文字が 1rem(16px)なので、rem が読みやすさの目安になる
+// (35〜45 字が読みやすいとされる範囲)。**em にしない**——em は要素自身の文字の大きさが基準なので、
+// 見出し(26px)だけ行長が 1.6 倍になり、段落と右端がそろわなくなる(2026-09-12 の指摘)。
+// 図・表・グラフはこれより広く使ってよいので、箱の幅(.doc.explain)と本文の幅を分ける。
+const measure = "40rem"
 
 const css = `
 .doc.explain{max-width:900px;padding-bottom:180px}
 .doc.explain p,.doc.explain ul,.doc.explain ol,.doc.explain blockquote,
 .doc.explain h1,.doc.explain h2,.doc.explain h3,.doc.explain h4{max-width:` + measure + `}
 .doc.explain pre{max-width:100%}
+.doc.explain p,.doc.explain li,.doc.explain blockquote,
+.doc.explain h1,.doc.explain h2,.doc.explain h3,.doc.explain h4,.bx-toc a{
+  word-break:auto-phrase;line-break:strict;text-wrap:pretty}
+.doc.explain td{word-break:auto-phrase;line-break:strict}
 .bx-tw{overflow-x:auto;max-width:100%}
 .bx-tw table{margin:1em 0}
 .doc.explain .bx-ref{text-decoration:none;border-bottom:1px dotted var(--accent);word-break:keep-all}
@@ -32,8 +40,12 @@ const css = `
   border-left:2px solid transparent;border-radius:0 6px 6px 0;overflow-wrap:anywhere}
 .bx-toc a:hover{background:var(--line2)}
 .bx-toc a.cur{color:var(--accent);border-left-color:var(--accent);background:var(--accent-soft);font-weight:700}
-@media ` + tocWide + `{.bx-toc{position:fixed;top:56px;left:calc(50% - 670px);width:240px;
-  max-height:calc(100vh - 112px);overflow:auto;margin:0}}
+@media ` + tocWide + `{
+  .bx-toc{position:fixed;top:56px;left:28px;width:224px;max-height:calc(100vh - 112px);overflow:auto;margin:0}
+  .doc.explain{margin-left:300px;margin-right:auto}}
+@media ` + tocCenter + `{
+  .bx-toc{left:calc(50% - 700px)}
+  .doc.explain{margin-left:auto}}
 .bx-fig{margin:1.8em 0}
 .bx-fig svg{display:block;max-width:100%;height:auto;margin:0 auto}
 .bx-fig figcaption{margin-top:.6em;color:var(--sub);font-size:13px;text-align:center}

@@ -55,7 +55,16 @@ with sync_playwright() as p:
     check("目次の位置", page.eval_on_selector("#bx-toc", "e=>getComputedStyle(e).position"), "fixed")
     toc = page.eval_on_selector("#bx-toc", "e=>e.getBoundingClientRect().right")
     body = page.eval_on_selector(".doc.explain h1", "e=>e.getBoundingClientRect().left")
-    ok("目次と本文の重なり", toc <= body, "目次の右端 %.0f <= 本文の左端 %.0f" % (toc, body))
+    # 「重なっていない」だけでは足りない。2026-09-12 に 8px しか空いていないのを指摘された
+    ok("目次と本文の間", body - toc >= 40, "%.0f px 空いている(40 px 以上)" % (body - toc))
+
+    # 段落と見出しの右端がそろう。行長を em で指定すると見出しだけ 1.6 倍に広がる(2026-09-12 の指摘)
+    sels = ['.doc.explain p', '.doc.explain h1', '.doc.explain h2', '.doc.explain > ul']
+    widths = page.evaluate("""(ss)=>ss.map(function(s){
+      var e=document.querySelector(s);
+      return e?Math.round(e.getBoundingClientRect().width):-1;})""", sels)
+    ok("本文の行長がそろう", min(widths) > 0 and max(widths) - min(widths) <= 1,
+       "段落・見出し・箇条書きの幅 %r" % widths)
 
     # --- 読んでいる節に印が付く
     cur = lambda: page.eval_on_selector_all("#bx-toc a.cur", "es=>es.map(e=>e.textContent)")
@@ -80,6 +89,13 @@ with sync_playwright() as p:
     ok("表の横スクロール", tw[0] > tw[1], "表の中身 %d px > 表示幅 %d px(箱の中で溢れている)" % (tw[0], tw[1]))
     doc = page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]")
     ok("ページの横流れ", doc[0] <= doc[1] + 1, "ページの幅 %d / 表示幅 %d" % (doc[0], doc[1]))
+
+    # --- もっと広い画面: 本文が中央に戻っても、目次との間は空いたまま
+    page, errors = new_page(browser, 1800, 900)
+    check("JS のエラー(1800px)", errors, [])
+    toc = page.eval_on_selector("#bx-toc", "e=>e.getBoundingClientRect().right")
+    body = page.eval_on_selector(".doc.explain h1", "e=>e.getBoundingClientRect().left")
+    ok("目次と本文の間(1800px)", body - toc >= 40, "%.0f px 空いている" % (body - toc))
 
     # --- 狭い画面: 目次は本文の先頭に畳まれる
     page, errors = new_page(browser, 820, 900)

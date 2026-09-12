@@ -54,8 +54,13 @@ func TestRender_コードの中の表は触らない(t *testing.T) {
 // 読む幅と、動きを止める指定が HTML に入っている(実際の見え方はブラウザ検査で見る)。
 func TestRender_読みやすさの指定(t *testing.T) {
 	html := mustRender(t, "# 題\n\n本文\n", Options{})
+	if !strings.HasSuffix(measure, "rem") {
+		// em は要素自身の文字の大きさが基準なので、見出しだけ行長が広がって右端がそろわない
+		t.Errorf("行長の単位が rem でない: %s", measure)
+	}
 	for _, want := range []string{
 		".doc.explain p,", "max-width:" + measure, // 本文の行長
+		"word-break:auto-phrase",                 // 日本語を語句の切れ目で折り返す
 		"@media (prefers-reduced-motion:reduce)", // CSS のアニメーション
 		"pauseAnimations",                        // SVG の <animate>(SMIL)
 		".bx-tw{overflow-x:auto",                 // 表の横スクロール
