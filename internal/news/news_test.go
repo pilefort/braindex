@@ -368,6 +368,15 @@ func TestRank_下げた取材先は上限が下がる(t *testing.T) {
 	if len(rk["b"].Matched) == 0 {
 		t.Error("当たった語まで消した")
 	}
+	// 点を上書きした後(LLM の採点)でも、もう一度かければ上限まで戻る
+	rk["b"] = interest.Score{Value: interest.MaxScore, Matched: []string{LLMMark}}
+	rk = CapDemoted(rk, res, map[string]bool{"不要ばかり": true})
+	if rk["b"].Value != DemotedMaxScore || len(rk["b"].Matched) != 1 {
+		t.Errorf("上書きの後の CapDemoted: %+v", rk["b"])
+	}
+	if rk["a"].Value != base["a"].Value {
+		t.Errorf("下げていない取材先を CapDemoted が変えた: %d", rk["a"].Value)
+	}
 }
 
 // 関心外から拾い上げる選び方: 主要表示は選ばない・関心度が高い方(1)を先に・1 フィード 1 件・同じ日なら同じ結果。

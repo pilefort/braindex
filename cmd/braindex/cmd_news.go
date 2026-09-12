@@ -290,6 +290,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	// 採点(関心プロファイル)。出典が無い警告は fetch の警告として数える
 	var ranking news.Ranking
 	var profileTerms []string
+	var demoted map[string]bool // 上限を下げる取材先。LLM の点を重ねた後にもう一度効かせる
 	profileWarnings := 0
 	if !o.noScore {
 		p, ws, err := loadProfile(fc, hubDir, today, 0, o.sessions, o.allProjects)
@@ -301,7 +302,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		}
 		profileWarnings = len(ws)
 		// 不要ばかり付く取材先は点の上限を下げて主要表示から下ろす(決定 2026-09-06)
-		demoted := news.DemotedFeeds(stats.Totals())
+		demoted = news.DemotedFeeds(stats.Totals())
 		ranking = news.Rank(results, p, demoted)
 		if ranking == nil {
 			fmt.Fprintln(stdout, "関心プロファイルが空なので採点なし(全件を主要表示)")
@@ -328,7 +329,9 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		llmWarnings = len(ws)
 		if ann != nil {
 			annotations = ann
-			ranking = news.ApplyAnnotations(ranking, results, ann)
+			// LLM の点は語の点を上書きするので、下げた取材先の上限はここでもう一度かける
+			// (かけないと「上限を下げた」と言いながら主要表示に出る)
+			ranking = news.CapDemoted(news.ApplyAnnotations(ranking, results, ann), results, demoted)
 		}
 	}
 	do := news.DigestOptions{Layer: o.layer, Today: today, Cap: s.Cap(o.layer), Ranking: ranking, MinScore: s.MinScore(), Totals: stats.Totals(), Annotations: annotations}
