@@ -101,6 +101,22 @@ func TestEnumerateDir(t *testing.T) {
 	}
 }
 
+// -dir にファイルを渡したときは、何が悪くて次に何を渡せばよいかが分かる文にする(CLI テストが無かった分)。
+func TestEnumerateDir_ファイルを渡すと次に渡すものが分かる文でエラー(t *testing.T) {
+	file := filepath.Join("testdata", "notes", "length_no.md")
+	_, err := EnumerateDir(file)
+	if err == nil {
+		t.Fatal("ファイルを渡してもエラーにならない")
+	}
+	got := err.Error()
+	if !strings.Contains(got, filepath.ToSlash(file)) {
+		t.Errorf("エラーに対象のパスが無い: %s", got)
+	}
+	if !strings.Contains(got, "ディレクトリを渡す") {
+		t.Errorf("次に何を渡せばよいかの案内が無い: %s", got)
+	}
+}
+
 // パスは渡したディレクトリと結合した形で出る(受け取った側がそのまま開ける)。索引モードが root 相対なのと揃える。
 func TestEnumerateDir_パスは渡したディレクトリと結合して出る(t *testing.T) {
 	dir := filepath.Join("testdata", "notes", "sub")
