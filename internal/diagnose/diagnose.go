@@ -218,8 +218,7 @@ func effectiveNotesDirs(cfg scan.Config) []string {
 	}
 	out := []string{}
 	for _, nd := range cfg.NotesDirs {
-		nd = strings.Trim(filepath.ToSlash(nd), "/")
-		if nd != "" {
+		if nd = scan.NormalizeNotesDir(nd); nd != "" {
 			out = append(out, nd)
 		}
 	}

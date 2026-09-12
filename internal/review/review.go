@@ -248,8 +248,7 @@ func pathspecs(cfg scan.Config) []string {
 	}
 	out := make([]string, 0, len(dirs)+1)
 	for _, d := range dirs {
-		d = strings.Trim(filepath.ToSlash(d), "/")
-		if d != "" {
+		if d = scan.NormalizeNotesDir(d); d != "" {
 			out = append(out, d)
 		}
 	}
