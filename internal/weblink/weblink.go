@@ -2,7 +2,7 @@
 //
 // 判定は 1 か所に置く: Markdown → HTML(internal/mdhtml)・ニュースの選別 UI(internal/news)・
 // 選別で残した見出しの記録(news/keep/YYYY-MM.md)の 3 か所で同じ規則を使うため。
-// 規則を変えるときはここだけを直す(決定 2026-09-03「生成物のリンクは http(s) 以外を落とす」)。
+// 規則を変えるときはここだけを直す(決定 2026-09-03「生成物のリンクは http(s) 以外を落とす」 → manual/design.md「決めたこと」)。
 package weblink
 
 import "strings"

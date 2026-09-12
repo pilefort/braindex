@@ -1,6 +1,6 @@
 // Package explain は解説の md を、目次と図を備えた自己完結の HTML にする。braindex explain の中身。
 //
-// LLM を呼ばず、同じ入力からは同じ出力になる(決定 2026-09-12)。解説の文章と図は書き手が md と .svg に書き、
+// LLM を呼ばず、同じ入力からは同じ出力になる(決定 2026-09-12 → manual/tools.md「決めたこと」)。解説の文章と図は書き手が md と .svg に書き、
 // ここが担うのは「読みやすい HTML にする」ところだけ。Markdown → HTML の変換そのものは mdhtml に任せ、
 // 図(`![図1: 説明](fig1.svg)`)と目次をこちらで組み立てる。
 package explain
@@ -137,7 +137,7 @@ func (r *renderer) figure(alt, src string) string {
 }
 
 // graph は graph の指定に続く表を、グラフと元の表の組にする。next は表の次の行の位置。
-// 表はグラフの下に残す——数字そのものを読めるようにするため(決定 2026-09-12)。
+// 表はグラフの下に残す——数字そのものを読めるようにするため(決定 2026-09-12 → manual/tools.md「決めたこと」)。
 // 指定の次の行に表が無ければ空文字を返し、指定の行だけを捨てる。
 func (r *renderer) graph(spec graphSpec, drawable bool, lines []string, i int) (string, int) {
 	if !isTableStart(lines, i) {

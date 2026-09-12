@@ -82,7 +82,7 @@ func TestKeepMarkdown(t *testing.T) {
 	}
 }
 
-// keep は git 管理の蓄積側なので、http(s) でないリンクの記事は記録しない(決定 2026-09-03)。
+// keep は git 管理の蓄積側なので、http(s) でないリンクの記事は記録しない(決定 2026-09-03 → manual/design.md「決めたこと」)。
 // リンクの無い記事と同じ扱いにする(題名だけ書くと、次回の重複判定に引っかからず毎回増える)。
 func TestIngest_keepに載せるのはhttpのみ(t *testing.T) {
 	newsDir := filepath.Join(t.TempDir(), "news")

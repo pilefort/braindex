@@ -39,7 +39,7 @@ func TestHub_ReviewSkillMatchesCLI(t *testing.T) {
 	}
 }
 
-// 設定の雛形の正は braindex init の埋め込みテンプレ 1 つだけ(決定 2026-09-03)。リポ直下に
+// 設定の雛形の正は braindex init の埋め込みテンプレ 1 つだけ(決定 2026-09-03 → manual/init-update.md「決めたこと」)。リポ直下に
 // braindex.example.json を復活させると雛形が 2 つになり、片方だけ直したときに init した hub と
 // 手で置いた hub で設定(review 節など)が食い違う。
 func TestHub_設定の雛形はテンプレ1つ(t *testing.T) {

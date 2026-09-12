@@ -335,7 +335,7 @@ func appendKeeps(path, month string, keeps []Keep, date, layer string) error {
 	}
 	var fresh []Keep
 	for _, k := range keeps {
-		// keep は git 管理の蓄積側なので、載せるリンクは http(s) だけにする(決定 2026-09-03)。
+		// keep は git 管理の蓄積側なので、載せるリンクは http(s) だけにする(決定 2026-09-03 → manual/design.md「決めたこと」)。
 		// 落とす扱いはリンクの無い記事と同じ: 記録しない(題名だけ書くと、次回の重複判定に引っかからず毎回増える)。
 		if k.Link == "" || !weblink.Safe(k.Link) || bytes.Contains(existing, []byte("]("+k.Link+")")) {
 			continue
