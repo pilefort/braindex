@@ -3,6 +3,8 @@ package indexdata
 import (
 	"fmt"
 	"strings"
+
+	"github.com/pilefort/braindex/internal/textutil"
 )
 
 // ParseCatalog は render.Render が書いた catalog.md を読み戻し、エントリ列を返す(Render の逆)。
@@ -70,11 +72,5 @@ func isSeparatorRow(cells []string) bool {
 
 // splitLines は BOM を除去し CRLF/CR を LF に正規化して行に分割する(extract と同じ規則)。
 func splitLines(content []byte) []string {
-	if len(content) >= 3 && content[0] == 0xEF && content[1] == 0xBB && content[2] == 0xBF {
-		content = content[3:]
-	}
-	s := string(content)
-	s = strings.ReplaceAll(s, "\r\n", "\n")
-	s = strings.ReplaceAll(s, "\r", "\n")
-	return strings.Split(s, "\n")
+	return textutil.SplitLines(content)
 }

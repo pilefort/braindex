@@ -12,6 +12,100 @@ import (
 	"github.com/pilefort/braindex/internal/retro"
 )
 
+func TestRetroExtract_FailurePreservesPreviousOutput(t *testing.T) {
+	fixUTC(t)
+	out := t.TempDir()
+	old := retro.Result{Index: []byte("old index"), Files: []retro.DigestFile{{RelPath: "sessions/old/a.md", Content: []byte("old digest")}}}
+	if err := writeExtractOutput(out, old); err != nil {
+		t.Fatal(err)
+	}
+	blockReplace(t, filepath.Join(out, "index.tsv"))
+	code, _, se := execRetroExtract(t, "-sessions", retroTestdata, "-out", out)
+	if code != 1 {
+		t.Fatalf("exit=%d: %s", code, se)
+	}
+	for rel, want := range map[string]string{"index.tsv": "old index", "sessions/old/a.md": "old digest"} {
+		got, err := os.ReadFile(filepath.Join(out, filepath.FromSlash(rel)))
+		if err != nil || string(got) != want {
+			t.Errorf("%s が失われた: %q, %v", rel, got, err)
+		}
+	}
+}
+
+func TestWriteExtractOutput_LateFailurePreservesAll(t *testing.T) {
+	out := t.TempDir()
+	old := retro.Result{Index: []byte("old index"), Files: []retro.DigestFile{{RelPath: "sessions/p/a.md", Content: []byte("old digest")}}}
+	if err := writeExtractOutput(out, old); err != nil {
+		t.Fatal(err)
+	}
+	blockReplace(t, filepath.Join(out, "index.tsv"))
+	cur := retro.Result{Index: []byte("new index"), Files: []retro.DigestFile{{RelPath: "sessions/p/a.md", Content: []byte("new digest")}}}
+	if err := writeExtractOutput(out, cur); err == nil {
+		t.Fatal("エラーにならない")
+	}
+	got, err := os.ReadFile(filepath.Join(out, "sessions/p/a.md"))
+	if err != nil || string(got) != "old digest" {
+		t.Fatalf("先に書いたファイルが変わった: %q %v", got, err)
+	}
+}
+
+func TestWriteExtractOutput_StagingFailure(t *testing.T) {
+	out := t.TempDir()
+	old := retro.Result{Index: []byte("old index"), Files: []retro.DigestFile{{RelPath: "sessions/p/a.md", Content: []byte("old digest")}}}
+	if err := writeExtractOutput(out, old); err != nil {
+		t.Fatal(err)
+	}
+	cur := retro.Result{Index: []byte("new index"), Files: []retro.DigestFile{
+		{RelPath: "sessions/conflict", Content: []byte("first")},
+		{RelPath: "sessions/conflict/a.md", Content: []byte("second")},
+	}}
+	if err := writeExtractOutput(out, cur); err == nil {
+		t.Fatal("エラーにならない")
+	}
+	for rel, want := range map[string]string{"index.tsv": "old index", "sessions/p/a.md": "old digest"} {
+		got, err := os.ReadFile(filepath.Join(out, filepath.FromSlash(rel)))
+		if err != nil || string(got) != want {
+			t.Errorf("%s が変わった: %q %v", rel, got, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(out, "sessions/conflict")); !os.IsNotExist(err) {
+		t.Fatalf("途中の出力が残った: %v", err)
+	}
+	des, err := os.ReadDir(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, de := range des {
+		if strings.HasPrefix(de.Name(), ".retro-") {
+			t.Errorf("一時ファイルが残った: %s", de.Name())
+		}
+	}
+}
+
+func TestWriteExtractOutput_PublishFailureRollsBack(t *testing.T) {
+	out := t.TempDir()
+	old := retro.Result{Index: []byte("old index"), Files: []retro.DigestFile{{RelPath: "sessions/p/a.md", Content: []byte("old digest")}}}
+	if err := writeExtractOutput(out, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(out, "sessions/blocked.md"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cur := retro.Result{Index: []byte("new index"), Files: []retro.DigestFile{
+		{RelPath: "sessions/p/a.md", Content: []byte("new digest")},
+		{RelPath: "sessions/blocked.md", Content: []byte("blocked")},
+	}}
+	if err := writeExtractOutput(out, cur); err == nil {
+		t.Fatal("エラーにならない")
+	}
+	for rel, want := range map[string]string{"index.tsv": "old index", "sessions/p/a.md": "old digest"} {
+		got, err := os.ReadFile(filepath.Join(out, filepath.FromSlash(rel)))
+		if err != nil || string(got) != want {
+			t.Errorf("%s が変わった: %q %v", rel, got, err)
+		}
+	}
+}
+
 func execRetroExtract(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	var so, se bytes.Buffer
@@ -162,7 +256,7 @@ func TestRetroExtract_Rewrite(t *testing.T) {
 
 // ダイジェストと index.tsv の書き込みは、置き換えに失敗しても既にあるファイルを壊さない(半端な内容で上書きしない)。
 // index.tsv を次に読むのはレトロスペクティブの手順で、半端な索引は黙って途中までしか辿れない(設計レビュー 2026-09-06 M14)。
-// コマンド全体は前回の出力を先に消すので、ここでは書き出しの段(writeExtractOutput)だけを見る。
+// コマンドと共通の書き出し処理で、入れ替え失敗時の復元も検査する。
 func TestRetroExtract_書き込みに失敗しても既にあるファイルは壊れない(t *testing.T) {
 	for _, target := range []string{"index.tsv", "sessions/p/a.md"} {
 		t.Run(target, func(t *testing.T) {

@@ -5,6 +5,22 @@ import (
 	"testing"
 )
 
+func TestCheckNote_UndefinedTermSkipsFences(t *testing.T) {
+	for _, ending := range []string{"\n```\n「外側語」", ""} {
+		text := "「外側語」\n  ```Foobar\n「内部語」 [[HiddenLink]] HiddenWord" + ending
+		ws := CheckNote("x.md", []byte(text), NoteOptions{HasGlossary: true})
+		var terms []string
+		for _, w := range ws {
+			if w.Kind == KindUndefinedTerm {
+				terms = append(terms, w.Msg)
+			}
+		}
+		if len(terms) != 1 || !strings.Contains(terms[0], "外側語") {
+			t.Errorf("フェンス内の用語を検出: %v", terms)
+		}
+	}
+}
+
 // kinds は指摘の種別を出現順に返す。
 func kinds(ws []Warning) []string {
 	out := make([]string, 0, len(ws))

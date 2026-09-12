@@ -48,7 +48,8 @@ type Result struct {
 
 // Line は 1 件 1 行の表示形(タブ区切り)。
 func (r Result) Line() string {
-	return r.Kind + "\t" + r.Target + "\t" + r.Status + "\t" + r.Detail
+	target := strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ", "\t", " ").Replace(r.Target)
+	return r.Kind + "\t" + target + "\t" + r.Status + "\t" + r.Detail
 }
 
 // GitHubRepo は GitHub API /repos の要点。
@@ -190,7 +191,10 @@ func URL(f Fetcher, u string) Result {
 		r.Status, r.Detail = Found, "HTTP 200 "+res.FinalURL
 		return r
 	}
-	r.Status, r.Detail = NotFound, fmt.Sprintf("HTTP %d", res.Status)
+	r.Status, r.Detail = Error, fmt.Sprintf("HTTP %d", res.Status)
+	if res.Status == 404 || res.Status == 410 {
+		r.Status = NotFound
+	}
 	return r
 }
 

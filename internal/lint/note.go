@@ -268,7 +268,14 @@ func CheckNote(path string, content []byte, o NoteOptions) []Warning {
 	// 未定義用語(candidate。用語集があるときだけ)
 	if o.HasGlossary {
 		glossary := string(o.Glossary)
-		for _, t := range candidateTerms(text) {
+		var text strings.Builder
+		for i, line := range lines {
+			if !skip[i] {
+				text.WriteString(line)
+			}
+			text.WriteByte('\n')
+		}
+		for _, t := range candidateTerms(text.String()) {
 			if !strings.Contains(glossary, t) {
 				add(0, KindUndefinedTerm, SeverityCandidate, "用語「%s」が用語集に見当たらない", t)
 			}

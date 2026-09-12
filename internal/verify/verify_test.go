@@ -9,6 +9,34 @@ import (
 	"testing"
 )
 
+func TestResultLineQuoteWhitespace(t *testing.T) {
+	quote := "Every\r\nclaim\tcarries\ra quote, checked\nagainst the source."
+	r := Quotes(fakeFetcher{"page": {Status: 200, Body: "Every claim carries a quote, checked against the source."}}, "page", []string{quote})[0]
+	if r.Status != Found || r.Target != quote {
+		t.Fatalf("照合結果が変わった: %+v", r)
+	}
+	want := "quote\tEvery claim carries a quote, checked against the source.\tFOUND\t" + r.Detail
+	if got := r.Line(); got != want {
+		t.Fatalf("Line = %q, want %q", got, want)
+	}
+}
+
+func TestURLHTTPStatus(t *testing.T) {
+	for _, tc := range []struct {
+		code int
+		want string
+	}{{200, Found}, {404, NotFound}, {410, NotFound}, {403, Error}, {429, Error}, {500, Error}, {204, Error}} {
+		t.Run(http.StatusText(tc.code), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(tc.code) }))
+			defer srv.Close()
+			got := URL(&HTTPFetcher{Client: srv.Client()}, srv.URL)
+			if got.Status != tc.want {
+				t.Errorf("status = %s, want %s; %+v", got.Status, tc.want, got)
+			}
+		})
+	}
+}
+
 // fakeFetcher は URL → 固定レスポンス。無い URL はエラー(ネットワークに出ない)。
 type fakeFetcher map[string]*Response
 

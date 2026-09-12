@@ -2,12 +2,44 @@ package retro
 
 import (
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/pilefort/braindex/internal/sessions"
 )
+
+func TestExtract_PathCollisions(t *testing.T) {
+	for _, projects := range [][]string{{"計画", "資料"}, {"/work/メモ", "/work/資料"}, {"project123", "/work/repo-a"}} {
+		ss := []sessions.Session{}
+		for _, project := range projects {
+			id := "12345678-first"
+			ss = append(ss, sessions.Session{Project: project, ID: id, Turns: []sessions.Turn{{Role: sessions.User, Text: "本文"}}})
+		}
+		a, b := Extract(Input{Sessions: ss}), Extract(Input{Sessions: ss})
+		if len(a.Files) != 2 || a.Files[0].RelPath == a.Files[1].RelPath {
+			t.Fatalf("名前が衝突: %+v", a.Files)
+		}
+		if !reflect.DeepEqual(a, b) {
+			t.Fatal("同じ入力で結果が変わった")
+		}
+		for i, f := range a.Files {
+			parts := strings.Split(f.RelPath, "/")
+			project := projects[i]
+			if !hasNonASCII(project) {
+				if parts[1] != safeName(project) {
+					t.Errorf("ASCII だけの名前にハッシュが付いた: %q", f.RelPath)
+				}
+			} else if !regexp.MustCompile("^" + regexp.QuoteMeta(safeName(project)) + "-[0-9a-f]{8}$").MatchString(parts[1]) {
+				t.Errorf("ASCII 以外を含む名前に8桁のハッシュがない: %q", f.RelPath)
+			}
+			if parts[2] != "00000000_0000_12345678.md" {
+				t.Errorf("セッションIDは先頭8文字だけにする: %q", f.RelPath)
+			}
+		}
+	}
+}
 
 func extractFixture(t *testing.T, w Window, label string) Result {
 	t.Helper()
