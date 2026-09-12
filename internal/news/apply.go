@@ -196,9 +196,10 @@ func checkFeedStats(in map[string]FeedStats, known map[string]bool) (map[string]
 	return out, dropped
 }
 
-// Ingest は dirs にある選別 JSON(SelectionPrefix*.json)を名前順に取り込み、keep に追記し、統計を上書きし、
-// ファイルを newsDir/.ingested/ へ移す。取り込んだ件数分のメッセージを返す。形式が違うファイルは飛ばして伝える。
-// 同じ記事(リンク)が keep ファイルに既にあれば追記しない。統計はダイジェスト("<日付>_<層>")単位で上書き。
+// Ingest は dirs にある選別 JSON(SelectionPrefix*.json)を dirs をまたいで基底名の昇順に取り込み、
+// keep に追記し、統計を上書きし、ファイルを newsDir/.ingested/ へ移す。取り込んだ件数分のメッセージを返す。
+// 形式が違うファイルは飛ばして伝える。同じ記事(リンク)が keep ファイルに既にあれば追記しない。
+// 統計はダイジェスト("<日付>_<層>")単位で上書き。
 // known は feeds.json の取材先の名前(FeedNames)。feed_stats はこの名前にある項目だけ数える。nil なら照合しない。
 //
 // 途中で止まっても再実行で揃う: 選別 JSON 1 つごとに keep → 統計 → 取り込み済みへ移す、の順で書く。
@@ -209,7 +210,7 @@ func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string
 	var paths []string
 	for _, d := range dirs {
 		// glob ではなく走査する: 置き場の名前に [ や * が入っていてもパターンとして解釈されない。
-		// os.ReadDir はファイル名の昇順で返す。名前に時刻が入るので昇順 = 時刻順で、後勝ちで最新が残る
+		// os.ReadDir はファイル名の昇順で返すが、それは置き場ごとの順でしかない。
 		des, rerr := os.ReadDir(d)
 		if rerr != nil {
 			if !errors.Is(rerr, fs.ErrNotExist) { // 無い置き場は黙って飛ばす。読めない置き場は伝える(取り込みは続ける)
@@ -228,6 +229,9 @@ func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string
 	if len(paths) == 0 {
 		return msgs, nil
 	}
+	// 置き場をまたぐと上のループの順(dirs の順が先に効く)だけでは名前順にならない。
+	// 集め終えてから基底名で並べ替える: 名前に時刻が入るので昇順 = 時刻順で、後勝ちで最新が残る。
+	sort.Slice(paths, func(i, j int) bool { return filepath.Base(paths[i]) < filepath.Base(paths[j]) })
 	statsPath := filepath.Join(newsDir, StatsFile)
 	st, err := LoadStats(statsPath)
 	if err != nil {

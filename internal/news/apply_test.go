@@ -171,6 +171,35 @@ func TestIngest(t *testing.T) {
 	}
 }
 
+// 置き場をまたぐと、dirs の順(<news.dir>/inbox → -inbox)が名前順より先に効いてはいけない。
+// dirA(dirs の 1 番目)に基底名が後になるファイル(_9)、dirB(2 番目)に先になるファイル(_1)を置く。
+// 名前順(全体で並べ替え)なら _1 → _9 の順で処理され、後勝ちで _9 の統計が残る。
+// dirs の順のまま連結すると _9 → _1 の順になり、_1 が「後勝ち」で残ってしまう(バグ)。
+func TestIngest_置き場をまたいでも名前順(t *testing.T) {
+	newsDir := filepath.Join(t.TempDir(), "news")
+	dirA := filepath.Join(newsDir, "inbox")
+	dirB := t.TempDir()
+	os.MkdirAll(dirA, 0o755)
+
+	keeps := `{"id": "a", "title": "記事", "link": "https://x/a", "feed": "F1"}`
+	os.WriteFile(filepath.Join(dirA, "braindex-news-selection_2026-08-15_daily_9.json"),
+		[]byte(selectionJSON("2026-08-15", "daily", keeps, `"F1": {"shown": 9, "kept": 9}`)), 0o644)
+	os.WriteFile(filepath.Join(dirB, "braindex-news-selection_2026-08-15_daily_1.json"),
+		[]byte(selectionJSON("2026-08-15", "daily", keeps, `"F1": {"shown": 1, "kept": 1}`)), 0o644)
+
+	if _, err := Ingest(newsDir, []string{dirA, dirB}, nil); err != nil {
+		t.Fatal(err)
+	}
+	st, err := LoadStats(filepath.Join(newsDir, StatsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 名前順なら _1 が先・_9 が後に処理され、後勝ちで _9(kept=9) が残る
+	if got := st.Digests["2026-08-15_daily"]["F1"].Kept; got != 9 {
+		t.Errorf("kept=%d want 9(名前順でなく dirs の順で処理されている)", got)
+	}
+}
+
 // 選別 JSON の置き場と hub が別ドライブだと os.Rename が失敗する
 // (Windows で実測: "The system cannot move the file to a different disk drive")。
 // そのときも取り込みを完了させ、統計まで書く。
