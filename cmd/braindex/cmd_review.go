@@ -154,6 +154,9 @@ func resolveSince(flagSince, reviewDir, dirRel, today string, sinceDays int) (si
 		if _, err := time.Parse("2006-01-02", flagSince); err != nil {
 			return "", "", fmt.Errorf("-since は YYYY-MM-DD で指定する: %q", flagSince)
 		}
+		if flagSince >= today {
+			return "", "", fmt.Errorf("-since は今日(-date %s)より前を指定する(同日を含む): %q", today, flagSince)
+		}
 		return flagSince, "-since で指定", nil
 	}
 	if latest := latestReviewBefore(reviewDir, today); latest != "" {

@@ -150,6 +150,40 @@ func TestReview_SinceResolution(t *testing.T) {
 	}
 }
 
+// -since に今日以降の日付を渡すと、前回が未来になり「前回: 2026-12-31」のような下書きが出てしまう
+// (2026-09-12 実測)。同日を含めて拒否する。フラグの誤りとして終了コード 1(-stdout/-out の拒否と同じ型)。
+func TestReview_SinceNotBeforeTodayRejected(t *testing.T) {
+	_, hub := hubWithRepo(t)
+	cfg := filepath.Join(hub, "braindex.json")
+
+	var so, se bytes.Buffer
+	code := dispatch([]string{"review", "-config", cfg, "-date", "2026-09-12", "-since", "2026-09-12", "-stdout"}, &so, &se)
+	if code != 1 {
+		t.Fatalf("同日: exit=%d want 1\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	if !strings.Contains(se.String(), "-since") {
+		t.Errorf("stderr に -since の説明が無い: %s", se.String())
+	}
+	if so.String() != "" {
+		t.Errorf("拒否したのに標準出力に書いた: %s", so.String())
+	}
+
+	so.Reset()
+	se.Reset()
+	code = dispatch([]string{"review", "-config", cfg, "-date", "2026-09-12", "-since", "2026-12-31", "-stdout"}, &so, &se)
+	if code != 1 {
+		t.Fatalf("未来: exit=%d want 1\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+
+	// 前日は通る(境界の確認)
+	so.Reset()
+	se.Reset()
+	code = dispatch([]string{"review", "-config", cfg, "-date", "2026-09-12", "-since", "2026-09-11", "-stdout"}, &so, &se)
+	if code != 2 { // git 管理外の警告つきで完了
+		t.Fatalf("前日: exit=%d want 2\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+}
+
 // git 管理下の hub とリポ: 前回の索引は前回日時点のコミットから取り、差分ファイルはコミットから集める。警告なし(終了コード 0)。
 func TestReview_E2E_WithGit(t *testing.T) {
 	gitOrSkip(t)
