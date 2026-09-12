@@ -449,3 +449,51 @@ func TestGeneratedDate(t *testing.T) {
 		t.Errorf("見出しより後の行は見ない: %q", got)
 	}
 }
+
+// repo_depth:2 ではリポ名が group/name の 2 段になる。規則と除外理由の説明もその段数で切る。
+// 1 段で切ると group をリポ名と誤り、普通のノートまで「規則を特定できない」に落ちる
+// (Codex レビュー 2026-09-12)。
+func TestWhichRule_repoDepth2(t *testing.T) {
+	cfg := scan.Config{RepoDepth: 2, NotesDirs: []string{"docs/notes", "wiki"}, Extra: []scan.ExtraRule{
+		{Repo: "g/ext", Path: "research", Recursive: true, Kind: "research"},
+	}}
+	nd := effectiveNotesDirs(cfg)
+	for rel, want := range map[string]string{
+		"g/a/docs/decisions.md":    "docs/decisions.md（決定記録）",
+		"g/a/docs/notes/x.md":      "notes_dirs docs/notes",
+		"g/a/wiki/deep/x.md":       "notes_dirs wiki",
+		"g/ext/research/deep/x.md": "extra g/ext/research",
+	} {
+		if !scan.Covers(cfg, rel) {
+			t.Errorf("%q は Covers が true のはず", rel)
+			continue
+		}
+		if got := WhichRule(cfg, nd, rel); got != want {
+			t.Errorf("WhichRule(%q)=%q want %q", rel, got, want)
+		}
+	}
+}
+
+// repo_depth:2 の除外理由。ドットで始まるリポ・リポ名だけのパス・extra の範囲を 2 段で見る。
+func TestWhyNotCovered_repoDepth2(t *testing.T) {
+	cfg := scan.Config{RepoDepth: 2, Extra: []scan.ExtraRule{
+		{Repo: "g/ext", Path: "research", Kind: "research", Exclude: []string{"*.draft.md"}},
+	}}
+	for rel, want := range map[string]string{
+		"g/a/docs/notes/x.txt":      "拡張子が .md でない",
+		"g/a.md":                    "リポ名だけで、リポ内のパスが無い",
+		"g/.hidden/x.md":            "ドットで始まるリポは見ない",
+		".g/a/docs/notes/x.md":      "ドットで始まるリポは見ない",
+		"g/ext/research/d/x.md":     "extra g/ext/research の範囲だが、exclude に当たるか、直下のみの指定でサブディレクトリにある",
+		"g/ext/research/y.draft.md": "extra g/ext/research の範囲だが、exclude に当たるか、直下のみの指定でサブディレクトリにある",
+		"g/a/wiki/x.md":             "ノート置き場（docs/notes）にも docs/decisions.md にも extra にも無い場所",
+	} {
+		if scan.Covers(cfg, rel) {
+			t.Errorf("%q は Covers が true なので理由の対象外", rel)
+			continue
+		}
+		if got := WhyNotCovered(cfg, rel); got != want {
+			t.Errorf("WhyNotCovered(%q)=%q want %q", rel, got, want)
+		}
+	}
+}
