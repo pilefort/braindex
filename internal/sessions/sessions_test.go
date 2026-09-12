@@ -9,6 +9,228 @@ import (
 	"time"
 )
 
+func TestDir_Sessions_MetadataAndCalls(t *testing.T) {
+	all, _ := loadTestdata(t)
+	var s Session
+	for _, candidate := range all {
+		if candidate.ID == "aaaa1111" {
+			s = candidate
+		}
+	}
+	if len(s.Turns) != 7 {
+		t.Fatalf("Turns: %+v", s.Turns)
+	}
+	if s.Turns[0].UUID != "u1" || s.Turns[0].ParentUUID != "" || s.Turns[0].Usage != nil {
+		t.Errorf("user: %+v", s.Turns[0])
+	}
+	a := s.Turns[1]
+	if a.UUID != "a1" || a.ParentUUID != "u1" {
+		t.Errorf("最初の thinking 行の ID: %+v", a)
+	}
+	wantUsage := Usage{InputTokens: 11, OutputTokens: 971, CacheCreationInputTokens: 13, CacheReadInputTokens: 17}
+	if a.Usage == nil || *a.Usage != wantUsage || s.TotalUsage() != wantUsage {
+		t.Errorf("usage: %+v total=%+v", a.Usage, s.TotalUsage())
+	}
+	wantCalls := []ToolCall{
+		{ID: "t1", Name: "Read", Time: mustTime(t, "2026-08-20T01:00:07Z"), HasResult: true},
+		{ID: "t2", Name: "Read", Time: mustTime(t, "2026-08-20T01:00:08Z"), HasResult: true},
+		{ID: "t3", Name: "Bash", Command: "go build ./...", Time: mustTime(t, "2026-08-20T01:00:09Z"), HasResult: true, IsError: true},
+	}
+	if !reflect.DeepEqual(a.Calls, wantCalls) {
+		t.Errorf("Calls: %+v", a.Calls)
+	}
+}
+
+func TestReader_UsageLastRow(t *testing.T) {
+	for _, tc := range []struct {
+		name, tail string
+		want       *Usage
+	}{
+		{"増加", `"usage":{"output_tokens":971},"content":"続き"`, &Usage{OutputTokens: 971}},
+		{"同値", `"usage":{"output_tokens":7},"content":"続き"`, &Usage{OutputTokens: 7}},
+		{"thinking の最終値", `"usage":{"output_tokens":971},"content":[{"type":"thinking"}]`, &Usage{OutputTokens: 971}},
+		{"null", `"usage":null,"content":"続き"`, nil},
+		{"欠落", `"content":"続き"`, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var r reader
+			r.line([]byte(`{"type":"assistant","uuid":"first","parentUuid":null,"message":{"id":"m","usage":{"output_tokens":7},"content":"開始"}}`))
+			r.line([]byte(`{"type":"assistant","uuid":"last","parentUuid":"first","message":{"id":"m",` + tc.tail + `}}`))
+			if len(r.s.Turns) != 1 {
+				t.Fatalf("Turns: %+v", r.s.Turns)
+			}
+			got := r.s.Turns[0]
+			if got.UUID != "first" || got.ParentUUID != "" || !reflect.DeepEqual(got.Usage, tc.want) {
+				t.Errorf("Turn: %+v usage=%+v", got, got.Usage)
+			}
+		})
+	}
+}
+
+func TestSession_TotalUsage(t *testing.T) {
+	s := Session{Turns: []Turn{{Role: User}, {Role: Assistant, Usage: &Usage{1, 2, 3, 4}}, {Role: Assistant, Usage: &Usage{5, 6, 7, 8}}}, Subagents: []Subagent{{Turns: []Turn{{Usage: &Usage{100, 100, 100, 100}}}}}}
+	if got := s.TotalUsage(); got != (Usage{6, 8, 10, 12}) {
+		t.Errorf("TotalUsage: %+v", got)
+	}
+	if got := (Session{}).TotalUsage(); got != (Usage{}) {
+		t.Errorf("empty: %+v", got)
+	}
+}
+
+func TestReader_CallsWithoutResult(t *testing.T) {
+	var r reader
+	r.line([]byte(`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"pending","name":"Bash","input":{"command":"go test ./..."}},{"type":"tool_use","id":"other","name":"Read","input":{"command":"ignored"}}]}}`))
+	r.line([]byte(`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"unknown","is_error":true},{"type":"text","text":"続けて"}]}}`))
+	got := r.s.Turns[0].Calls
+	if len(got) != 2 || got[0].Command != "go test ./..." || got[0].HasResult || got[0].IsError || got[1].Command != "" || got[1].HasResult {
+		t.Fatalf("Calls: %+v", got)
+	}
+}
+
+func TestReader_MetadataAcrossInterleavedRows(t *testing.T) {
+	var r reader
+	for _, line := range []string{
+		`{"type":"assistant","uuid":"first","parentUuid":"parent","message":{"id":"m","usage":{"output_tokens":7},"content":[{"type":"tool_use","id":"call","name":"Bash","input":{"command":"go test ./..."}}]}}`,
+		`{"type":"user","message":{"content":"続けて"}}`,
+		`{"type":"assistant","message":{"id":"another","usage":{"output_tokens":2},"content":"検査中です。"}}`,
+		`{"type":"assistant","uuid":"last","message":{"id":"m","usage":{"output_tokens":971},"content":"検査しました。"}}`,
+		`{"type":"user","isMeta":true,"message":{"content":[{"type":"tool_result","tool_use_id":"call","is_error":true},{"type":"text","text":"補足"}]}}`,
+	} {
+		r.line([]byte(line))
+	}
+	if len(r.s.Turns) != 4 || r.s.TotalUsage().OutputTokens != 973 {
+		t.Fatalf("Turns=%+v total=%+v", r.s.Turns, r.s.TotalUsage())
+	}
+	first := r.s.Turns[0]
+	if first.UUID != "first" || first.ParentUUID != "parent" || first.Usage.OutputTokens != 971 || !first.Calls[0].HasResult || !first.Calls[0].IsError {
+		t.Errorf("Turn: %+v", first)
+	}
+}
+
+func TestDir_Sessions_SubagentsDisabledDoesNotRead(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "project")
+	if err := os.MkdirAll(filepath.Join(project, "session"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, "session.jsonl"), []byte(`{"type":"user","message":{"content":"調べて"}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// ディレクトリでない subagents を置く。既定ではここを開かず警告もしない。
+	if err := os.WriteFile(filepath.Join(project, "session", "subagents"), []byte("not a directory"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got, warnings, err := (Dir{Path: root}).Sessions(Options{})
+	if err != nil || len(warnings) != 0 || len(got) != 1 {
+		t.Fatalf("got=%+v warnings=%q err=%v", got, warnings, err)
+	}
+	if got[0].Subagents != nil {
+		t.Error("既定で Subagents が nil でない")
+	}
+}
+
+func TestDir_Sessions_Subagents(t *testing.T) {
+	base, baseWarnings := loadTestdata(t)
+	for _, s := range base {
+		if s.Subagents != nil {
+			t.Fatal("既定でサブエージェントを読んだ")
+		}
+	}
+	got, warnings, err := (Dir{Path: "testdata/projects"}).Sessions(Options{IncludeSubagents: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(base) || len(warnings) != len(baseWarnings)+1 {
+		t.Fatalf("sessions=%d warnings=%q", len(got), warnings)
+	}
+	var agents []Subagent
+	for i, s := range got {
+		agents = append(agents, s.Subagents...)
+		got[i].Subagents = nil
+	}
+	if !reflect.DeepEqual(got, base) {
+		t.Error("本体が変わった")
+	}
+	if len(agents) != 1 {
+		t.Fatalf("agents: %+v", agents)
+	}
+	a := agents[0]
+	if a.AgentID != "x" || a.AgentType != "checker" || a.Description != "短い検査" || a.ToolUseID != "dispatch-x" || filepath.Base(a.Path) != "agent-x.jsonl" {
+		t.Errorf("meta: %+v", a)
+	}
+	if len(a.Turns) != 3 {
+		t.Fatalf("Turns: %+v", a.Turns)
+	}
+	if a.Turns[0].Text != "<command-name>check</command-name>" || a.Turns[0].Boilerplate || a.Turns[0].UUID != "sx1" {
+		t.Errorf("除外規則を掛けた: %+v", a.Turns[0])
+	}
+	if len(a.Turns[1].Calls) != 1 || !a.Turns[1].Calls[0].IsError || !a.Turns[1].Calls[0].HasResult {
+		t.Errorf("Calls: %+v", a.Turns[1].Calls)
+	}
+	if !a.Start.Equal(mustTime(t, "2026-08-20T01:00:00Z")) || !a.End.Equal(mustTime(t, "2026-08-20T01:00:02Z")) {
+		t.Errorf("Start/End: %v/%v", a.Start, a.End)
+	}
+	if !strings.Contains(strings.Join(warnings, "\n"), "agent-x.jsonl: JSON でない 1 行") {
+		t.Errorf("warnings: %q", warnings)
+	}
+	second, secondWarnings, err := (Dir{Path: "testdata/projects"}).Sessions(Options{IncludeSubagents: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range second {
+		second[i].Subagents = nil
+	}
+	if !reflect.DeepEqual(got, second) || !reflect.DeepEqual(warnings, secondWarnings) {
+		t.Error("読み取りが決定的でない")
+	}
+}
+
+func TestDir_Sessions_SubagentsNestedAndMissingMeta(t *testing.T) {
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS("testdata/projects")); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(root, "-work-repo-a", "aaaa1111", "subagents", "workflows", "wf_example")
+	if err := os.MkdirAll(nested, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"agent-y.jsonl": `{"type":"assistant","isSidechain":true,"message":{"content":"検査します。"}}`, "journal.jsonl": "broken journal", "other.jsonl": "broken other"} {
+		if err := os.WriteFile(filepath.Join(nested, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, warnings, err := (Dir{Path: root}).Sessions(Options{IncludeSubagents: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var agents []Subagent
+	for _, s := range got {
+		agents = append(agents, s.Subagents...)
+	}
+	if len(agents) != 2 {
+		t.Fatalf("agents: %+v", agents)
+	}
+	a := agents[1]
+	if a.AgentID != "y" || a.AgentType != "" || a.Description != "" || a.ToolUseID != "" || len(a.Turns) != 1 {
+		t.Errorf("meta なし: %+v", a)
+	}
+	if len(warnings) != 3 {
+		t.Errorf("journal を読んだ、または meta なしを警告した: %q", warnings)
+	}
+	first := agents
+	again, _, err := (Dir{Path: root}).Sessions(Options{IncludeSubagents: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agents = nil
+	for _, s := range again {
+		agents = append(agents, s.Subagents...)
+	}
+	if !reflect.DeepEqual(first, agents) {
+		t.Error("サブエージェントの読み取りが決定的でない")
+	}
+}
+
 func mustTime(t *testing.T, s string) time.Time {
 	t.Helper()
 	tm, err := time.Parse(time.RFC3339Nano, s)
