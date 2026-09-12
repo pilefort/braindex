@@ -57,6 +57,8 @@ func TestStripHTML(t *testing.T) {
 }
 
 // 判定表: 空白の揺れは許す・言い換えは弾く・24 字未満は拒否。
+// CheckQuoteText は平文(StripHTML 済み)を受け取るので、ここでは渡す前に自前で剥がす
+// (実際の呼び出し元 Quotes も、ページ全体を 1 回だけ剥がしてから渡す形になっている)。
 func TestCheckQuoteText(t *testing.T) {
 	const page = "<p>Every   claim\n carries a quote, checked against the source.</p>"
 	cases := []struct {
@@ -71,7 +73,7 @@ func TestCheckQuoteText(t *testing.T) {
 		{"<p>" + strings.Repeat("あ", 24) + "</p>", strings.Repeat("あ", 24), Found},
 	}
 	for _, c := range cases {
-		if got, _ := CheckQuoteText(c.page, c.quote); got != c.want {
+		if got, _ := CheckQuoteText(StripHTML(c.page), c.quote); got != c.want {
 			t.Errorf("CheckQuoteText(%q) = %s, want %s", c.quote, got, c.want)
 		}
 	}
@@ -81,12 +83,13 @@ func TestCheckQuoteText(t *testing.T) {
 // これを ASCII の空白だけで畳むと、日本語のページで実在する引用が NOT FOUND になる。
 func TestCheckQuoteText_UnicodeSpace(t *testing.T) {
 	page := "<p>これは&nbsp;テストの文章です。全角空白　を含む長い引用の照合。</p>"
+	plain := StripHTML(page)
 	quote := "これは テストの文章です。全角空白 を含む長い引用の照合。"
-	if got, detail := CheckQuoteText(page, quote); got != Found {
+	if got, detail := CheckQuoteText(plain, quote); got != Found {
 		t.Errorf("CheckQuoteText = %s (%s), want %s", got, detail, Found)
 	}
 	// 引用の側に全角空白・改行が入っていても同じ。
-	if got, _ := CheckQuoteText(page, "これは\nテストの文章です。全角空白　を含む長い引用の照合。"); got != Found {
+	if got, _ := CheckQuoteText(plain, "これは\nテストの文章です。全角空白　を含む長い引用の照合。"); got != Found {
 		t.Errorf("引用側の空白の揺れで %s になった", got)
 	}
 	if got := StripHTML("a b　c"); got != "a b c" {
@@ -141,6 +144,39 @@ func TestChecks(t *testing.T) {
 	}
 	if qs := Quotes(f, "https://down.example/", []string{"x"}); qs[0].Status != Error {
 		t.Errorf("接続失敗時の quote は Error のはず: %+v", qs[0])
+	}
+}
+
+// 本文が打ち切られたページでは、見つからなかった引用を確定の NOT FOUND にしない。
+// 打ち切りの先に引用がある可能性があるのに「無い」と言い切るのは誤りなので、
+// 判定不能を表す Error にし、打ち切りが理由だと分かる detail を付ける。
+func TestQuotes_Truncated(t *testing.T) {
+	f := fakeFetcher{
+		"https://big.example/": {Status: 200, Body: "<p>Nothing relevant survived the cut here.</p>", Truncated: true},
+	}
+	qs := Quotes(f, "https://big.example/", []string{"Every claim carries a quote, checked against the source."})
+	if len(qs) != 1 {
+		t.Fatalf("len(qs) = %d, want 1", len(qs))
+	}
+	if qs[0].Status == NotFound {
+		t.Errorf("打ち切りページで NOT FOUND のままになっている: %+v", qs[0])
+	}
+	if qs[0].Status != Error {
+		t.Errorf("status = %s, want %s: %+v", qs[0].Status, Error, qs[0])
+	}
+	if !strings.Contains(qs[0].Detail, "打ち切") {
+		t.Errorf("detail に打ち切りの説明が無い: %q", qs[0].Detail)
+	}
+}
+
+// 打ち切られたページでも、引用が実際に見つかるなら普通に FOUND のまま。
+func TestQuotes_TruncatedButFound(t *testing.T) {
+	f := fakeFetcher{
+		"https://big.example/": {Status: 200, Body: "<p>Every claim carries a quote, checked against the source.</p>", Truncated: true},
+	}
+	qs := Quotes(f, "https://big.example/", []string{"Every claim carries a quote, checked against the source."})
+	if len(qs) != 1 || qs[0].Status != Found {
+		t.Errorf("見つかっているはずなのに: %+v", qs)
 	}
 }
 
@@ -214,5 +250,39 @@ func TestHTTPFetcher(t *testing.T) {
 	}
 	if bodyLen != 0 {
 		t.Errorf("GET に本文を載せている: %d バイト", bodyLen)
+	}
+}
+
+// MaxBody を小さい値に差し替えると、そこで本文が切り詰められ Truncated が立つ
+// (既定の 8 MiB で同じことを再現するとテストが重いので、上限を注入できる形にしてある)。
+func TestHTTPFetcher_TruncatesLargeBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(strings.Repeat("x", 100)))
+	}))
+	defer srv.Close()
+
+	f := &HTTPFetcher{Client: srv.Client(), MaxBody: 10}
+	res, err := f.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Body) != 10 {
+		t.Errorf("Body 長 = %d, want 10", len(res.Body))
+	}
+	if !res.Truncated {
+		t.Error("Truncated が立っていない")
+	}
+
+	f2 := &HTTPFetcher{Client: srv.Client(), MaxBody: 1000}
+	res2, err := f2.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res2.Truncated {
+		t.Error("上限内に収まっているのに Truncated が立っている")
+	}
+	if len(res2.Body) != 100 {
+		t.Errorf("Body 長 = %d, want 100", len(res2.Body))
 	}
 }
