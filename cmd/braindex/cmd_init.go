@@ -54,6 +54,10 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	case 1:
 		dir = fs.Arg(0)
 	default:
+		if *repo && anyLooksLikeFlag(fs.Args()[1:]) {
+			fmt.Fprintf(stderr, "braindex init: -repo は値を取らない真偽フラグ。直後に書いた %q がディレクトリの位置引数になり、それより後ろの %s はフラグとして認識されず位置引数になった(go の flag は最初の非フラグ引数でフラグの解釈を止める)。フラグはすべてディレクトリより前に書く(例: braindex init -add retro <dir> / braindex init -repo <dir>)\n", fs.Arg(0), strings.Join(fs.Args()[1:], " "))
+			return 1
+		}
 		fmt.Fprintf(stderr, "braindex init: ディレクトリは 1 つまで(%d 個指定された)\n", fs.NArg())
 		return 1
 	}
@@ -163,6 +167,20 @@ func printFeatureList(w io.Writer) {
 		}
 	}
 	fmt.Fprintf(w, "\n%s: 上の全部(従来の braindex init と同じ配布物)\n", template.FeatureAll)
+}
+
+// anyLooksLikeFlag は、位置引数として飲み込まれた余りの中に "-" で始まるもの(本来はフラグのつもりだった
+// もの)が無いかを見る。-repo は値を取らない真偽フラグなので "-repo <path>" と書くと、直後のパスが
+// ディレクトリの位置引数になり、go の flag はそこでフラグの解釈を止める。それより後ろに書いたフラグ
+// (-add 等)まで位置引数に混ざるのはこのときだけなので、余りが素直に複数のディレクトリなだけの
+// (フラグを混同していない)誤りとは案内を分ける。
+func anyLooksLikeFlag(extra []string) bool {
+	for _, a := range extra {
+		if strings.HasPrefix(a, "-") {
+			return true
+		}
+	}
+	return false
 }
 
 func joinFeatures(fs []template.Feature) string {

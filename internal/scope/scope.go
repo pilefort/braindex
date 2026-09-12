@@ -76,7 +76,7 @@ func EnumerateDir(dir string) ([]Entry, error) {
 		return nil, err
 	}
 	if !fi.IsDir() {
-		return nil, fmt.Errorf("%s はディレクトリでない", filepath.ToSlash(dir))
+		return nil, fmt.Errorf("%s はディレクトリでない(-dir にはディレクトリを渡す。1 ファイルだけ検査したいときも、そのファイルがあるディレクトリを渡す)", filepath.ToSlash(dir))
 	}
 	repo := filepath.Base(filepath.Clean(dir))
 	var out []Entry

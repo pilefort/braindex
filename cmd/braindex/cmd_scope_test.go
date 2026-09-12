@@ -73,6 +73,20 @@ func TestScope_DirJSON(t *testing.T) {
 	}
 }
 
+// -dir にファイル(ディレクトリでないパス)を渡すと、次に何を渡せばよいかが分かる文で終了コード 1。
+func TestScope_DirFile(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "a.md")
+	writeFile(t, file, "# 甲\n\n記録日: 2026-08-01\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"scope", "-dir", file}, &so, &se); code != 1 {
+		t.Fatalf("exit=%d want 1\n%s%s", code, so.String(), se.String())
+	}
+	if !strings.Contains(se.String(), "ディレクトリでない") || !strings.Contains(se.String(), "ディレクトリを渡す") {
+		t.Errorf("次に何を渡せばよいかの案内が無い: %s", se.String())
+	}
+}
+
 // -dir の列挙は索引と同じ走査規則: archive セグメントとドットで始まるディレクトリは対象外。
 func TestScope_Dirは索引と同じ走査規則で除外する(t *testing.T) {
 	dir := t.TempDir()

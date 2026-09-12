@@ -137,7 +137,7 @@ func install(dst string, kind Kind, files []File, feats []Feature) (Result, erro
 			merged, changed, merr := mergeExisting(f.Path, cur, feats)
 			if merr != nil {
 				_ = SaveLedger(dst, led)
-				return res, fmt.Errorf("%s: %w", f.Path, merr)
+				return res, merr // BuildConfig がパスを添える。ここで包むと "braindex.json: braindex.json: ..." になる
 			}
 			if !changed {
 				res.Skipped = append(res.Skipped, f.Path)

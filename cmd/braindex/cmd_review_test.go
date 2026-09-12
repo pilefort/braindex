@@ -223,6 +223,55 @@ func TestReview_BadArgs(t *testing.T) {
 	}
 }
 
+// -stdout と -out を同時に指定すると、-out を黙って無視して標準出力にだけ出していた
+// (2026-09-12 実測)。フラグの誤りとして終了コード 1 で拒否する
+// (`retro` の -since/-window-days と同じ「同時に使えない」の型に揃える)。
+func TestReview_StdoutAndOutRejected(t *testing.T) {
+	_, hub := hubWithRepo(t)
+	cfg := filepath.Join(hub, "braindex.json")
+	out := filepath.Join(t.TempDir(), "out.md")
+	var so, se bytes.Buffer
+	code := dispatch([]string{"review", "-config", cfg, "-date", "2026-09-02", "-stdout", "-out", out}, &so, &se)
+	if code != 1 {
+		t.Fatalf("exit=%d want 1\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	if !strings.Contains(se.String(), "-stdout") || !strings.Contains(se.String(), "-out") {
+		t.Errorf("stderr に -stdout と -out の説明が無い: %s", se.String())
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Errorf("拒否したのに -out 先が作られた: %s", out)
+	}
+}
+
+// review.dir に絶対パスを書いたら、hub 配下に連結せずそのまま使う。filepath.Join でそのまま連結すると
+// 壊れたパス(Windows では ".\C:\...\out\2026-09-02.md")になり書き込みに失敗する(2026-09-12 実測)。
+// 設定 root の joinIfRelative と同じ扱いに揃える。
+func TestReview_AbsoluteDirUsedAsIs(t *testing.T) {
+	_, hub := hubWithRepo(t)
+	cfg := filepath.Join(hub, "braindex.json")
+	absDir := filepath.Join(t.TempDir(), "review-out")
+	cfgText := readFile(t, cfg)
+	marker := `"dir": "work/review"`
+	if !strings.Contains(cfgText, marker) {
+		t.Fatalf("雛形の braindex.json に %q が無い(雛形が変わった?)", marker)
+	}
+	cfgText = strings.Replace(cfgText, marker, `"dir": "`+filepath.ToSlash(absDir)+`"`, 1)
+	writeFile(t, cfg, cfgText)
+
+	var so, se bytes.Buffer
+	code := dispatch([]string{"review", "-config", cfg, "-date", "2026-09-02"}, &so, &se)
+	if code != 2 {
+		t.Fatalf("exit=%d want 2\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	out := filepath.Join(absDir, "2026-09-02.md")
+	if _, err := os.Stat(out); err != nil {
+		t.Errorf("絶対パスの review.dir 直下に書かれていない: %v\nstdout=%s\nstderr=%s", err, so.String(), se.String())
+	}
+	if _, err := os.Stat(filepath.Join(hub, absDir)); err == nil {
+		t.Errorf("hub 配下にも連結されて書かれた(joinIfRelative になっていない)")
+	}
+}
+
 // 前回の索引が読めなくても下書きは出す。増減の代わりに理由を 1 行書き、終了コード 2
 // (設計レビュー 2026-09-06 M3c)。読めない理由は前回の版が違う・手で壊した等で、
 // 増減が出せないだけで差分ファイル・放置 TODO・アーカイブ候補は作れる。

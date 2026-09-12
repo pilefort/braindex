@@ -168,6 +168,24 @@ func TestInstall_LstatErrorMentionsPathOnce(t *testing.T) {
 	}
 }
 
+// 壊れた braindex.json に -add で機能を足そうとすると、パスを 1 回だけ添えたエラーで止まる
+// (BuildConfig が既に添える。install() で包み直すと "braindex.json: braindex.json: ..." になる。
+// update 側は #107 で直したので揃える)。
+func TestInstallFeatures_BrokenConfigErrorHasPathOnce(t *testing.T) {
+	dst := t.TempDir()
+	if _, err := InstallFeatures(dst, []Feature{FeatureRetro}); err != nil {
+		t.Fatal(err)
+	}
+	writeAt(t, dst, ConfigPath, []byte(`{"root": `))
+	_, err := InstallFeatures(dst, []Feature{FeatureRetro})
+	if err == nil {
+		t.Fatal("壊れた braindex.json でエラーにならない")
+	}
+	if n := strings.Count(err.Error(), ConfigPath+": "); n != 1 {
+		t.Errorf("エラーにパスが %d 回: %v", n, err)
+	}
+}
+
 // 雛形の本文は LF のみ(CRLF を持ち込まない)。絶対パス・原型固有の語を含まない。
 // 個人識別子(ユーザー名・実在リポ名)そのものはこのテストにも書かない(CLAUDE.md「してはいけないこと」)。
 // それらは公開前チェックリストの grep で見る。
