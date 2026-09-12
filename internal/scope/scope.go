@@ -35,6 +35,7 @@ type Entry struct {
 type Result struct {
 	Mode    string    `json:"mode"` // full / topic:<語> / repo:<名> / dir:<パス>
 	Entries int       `json:"n_entries"`
+	NChunks int       `json:"n_chunks"`
 	Chunks  [][]Entry `json:"chunks"`
 }
 
@@ -170,7 +171,8 @@ func Build(catalog []byte, o Options) (Result, error) {
 		mode = "topic:" + o.Topic
 	}
 	entries = Filter(entries, o.Topic, o.Repo)
-	return Result{Mode: mode, Entries: len(entries), Chunks: Chunk(entries, o.Size)}, nil
+	chunks := Chunk(entries, o.Size)
+	return Result{Mode: mode, Entries: len(entries), NChunks: len(chunks), Chunks: chunks}, nil
 }
 
 // Render は結果を人が読む Markdown にする。chunk ごとにパス・タイトル・日付の一覧。

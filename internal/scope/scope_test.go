@@ -2,12 +2,43 @@ package scope
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestBuild_NChunksJSON(t *testing.T) {
+	for _, tc := range []struct {
+		o    Options
+		want int
+	}{
+		{Options{Size: 2}, 2}, {Options{}, 1}, {Options{Topic: "no-match"}, 0},
+		{Options{Dir: filepath.Join("testdata", "notes"), Size: 2}, 2},
+	} {
+		r, err := Build(fixture(t), tc.o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := json.Marshal(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got map[string]json.RawMessage
+		if err := json.Unmarshal(b, &got); err != nil {
+			t.Fatal(err)
+		}
+		var n int
+		if err := json.Unmarshal(got["n_chunks"], &n); err != nil {
+			t.Fatal(err)
+		}
+		if n != tc.want || n != len(r.Chunks) || r.NChunks != n {
+			t.Fatalf("n_chunks=%d want %d: %s", n, tc.want, b)
+		}
+	}
+}
 
 func fixture(t *testing.T) []byte {
 	t.Helper()
