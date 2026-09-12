@@ -1,4 +1,4 @@
-# braindex approvals / answer / verify / scope — 判断・HTML・照合・走査対象
+# braindex approvals / answer / explain / verify / scope — 判断・HTML・照合・走査対象
 
 [← README](../README.md) ／ [手引きの目次](README.md)
 
@@ -114,6 +114,36 @@ braindex answer -append 索引の設計 -q "root と notes_dirs はどっちが�
 - 1 回目の回答の `# 見出し` がスレッドの題名になる。2 回目以降の `# 見出し` はエントリの中には残さない
 - スレッドの `.md` も一時置き場に置くので `-ttl-days` で消える。**残す価値のある内容は `docs/notes/` に別途書く**
 - 話題名は一時置き場の中のファイル名なので、パス区切り（`/` `\`）や `:` `*` `?` `"` `<` `>` `|` は使えない
+
+## braindex explain — 解説の HTML 化
+
+`braindex explain <md>` は論文・記事の**解説**の Markdown を、目次と図を備えた自己完結 HTML にして開く。
+置き場所・TTL・開き方は `answer` と同じで、**HTML は読むための一時物**。正本の `.md` と `.svg` は `docs/notes/` に置く。
+
+取得も解説の生成もしない。文章と図は書き手が `.md` と `.svg` に書き、このコマンドは読みやすい形に組み直すところだけを担う。
+LLM を呼ばないので、**同じ入力からは同じ HTML が出る**（決定 2026-09-12）。
+
+```sh
+braindex explain kaisetsu.md                  # HTML にして開く
+braindex explain -no-open kaisetsu.md         # 書くだけ
+braindex explain -out out.html kaisetsu.md    # 出力先を指定する
+```
+
+フラグ: `-out` `-no-open` `-ttl-days`（0 で消さない）。フラグは `<md>` より前に置く。
+終了コード: 0 成功／1 失敗（図が見つからない等、本文に印を出した問題を含む。HTML は書いて開いたうえで 1 を返す）。
+
+### md の書き方
+
+- **図**: `![図1: 目次を検索単位にする](fig1.svg)` のように、行まるごとを画像にする。`.svg` は md からの相対パス。
+  中身を HTML に埋め込むので、図の入った 1 枚が残る。alt の「図N: 説明」がそのまま `<figcaption>` になる。
+  図は別ファイルに置く（決定 2026-09-12。md に直接 `<svg>` を書くと本文が図で埋まり、読み返す手間が増える）
+- **見出し**: `##` が節、`###` が小節。目次はこの 2 段から作る。広い画面では左に固定され、狭い画面では本文の先頭に畳まれる。
+  id は出現順の通し番号（`s1`・`s1-1`）なので、同じ見出しが 2 つあっても飛び先がずれない
+- **出典**: 本文中のリンクをそのまま使う（`http(s)` 以外は `href` に出さない）
+
+埋め込む `.svg` からは `<script>` と `on...` で始まる属性を落とす。`<style>` と `<animate>` は残すので、
+図のアニメーションはこの 2 つで書く。図が見つからないときは、その場所に「図 fig1.svg が無い」と出して 1 を返す
+（HTML は書けているので、どこが欠けたかを見て直せる）。
 
 ## braindex verify — 実在の照合
 

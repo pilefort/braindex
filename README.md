@@ -132,6 +132,7 @@ braindex init -add all              フル: 上の全部。learn（学習の提�
 | `braindex learn` | 索引・ノート本文・セッションログ・`news/keep` と訂正辞書・回答 `work/learn/answers.json` | 学習の提案（本文照合つき。Markdown・`-json`）。`learn answer` で候補に「既知・不要・後で」を返す | [learn](manual/learn.md) |
 | `braindex approvals` | `work/APPROVALS.md` | ブラウザのフォーム → `docs/decisions.md` への追記 | [tools](manual/tools.md) |
 | `braindex answer` | Markdown 1 ファイル（`-append` なら話題ごとのスレッド） | 自己完結 HTML（一時置き場・既定ブラウザで開く） | [tools](manual/tools.md) |
+| `braindex explain` | 解説の Markdown 1 ファイルと、隣に置いた図の `.svg` | 目次・図を埋め込んだ自己完結 HTML（一時置き場・既定ブラウザで開く） | [tools](manual/tools.md) |
 | `braindex verify` | GitHub リポ・arXiv ID・URL・逐語引用 | 照合の結果（stdout・`-json`） | [tools](manual/tools.md) |
 | `braindex scope` | `index/catalog.md`（`-dir` ならディレクトリ配下の `*.md`） | 矛盾検査の走査対象（chunk 分割・stdout・`-json`） | [tools](manual/tools.md) |
 | `braindex schedule` | 設定の `schedule` 節 | OS のスケジューラへの登録 | [schedule](manual/schedule.md) |
