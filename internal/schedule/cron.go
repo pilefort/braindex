@@ -29,7 +29,8 @@ func CronLine(hub, exe string, j Job) (string, error) {
 	}
 	b.WriteString(" # braindex:")
 	b.WriteString(j.Name)
-	return b.String(), nil
+	// cron はシェルの引用符内でも % を改行として扱う。
+	return strings.ReplaceAll(b.String(), "%", `\%`), nil
 }
 
 // shellQuote は sh 向けに単引用符で囲む。中の単引用符は '"'"' で退避する。

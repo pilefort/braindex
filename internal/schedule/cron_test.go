@@ -46,6 +46,15 @@ func TestCronLine(t *testing.T) {
 
 const hub = "/home/u/hub"
 
+func TestCronLine_Percent(t *testing.T) {
+	j := Job{Name: "review", Args: []string{"review", "100%", "a'%b", `a\%b`}, When: "daily:09:00"}
+	got, err := CronLine("/hub%dir", "/bin%dir/braindex", j)
+	want := `0 9 * * * cd '/hub\%dir' && '/bin\%dir/braindex' 'review' '100\%' 'a'"'"'\%b' 'a\\%b' # braindex:review`
+	if err != nil || got != want {
+		t.Fatalf("got=%q want=%q err=%v", got, want, err)
+	}
+}
+
 func TestMerge_空のcrontabに足す(t *testing.T) {
 	got := Merge("", hub, []string{"0 9 * * 1 x"})
 	want := "# BEGIN braindex /home/u/hub\n0 9 * * 1 x\n# END braindex /home/u/hub\n"
@@ -196,7 +205,7 @@ func TestIsNoCrontab(t *testing.T) {
 		{"crontab: you are not authorized to use cron", false},              // 権限
 		{"crontab: can't open your crontab file: Permission denied", false}, // 読めない
 		{"", false}, // 文言なし(実行ファイルが無いなど)
-		// 呼び出し側は stdout と stderr を混ぜて渡すので、利用者の crontab 本文が来ることがある。
+		// 本文を渡されても「空」と誤判定しない。
 		// 「no crontab を含む」で見ると、この本文を「空」と誤判定して全消しする。
 		{"0 3 * * * /usr/bin/backup\n# no crontab entries below this line\n0 4 * * * /usr/bin/rotate\n", false},
 		{"echo 'NO CRONTAB'", false}, // 行頭でない

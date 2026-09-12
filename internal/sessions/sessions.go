@@ -42,13 +42,33 @@ type ToolUse struct {
 	Count int
 }
 
+// Usage は 1 メッセージの使用量。分割行の値は加算せず最後の値を使う。
+type Usage struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+}
+
+// ToolCall はツール呼び出しと、後続行にある結果の対応。
+type ToolCall struct {
+	ID, Name, Command  string
+	Time               time.Time
+	IsError, HasResult bool
+}
+
 // Turn は 1 発話。
 type Turn struct {
-	Role  Role
-	Index int       // 人間の発話の通し番号(そのセッションで何番目か。1 始まり。除外規則を通った発話だけを数える)。アシスタントは 0
-	Time  time.Time // ログの timestamp(UTC)。無ければゼロ値
-	Text  string    // 人間: 打った本文(<system-reminder> ブロックは除く)。アシスタント: text ブロックを改行で連結
-	Tools []ToolUse // アシスタントが呼んだツール(出現順)。人間は nil
+	UUID string // thinking だけの行も含む、そのメッセージの最初の行
+	// ParentUUID は捨てた tool_result・attachment 行を指すことがあり、Turn だけでは親子を辿り切れない。
+	ParentUUID string
+	Usage      *Usage // アシスタントだけ。同じ message.id の最後の行の値
+	Calls      []ToolCall
+	Role       Role
+	Index      int       // 人間の発話の通し番号(そのセッションで何番目か。1 始まり。除外規則を通った発話だけを数える)。アシスタントは 0
+	Time       time.Time // ログの timestamp(UTC)。無ければゼロ値
+	Text       string    // 人間: 打った本文(<system-reminder> ブロックは除く)。アシスタント: text ブロックを改行で連結
+	Tools      []ToolUse // アシスタントが呼んだツール(出現順)。人間は nil
 	// Boilerplate は「同じ冒頭の発話が複数セッションに現れる」= 機械が流し込んだ指示と判定された発話。
 	// MarkBoilerplate が立てる。retro・news・learn はこの発話を数えない。
 	Boilerplate bool
@@ -56,6 +76,7 @@ type Turn struct {
 
 // Session は 1 つのセッションログ。
 type Session struct {
+	Subagents []Subagent
 	ID        string    // ファイル名から .jsonl を除いたもの
 	Path      string    // 読んだファイル
 	Project   string    // 最初に現れた cwd。無ければ置き場のディレクトリ名(slug)
@@ -64,6 +85,28 @@ type Session struct {
 	End       time.Time // 最後の発話の時刻
 	Turns     []Turn    // 時系列
 	UserTurns int       // 人間の発話数(最後の Index と同じ)
+}
+
+// Subagent は本体とは別ファイルに記録された発話。定型判定や発話の除外規則は掛けない。
+type Subagent struct {
+	AgentID, AgentType, Description, ToolUseID string
+	Path                                       string
+	Turns                                      []Turn
+	Start, End                                 time.Time
+}
+
+// TotalUsage は本体の各 Turn の使用量の和。サブエージェントは含めない。
+func (s Session) TotalUsage() Usage {
+	var total Usage
+	for _, t := range s.Turns {
+		if u := t.Usage; u != nil {
+			total.InputTokens += u.InputTokens
+			total.OutputTokens += u.OutputTokens
+			total.CacheCreationInputTokens += u.CacheCreationInputTokens
+			total.CacheReadInputTokens += u.CacheReadInputTokens
+		}
+	}
+	return total
 }
 
 // HumanTurns は人間の発話だけを時系列で返す。
@@ -79,6 +122,8 @@ func (s Session) HumanTurns() []Turn {
 
 // Options は読み取りの条件。
 type Options struct {
+	// IncludeSubagents が false ならサブエージェントのディレクトリを開かない。
+	IncludeSubagents bool
 	// Since を指定すると、それより前に最終更新されたファイル(mtime)は開かない(全件だと GB 単位になるため)。
 	// 開いたセッションの発話は Since より前のものも含めて全部返す。発話単位の絞り込みは呼び出し側が Turn.Time で行う。
 	// mtime は「そのファイルに最後に書いた時刻」なので、中の timestamp がそれより後になることはない。
@@ -171,6 +216,11 @@ func (d Dir) Sessions(opts Options) ([]Session, []string, error) {
 					continue
 				}
 			}
+			if opts.IncludeSubagents {
+				subagents, w := readSubagents(filepath.Join(slugDir, s.ID, "subagents"))
+				s.Subagents = subagents
+				warns = append(warns, w...)
+			}
 			out = append(out, s)
 		}
 	}
@@ -195,6 +245,8 @@ func (d Dir) Sessions(opts Options) ([]Session, []string, error) {
 
 // row はログ 1 行のうち使う項目。
 type row struct {
+	UUID        string `json:"uuid"`
+	ParentUUID  string `json:"parentUuid"`
 	Type        string `json:"type"`
 	IsSidechain bool   `json:"isSidechain"`
 	IsMeta      bool   `json:"isMeta"`
@@ -202,16 +254,21 @@ type row struct {
 	Cwd         string `json:"cwd"`
 	Version     string `json:"version"`
 	Message     struct {
+		Usage   *Usage          `json:"usage"`
 		ID      string          `json:"id"`
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
 }
 
-// block は message.content のブロック。tool_result は type だけ見る(中身は使わない)。
+// block は message.content のブロック。結果本文は保持しない。
 type block struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-	Name string `json:"name"`
+	ID        string          `json:"id"`
+	ToolUseID string          `json:"tool_use_id"`
+	IsError   bool            `json:"is_error"`
+	Input     json.RawMessage `json:"input"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text"`
+	Name      string          `json:"name"`
 }
 
 var (
@@ -221,13 +278,27 @@ var (
 
 // reader は 1 ファイルを読む間の状態。
 type reader struct {
+	subagent  bool
+	messages  map[string]*messageInfo
+	calls     map[string]callLocation
 	s         Session
 	lastMsgID string // 直前に足したアシスタント発話の message.id。同じ id の行は 1 発話に束ねる
 	bad       int    // JSON として読めなかった行数
 }
 
+type messageInfo struct {
+	uuid, parentUUID string
+	turn             int // 最初に保持した Turn。thinking だけの間は -1
+}
+
+type callLocation struct{ turn, call int }
+
 func readSession(path, slug string) (Session, []string) {
-	r := reader{s: Session{ID: strings.TrimSuffix(filepath.Base(path), ".jsonl"), Path: path}}
+	return readLog(path, slug, false)
+}
+
+func readLog(path, slug string, subagent bool) (Session, []string) {
+	r := reader{s: Session{ID: strings.TrimSuffix(filepath.Base(path), ".jsonl"), Path: path}, subagent: subagent}
 	f, err := os.Open(path)
 	if err != nil {
 		return r.s, []string{fmt.Sprintf("セッションログ %s: 読めない: %v", path, err)}
@@ -273,7 +344,7 @@ func (r *reader) line(line []byte) {
 		r.bad++
 		return
 	}
-	if (o.Type != "user" && o.Type != "assistant") || o.IsSidechain {
+	if (o.Type != "user" && o.Type != "assistant") || (o.IsSidechain && !r.subagent) {
 		return // サブエージェント(isSidechain)の行は人間の発話でもアシスタント本文でもない
 	}
 	if r.s.Project == "" {
@@ -286,18 +357,33 @@ func (r *reader) line(line []byte) {
 	text, tools, hasText := contentParts(o.Message.Content)
 	switch o.Type {
 	case "user":
+		r.linkResults(o.Message.Content)
 		if !hasText {
 			return // tool_result だけの行
 		}
 		// isMeta は Skill 起動時の文脈・画像の貼り付け・別セッションからのメッセージなど、人が打っていない行
 		// (2026-09-03 に実ログで確認。除外は同日の決定 → manual/retro.md「決めたこと」)
-		if o.IsMeta || ExcludeReason(text) != "" {
+		if !r.subagent && (o.IsMeta || ExcludeReason(text) != "") {
 			return
 		}
 		r.s.UserTurns++
-		r.s.Turns = append(r.s.Turns, Turn{Role: User, Index: r.s.UserTurns, Time: ts, Text: stripReminders(text)})
+		r.s.Turns = append(r.s.Turns, Turn{Role: User, Index: r.s.UserTurns, Time: ts, Text: stripReminders(text), UUID: o.UUID, ParentUUID: o.ParentUUID})
 		r.lastMsgID = ""
 	case "assistant":
+		info := &messageInfo{uuid: o.UUID, parentUUID: o.ParentUUID, turn: -1}
+		if o.Message.ID != "" {
+			if r.messages == nil {
+				r.messages = make(map[string]*messageInfo)
+			}
+			if previous := r.messages[o.Message.ID]; previous != nil {
+				info = previous
+			} else {
+				r.messages[o.Message.ID] = info
+			}
+		}
+		if info.turn >= 0 {
+			r.s.Turns[info.turn].Usage = o.Message.Usage
+		}
 		if text == "" && len(tools) == 0 {
 			return // thinking だけの行など
 		}
@@ -314,9 +400,14 @@ func (r *reader) line(line []byte) {
 				last.Tools = addTool(last.Tools, t.Name, t.Count)
 			}
 		} else {
-			r.s.Turns = append(r.s.Turns, Turn{Role: Assistant, Time: ts, Text: text, Tools: tools})
+			r.s.Turns = append(r.s.Turns, Turn{Role: Assistant, Time: ts, Text: text, Tools: tools, UUID: info.uuid, ParentUUID: info.parentUUID})
 			r.lastMsgID = o.Message.ID
 		}
+		if info.turn < 0 {
+			info.turn = len(r.s.Turns) - 1
+			r.s.Turns[info.turn].Usage = o.Message.Usage
+		}
+		r.addCalls(o.Message.Content, ts)
 	}
 	if !ts.IsZero() {
 		if r.s.Start.IsZero() {
@@ -324,6 +415,100 @@ func (r *reader) line(line []byte) {
 		}
 		r.s.End = ts
 	}
+}
+
+// addCalls は保持した発話に呼び出しを追加し、結果との対応用に位置を記録する。
+func (r *reader) addCalls(raw json.RawMessage, ts time.Time) {
+	var blocks []block
+	if json.Unmarshal(raw, &blocks) != nil {
+		return
+	}
+	i := len(r.s.Turns) - 1
+	for _, b := range blocks {
+		if b.Type != "tool_use" {
+			continue
+		}
+		call := ToolCall{ID: b.ID, Name: b.Name, Time: ts}
+		if b.Name == "Bash" {
+			var input struct {
+				Command string `json:"command"`
+			}
+			if json.Unmarshal(b.Input, &input) == nil {
+				call.Command = input.Command
+			}
+		}
+		t := &r.s.Turns[i]
+		if b.ID != "" {
+			if r.calls == nil {
+				r.calls = make(map[string]callLocation)
+			}
+			r.calls[b.ID] = callLocation{i, len(t.Calls)}
+		}
+		t.Calls = append(t.Calls, call)
+	}
+}
+
+func (r *reader) linkResults(raw json.RawMessage) {
+	var blocks []block
+	if json.Unmarshal(raw, &blocks) != nil {
+		return
+	}
+	for _, b := range blocks {
+		if b.Type != "tool_result" {
+			continue
+		}
+		if loc, ok := r.calls[b.ToolUseID]; ok {
+			call := &r.s.Turns[loc.turn].Calls[loc.call]
+			call.HasResult, call.IsError = true, b.IsError
+		}
+	}
+}
+
+func readSubagents(root string) ([]Subagent, []string) {
+	var out []Subagent
+	var warns []string
+	// WalkDir のファイル名順で返す。journal.jsonl や meta.json はログとして読まない。
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if path != root || !errors.Is(err, fs.ErrNotExist) {
+				warns = append(warns, fmt.Sprintf("サブエージェントログ %s: 読めない: %v", path, err))
+			}
+			return nil
+		}
+		if d.IsDir() || !strings.HasPrefix(d.Name(), "agent-") || !strings.HasSuffix(d.Name(), ".jsonl") {
+			return nil
+		}
+		s, w := readLog(path, "", true)
+		warns = append(warns, w...)
+		a := Subagent{AgentID: strings.TrimSuffix(strings.TrimPrefix(d.Name(), "agent-"), ".jsonl"), Path: path, Turns: s.Turns, Start: s.Start, End: s.End}
+		if err := readSubagentMeta(strings.TrimSuffix(path, ".jsonl")+".meta.json", &a); err != nil {
+			warns = append(warns, fmt.Sprintf("サブエージェントのメタ情報 %s: 読めない: %v", path, err))
+		}
+		out = append(out, a)
+		return nil
+	})
+	return out, warns
+}
+
+// readSubagentMeta にキー名の対応を集約する。agentType・description・toolUseId は 2.1.269 の実ログで確認（2026-09-13）。他の版は未確認。
+func readSubagentMeta(path string, a *Subagent) error {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var meta struct {
+		AgentType   string `json:"agentType"`
+		Description string `json:"description"`
+		ToolUseID   string `json:"toolUseId"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return err
+	}
+	a.AgentType, a.Description, a.ToolUseID = meta.AgentType, meta.Description, meta.ToolUseID
+	return nil
 }
 
 // contentParts は message.content(文字列か、ブロックの列)を本文と tool_use に分ける。

@@ -18,6 +18,11 @@ braindex schedule uninstall  # この hub の登録を消す
 自分で cron や schtasks に書きたいときは `braindex schedule print` の出力をそのまま使える。
 同じ日に 2 回動いても、既にある下書きは上書きしない。
 
+**macOS では hub を `~/Documents`・`~/Desktop`・`~/Downloads` の下に置かない。** ホーム直下の `~/<名前>/` などに置く。
+macOS のプライバシー保護（TCC）により、cron から起動したプロセスは保護対象のフォルダを読めないことがある。
+2026-09-03 の macOS 15 での実測では、`~/Documents` 配下は `Operation not permitted` となり、登録に成功しても実行時刻に処理が失敗した。
+同じバイナリをターミナルから起動すると読め、ホーム直下の hub は cron からも読めた。hub を移したら `braindex schedule install` で登録し直す。
+
 ## 設定と登録の仕組み
 
 設定 `braindex.json` の `schedule` 節に書いたジョブを、この OS のスケジューラに登録する。
@@ -43,6 +48,9 @@ macOS・Linux は `crontab`（`# BEGIN braindex <hub>` 〜 `# END braindex <hub>
 **どちらかを移したら登録し直す**。`braindex init` は自動では登録しない（init は「既存を上書きしないファイル展開」で、OS への副作用は性質が違う）。
 
 サブコマンド: `list`（設定のジョブと OS 側の登録状態）・`print`（登録に使うコマンドを出すだけ）・`install`（登録する）・`uninstall`（消す）。
+
+cron の `list` は、登録済みの行が現在の設定・hub・実行ファイルから作る行と異なる場合、`install` で登録し直すよう案内する。
+`uninstall` は消す対象が無ければ「未登録」と表示し、crontab を書き込まない。
 
 crontab 側では、`crontab -l` が読めなければ**何もせず終了コード 1** で止まる（読めないまま書き戻すと既にある行を消してしまうため）。
 ただし「まだ crontab が無い」ことを示す失敗（出力が `no crontab for <利用者>` の 1 行だけ。BSD cron の `crontab: ` 接頭辞も可）だけは空の crontab として扱うので、

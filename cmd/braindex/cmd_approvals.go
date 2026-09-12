@@ -240,12 +240,18 @@ func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 		return fail(fmt.Errorf("引数 %q は受け付けない(フラグだけを渡す)", fs.Args()))
 	}
 	// -timeout を明示していなければ設定の approvals.timeout_sec を使う(フラグ > 設定 > 既定)
-	explicitTimeout := false
+	explicitTimeout, explicitDecisions := false, false
 	fs.Visit(func(fl *flag.Flag) {
+		if fl.Name == "decisions" {
+			explicitDecisions = true
+		}
 		if fl.Name == "timeout" {
 			explicitTimeout = true
 		}
 	})
+	if explicitDecisions && !apply {
+		return fail(fmt.Errorf("-decisions は -apply と一緒に指定する"))
+	}
 	if !explicitTimeout {
 		s, _, _, serr := f.settings()
 		if serr != nil {
@@ -304,12 +310,20 @@ func runApprovalsServe(args []string, stdout, stderr io.Writer) int {
 		}
 		return fail(err)
 	}
+	if apply {
+		code := applyReply(p, "", decisionsPath, time.Now().Format("2006-01-02"), stdout, stderr)
+		replyPath := p.Reply
+		if _, err := os.Stat(p.Reply); errors.Is(err, os.ErrNotExist) {
+			if _, err := os.Stat(p.Applied); err == nil {
+				replyPath = p.Applied
+			}
+		}
+		fmt.Fprintf(stdout, "reply: %s\n", replyPath)
+		return code
+	}
 	fmt.Fprintf(stdout, "reply: %s\n", p.Reply)
 	for _, line := range summarizeReply(rep) {
 		fmt.Fprintln(stdout, line)
-	}
-	if apply {
-		return applyReply(p, "", decisionsPath, time.Now().Format("2006-01-02"), stdout, stderr)
 	}
 	fmt.Fprintln(stdout, "next: braindex approvals apply")
 	return 0

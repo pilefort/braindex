@@ -135,10 +135,13 @@ braindex init -add all              フル: 上の全部。learn（学習の提�
 | `braindex explain` | 解説の Markdown 1 ファイルと、隣に置いた図の `.svg` | 目次・埋め込んだ図・表から描いたグラフつきの自己完結 HTML（一時置き場・既定ブラウザで開く） | [tools](manual/tools.md) |
 | `braindex verify` | GitHub リポ・arXiv ID・URL・逐語引用 | 照合の結果（stdout・`-json`） | [tools](manual/tools.md) |
 | `braindex scope` | `index/catalog.md`（`-dir` ならディレクトリ配下の `*.md`） | 矛盾検査の走査対象（chunk 分割・stdout・`-json`） | [tools](manual/tools.md) |
-| `braindex schedule` | 設定の `schedule` 節 | OS のスケジューラへの登録 | [schedule](manual/schedule.md) |
+| `braindex schedule` | 設定の `schedule` 節 | OS のスケジューラへの登録。macOS の hub は `~/Documents`・`~/Desktop`・`~/Downloads` の下を避け、ホーム直下の `~/<名前>/` などに置く | [schedule](manual/schedule.md) |
 
 終了コードは共通で **0 成功／1 失敗（結果を書かない）／2 警告つき完了（結果は書いたが、飛ばしたものや取りこぼしがある）**。
-3 を使うのは `retro check`（閾値超え）と、`approvals serve`・`approvals wait`（時間切れ）だけ。場面ごとの表は [manual/README.md](manual/README.md#終了コード共通)。
+`braindex -check` は生成日の行を除いて保存済み索引と比べ、**0 最新／3 古い**を返す。古いときは差分の行数を表示する。
+ファイルは一切書かず、`catalog.md`・`changes.json` も更新しない。索引の不在・読み取り失敗は 1、差分なしで走査に警告がある場合は 2。
+詳しくは [索引の確認](manual/generate.md#索引が最新かを確認する--check)。
+3 は `retro check`（閾値超え）と、`approvals serve`・`approvals wait`（時間切れ）でも使う。場面ごとの表は [manual/README.md](manual/README.md#終了コード共通)。
 フラグの要約は `braindex -h`、各コマンドは `braindex <コマンド> -h`。
 
 ## 設計
