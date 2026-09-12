@@ -6,6 +6,7 @@ Go のテストからは HTML の形しか見られない。ここで見るの�
 """
 import os
 from pathlib import Path
+import re
 import sys
 
 from playwright.sync_api import sync_playwright
@@ -24,6 +25,18 @@ def ok(label, cond, detail):
     if not cond:
         raise SystemExit("%s: %s" % (label, detail))
     print("%s: %s" % (label, detail), flush=True)
+
+
+def contrast(a, b):
+    """rgb(...) の 2 色のコントラスト比(WCAG 2.1。Go 側の mdhtml.Contrast と同じ式)。"""
+    def luminance(s):
+        v = [float(x) for x in re.findall(r"[\d.]+", s)[:3]]
+        def ch(c):
+            c = c / 255
+            return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+        return 0.2126 * ch(v[0]) + 0.7152 * ch(v[1]) + 0.0722 * ch(v[2])
+    la, lb = luminance(a), luminance(b)
+    return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
 
 
 def launch(p):
@@ -76,6 +89,22 @@ with sync_playwright() as p:
     # --- 図と棒グラフが描かれている(幅・高さが 0 でない)
     figw = page.eval_on_selector(".bx-fig svg", "e=>Math.round(e.getBoundingClientRect().width)")
     ok("図の幅", figw > 100, "%d px" % figw)
+    # --- 図の色は本文に追従する。図の側に値を書かないので、ここが効かないと図だけ配色から外れる
+    # (2026-09-12: 暗い配色前提の図を明るい本文に入れて、文字と背景の比が 1.13 になった)
+    fig_fg = page.eval_on_selector(".bx-fig svg.bxfig #figtext", "e=>getComputedStyle(e).fill")
+    body_fg = page.eval_on_selector(".doc.explain p", "e=>getComputedStyle(e).color")
+    check("図の文字色は本文と同じ", fig_fg, body_fg)
+    bg = page.eval_on_selector("body", "e=>getComputedStyle(e).backgroundColor")
+    ok("図の文字が背景から浮く(明るい配色)", contrast(fig_fg, bg) >= 4.5,
+       "比 %.2f(4.5 以上)" % contrast(fig_fg, bg))
+    page.evaluate("document.documentElement.setAttribute('data-theme','dark')")
+    dark_fg = page.eval_on_selector(".bx-fig svg.bxfig #figtext", "e=>getComputedStyle(e).fill")
+    dark_bg = page.eval_on_selector("body", "e=>getComputedStyle(e).backgroundColor")
+    ok("暗い配色で図の文字色も変わる", dark_fg != fig_fg, "%s → %s" % (fig_fg, dark_fg))
+    ok("図の文字が背景から浮く(暗い配色)", contrast(dark_fg, dark_bg) >= 4.5,
+       "比 %.2f(4.5 以上)" % contrast(dark_fg, dark_bg))
+    page.evaluate("document.documentElement.removeAttribute('data-theme')")
+
     bars = page.eval_on_selector_all(".bx-bar", "es=>es.map(e=>Math.round(e.getBoundingClientRect().height))")
     ok("棒の本数", len(bars) == 4, "%d 本" % len(bars))
     check("棒が伸びる指定", page.eval_on_selector(".bx-bar", "e=>getComputedStyle(e).animationName"), "bx-grow")
