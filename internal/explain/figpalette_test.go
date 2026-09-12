@@ -1,6 +1,7 @@
 package explain
 
 import (
+	"math"
 	"regexp"
 	"strings"
 	"testing"
@@ -13,7 +14,7 @@ import (
 // CSS だけ直しても伝わらない。
 var figNames = []string{
 	"fg", "fg2", "mono", "edge", "groove", "surf",
-	"c1", "c2", "c3", "c4", "c5",
+	"c1", "c2", "c3", "c4",
 	"s1", "s2", "s3", "s4",
 }
 
@@ -105,6 +106,23 @@ func TestFigPalette_名前がすべて定義されている(t *testing.T) {
 			t.Errorf("暗い配色に --%s が無い", n)
 		}
 	}
+	// 余分な系列色を出さない。名前の一覧に載っていない色は、書き手が知らないまま増える
+	for _, pal := range []map[string]string{light, dark} {
+		for k := range pal {
+			if (strings.HasPrefix(k, "c") || strings.HasPrefix(k, "s")) && !contains(figNames, k) {
+				t.Errorf("名前の一覧に無い色が出ている: --%s", k)
+			}
+		}
+	}
+}
+
+func contains(ss []string, s string) bool {
+	for _, x := range ss {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 // 図の色は、明るい配色でも暗い配色でも背景から浮く。
@@ -118,13 +136,34 @@ func TestFigPalette_背景から浮く(t *testing.T) {
 			min   float64
 			what  string
 		}{
-			{[]string{"fg", "fg2", "mono"}, 4.5, "文字"},
-			{[]string{"edge", "c1", "c2", "c3", "c4", "c5"}, 3.0, "図形"},
+			// 系列の色は短い見出しの文字にも使うので、図形ではなく文字の下限で見る
+			// (2026-09-12 の決定。棒グラフの色を流用していたときは 3.19〜3.61 だった)
+			{[]string{"fg", "fg2", "mono", "c1", "c2", "c3", "c4"}, 4.5, "文字"},
+			{[]string{"edge"}, 3.0, "図形"},
 		} {
 			for _, n := range c.names {
 				if r := mdhtml.Contrast(pal[n], pal["bg"]); r < c.min {
 					t.Errorf("%s: %s の --%s(%s) と背景(%s) の比が %.2f(%.1f 以上にする)",
 						name, c.what, n, pal[n], pal["bg"], r, c.min)
+				}
+			}
+		}
+	}
+}
+
+// 図の系列どうしも、色覚の型が違って見分けられる。判定は本文のグラフと同じ
+// (隔たり 38 以上、または明るさ比 1.5 以上。基準の出どころは contrast_test.go)。
+func TestFigPalette_系列どうしが見分けられる(t *testing.T) {
+	light, dark := figPalette(t, figPage(t))
+	names := []string{"c1", "c2", "c3", "c4"}
+	for name, pal := range map[string]map[string]string{"明るい配色": light, "暗い配色": dark} {
+		for i := 0; i < len(names); i++ {
+			for j := i + 1; j < len(names); j++ {
+				a, b := pal[names[i]], pal[names[j]]
+				d := math.Min(cvdDistance(a, b, protanope), cvdDistance(a, b, deuteranope))
+				if l := mdhtml.Contrast(a, b); d < 38 && l < 1.5 {
+					t.Errorf("%s: --%s(%s) と --%s(%s) が見分けにくい(隔たり %.0f・明るさ比 %.2f)",
+						name, names[i], a, names[j], b, d, l)
 				}
 			}
 		}

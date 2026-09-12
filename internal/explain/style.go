@@ -122,6 +122,18 @@ var figMono = [2]string{"#0f6b8f", "#7dcfff"}
 // 暗い配色で濃いのは、暗い地の上では同じ濃さだと面が見えないため。
 var figSurfAlpha = [2]float64{0.09, 0.12}
 
+// 図の系列の色。**棒グラフの色(graphColors〜)とは別に持つ。**
+// 図では系列の色を短い見出しの文字にも使うので下限が 4.5 になるが、棒は塗りなので 3.0 で足りる。
+// 同じ値を流用すると片方が必ず割れる(2026-09-12 の決定。流用していたときは 3.19〜3.61 だった)。
+//
+// 5 色でなく 4 色なのは、青と赤紫をどちらも 4.5 まで濃くすると、色覚の型によっては
+// 見分けにくくなるため(隔たり 30・明るさ比 1.26。基準は 38 か 1.5)。
+// 実際の比と見分けは figpalette_test.go が測る。
+var (
+	figColorsLight = []string{"#0067A0", "#BB5300", "#007656", "#3B4047"}
+	figColorsDark  = []string{"#56B4E9", "#E69F00", "#009E73", "#C9D1DC"}
+)
+
 // figCSS は図(svg.bxfig)が使える色の名前を出す。
 //
 // **図の側は名前だけを書き、色の値は書かない。** 値を図ごとに書き写すと、書き忘れた図が
@@ -139,9 +151,9 @@ func figCSS() string {
 
 // figVars は図だけが使う色を 1 組分並べる。i は 0 が明るい配色、1 が暗い配色。
 func figVars(i int) string {
-	colors := graphColorsLight
+	colors := figColorsLight
 	if i == 1 {
-		colors = graphColorsDark
+		colors = figColorsDark
 	}
 	var b strings.Builder
 	b.WriteString("--mono:" + figMono[i] + ";")
@@ -149,7 +161,7 @@ func figVars(i int) string {
 		b.WriteString("--c" + strconv.Itoa(n+1) + ":" + c + ";")
 	}
 	// 面は系列の色を薄く敷く。枠線と同じ色にするため、別の値を持たない。
-	for n, c := range colors[:len(colors)-1] {
+	for n, c := range colors {
 		b.WriteString("--s" + strconv.Itoa(n+1) + ":" + rgba(c, figSurfAlpha[i]) + ";")
 	}
 	return b.String()
