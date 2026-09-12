@@ -83,6 +83,21 @@ func (s Seen) FilterNew(entries []feed.Entry) []feed.Entry {
 	return out
 }
 
+// Forget は day に初めて見たと記録した記事の印を外し、外した件数を返す。
+// 使うのは中断した fetch の書き直しだけ: 既読を書いた後・未完了の記録を消す前に止まった回は、
+// その日の印が残ったままだと新着が 0 件になり、書けていたダイジェストを消してしまう。
+// 外した印は書き直しの Mark が付け直す。
+func (s Seen) Forget(day string) int {
+	n := 0
+	for id, d := range s {
+		if d == day {
+			delete(s, id)
+			n++
+		}
+	}
+	return n
+}
+
 // Mark は記事を既読にする。既に入っている記事の日付は変えない(初めて見た日を保つ)。
 func (s Seen) Mark(entries []feed.Entry, today string) {
 	for _, e := range entries {
