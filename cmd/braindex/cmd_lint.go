@@ -113,6 +113,9 @@ func runLint(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	sort.Slice(targets, func(i, j int) bool { return targets[i].display < targets[j].display })
+	if len(targets) == 0 && kind == kindAuto && fs.NArg() > 0 {
+		fmt.Fprintln(stderr, "braindex lint: 対象が 0 件(ISSUE-*.md が無い)。ノートを検査するなら -kind note を付ける")
+	}
 
 	var glossaryContent []byte
 	if glossary != "" {
@@ -125,6 +128,7 @@ func runLint(args []string, stdout, stderr io.Writer) int {
 
 	warnings := []lint.Warning{}
 	compared := 0
+	warnedGlossary := map[string]bool{} // 同じ用語集の読めない警告を対象ファイルごとに繰り返さない
 	for _, t := range targets {
 		content, rerr := os.ReadFile(t.path)
 		if rerr != nil {
@@ -143,7 +147,14 @@ func runLint(args []string, stdout, stderr io.Writer) int {
 			nopt := lint.NoteOptions{Glossary: glossaryContent, HasGlossary: glossary != ""}
 			if glossary == "" {
 				if g, ok := findGlossary(dir); ok {
-					if b, gerr := os.ReadFile(g); gerr == nil {
+					b, gerr := os.ReadFile(g)
+					if gerr != nil {
+						// 自動探索は -glossary と違い明示指定でないので、読めなくても検査は続ける(警告だけ出して飛ばす)
+						if !warnedGlossary[g] {
+							warnedGlossary[g] = true
+							fmt.Fprintf(stderr, "braindex lint: 用語集を読めない: %s: %s\n", filepath.ToSlash(g), scan.DescribeErr(gerr))
+						}
+					} else {
 						nopt.Glossary, nopt.HasGlossary = b, true
 					}
 				}
@@ -246,6 +257,7 @@ func lintTargetsFromRoot(o options) (ts []lintTarget, warnings []string, err err
 }
 
 // findGlossary は dir から親へさかのぼり、最初に見つかった docs/glossary.md のパスを返す(ノートのあるリポの用語集)。
+// リポの境界(.git か braindex.json のあるディレクトリ)より外へは出ない。
 func findGlossary(dir string) (string, bool) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
@@ -256,10 +268,25 @@ func findGlossary(dir string) (string, bool) {
 		if fi, err := os.Stat(g); err == nil && !fi.IsDir() {
 			return g, true
 		}
+		if isRepoBoundary(d) {
+			return "", false
+		}
 		parent := filepath.Dir(d)
 		if parent == d {
 			return "", false
 		}
 		d = parent
 	}
+}
+
+// isRepoBoundary は d がリポジトリの境界(.git か braindex.json を持つ)かどうか。
+// これを持つディレクトリより親は別のリポなので、用語集の自動探索はここで打ち切る。
+func isRepoBoundary(d string) bool {
+	if _, err := os.Stat(filepath.Join(d, ".git")); err == nil {
+		return true
+	}
+	if fi, err := os.Stat(filepath.Join(d, "braindex.json")); err == nil && !fi.IsDir() {
+		return true
+	}
+	return false
 }

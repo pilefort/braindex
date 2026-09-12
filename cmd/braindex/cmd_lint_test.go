@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pilefort/braindex/internal/scan/scantest"
 )
 
 const goodIssue = "# ISSUE: 例\n\n## 現在の作業\nx\n\n## 状態\n- [x] a\n- [ ] b  ← いまここ\n\n最終更新: 2026-09-01\n"
@@ -295,6 +297,89 @@ func TestLint_Glossary(t *testing.T) {
 	se.Reset()
 	if code := dispatch([]string{"lint", "-glossary", filepath.Join(repo, "nope.md"), note}, &so, &se); code != 1 || !strings.Contains(se.String(), "用語集を読めない") {
 		t.Errorf("無い用語集: exit=%d stderr=%s", code, se.String())
+	}
+}
+
+// 自動探索で見つけた用語集が読めないとき、警告を出して未定義用語の検査だけ飛ばす(終了コードは変えない)。
+// -glossary で明示したときは終了コード 1 になる(TestLint_Glossary)のと対にする。
+func TestLint_GlossaryAutoUnreadable(t *testing.T) {
+	repo := t.TempDir()
+	note := filepath.Join(repo, "docs", "notes", "n.md")
+	writeFile(t, note, "2026-09-01 「新語」の記録。\n")
+	glossary := filepath.Join(repo, "docs", "glossary.md")
+	writeFile(t, glossary, "## 新語\n定義。\n")
+	scantest.MakeUnreadable(t, glossary)
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", note}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d want 0\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	if !strings.Contains(se.String(), "用語集を読めない") {
+		t.Errorf("警告が出ていない: %s", se.String())
+	}
+	if strings.Contains(so.String(), "未定義用語") {
+		t.Errorf("読めない用語集で未定義用語を検査してしまった: %s", so.String())
+	}
+}
+
+// 用語集の自動探索はリポの境界(.git のあるディレクトリ)で止まり、親のリポへさかのぼらない。
+func TestLint_GlossaryStopsAtRepoBoundary(t *testing.T) {
+	hub := t.TempDir()
+	repo := filepath.Join(hub, "repo")
+	note := filepath.Join(repo, "docs", "notes", "n.md")
+	writeFile(t, note, "2026-09-01 「新語」の記録。\n")
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 親(hub)の用語集には「新語」の定義が無い。境界の外なので使われてはいけない
+	writeFile(t, filepath.Join(hub, "docs", "glossary.md"), "## 他の語\n定義。\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", note}, &so, &se); code != 0 {
+		t.Fatalf("親の用語集を使ってしまった: exit=%d\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	if strings.Contains(so.String(), "未定義用語") {
+		t.Errorf("境界を越えた用語集で検査した: %s", so.String())
+	}
+}
+
+// 用語集の自動探索は braindex.json のあるディレクトリでも止まる(.git が無い場合)。
+func TestLint_GlossaryStopsAtBraindexJSON(t *testing.T) {
+	hub := t.TempDir()
+	repo := filepath.Join(hub, "repo")
+	note := filepath.Join(repo, "docs", "notes", "n.md")
+	writeFile(t, note, "2026-09-01 「新語」の記録。\n")
+	writeFile(t, filepath.Join(repo, "braindex.json"), `{"root": "."}`)
+	writeFile(t, filepath.Join(hub, "docs", "glossary.md"), "## 他の語\n定義。\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", note}, &so, &se); code != 0 {
+		t.Fatalf("親の用語集を使ってしまった: exit=%d\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	if strings.Contains(so.String(), "未定義用語") {
+		t.Errorf("境界を越えた用語集で検査した: %s", so.String())
+	}
+}
+
+// -kind 省略でノートだけのディレクトリを渡すと 0 ファイルのままだが、-kind note を案内する(終了コードは変えない)。
+func TestLint_NoteDirWithoutKindHint(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a.md"), "日付なし。\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"lint", dir}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d want 0\nstdout=%s\nstderr=%s", code, so.String(), se.String())
+	}
+	if !strings.Contains(so.String(), "0 ファイル") {
+		t.Errorf("0 ファイルの要約が出ていない: %s", so.String())
+	}
+	if !strings.Contains(se.String(), "-kind note") {
+		t.Errorf("案内が出ていない: %s", se.String())
+	}
+
+	// -kind note を明示したときは(0 件のままでも)案内を重ねない
+	se.Reset()
+	if code := dispatch([]string{"lint", "-kind", "note", dir}, &so, &se); code != 2 {
+		t.Fatalf("-kind note の exit=%d want 2\n%s", code, so.String())
+	}
+	if strings.Contains(se.String(), "-kind note") {
+		t.Errorf("-kind note を指定済みなのに案内が出た: %s", se.String())
 	}
 }
 
