@@ -266,12 +266,14 @@ func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string
 			return msgs, err
 		}
 		reading.Merge(sel)
+		kept := 0
 		if len(sel.Keeps) > 0 && !sel.Library {
 			month := date
 			if len(month) >= 7 {
 				month = month[:7]
 			}
-			if err := appendKeeps(filepath.Join(newsDir, KeepDir, month+".md"), month, sel.Keeps, date, layer); err != nil {
+			kept, err = appendKeeps(filepath.Join(newsDir, KeepDir, month+".md"), month, sel.Keeps, date, layer)
+			if err != nil {
 				return msgs, err
 			}
 		}
@@ -299,7 +301,7 @@ func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string
 		if sel.Library {
 			msgs = append(msgs, fmt.Sprintf("取り込み: %s（読書状態と相談を反映）", filepath.Base(p)))
 		} else {
-			msgs = append(msgs, fmt.Sprintf("取り込み: %s（残す %d 件）", filepath.Base(p), len(sel.Keeps)))
+			msgs = append(msgs, fmt.Sprintf("取り込み: %s（残す %d 件）", filepath.Base(p), kept))
 		}
 	}
 	return msgs, nil
@@ -328,10 +330,12 @@ func moveFile(src, dst string) error {
 // appendKeeps は keep ファイルに、まだ無いリンクの記事だけ足して書き直す。ファイルが無ければ見出しから作る。
 // 追記(O_APPEND)でなく全体を原子的に書き直すのは、途中で止まったときに書きかけの行を残さないため
 // (リンクの欠けた行は次回の重複判定に掛からず、同じ記事がもう 1 行増える)。既にある部分はバイト列のまま写す。
-func appendKeeps(path, month string, keeps []Keep, date, layer string) error {
+// 戻り値は実際に足した件数(fresh の数)。keeps の件数をそのまま返すと、リンクが無い・安全でない・
+// 重複で落とした分も数えてしまい、呼び出し側の「残す N 件」のメッセージと食い違う。
+func appendKeeps(path, month string, keeps []Keep, date, layer string) (int, error) {
 	existing, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
+		return 0, err
 	}
 	perm := fs.FileMode(0o644)
 	if fi, serr := os.Stat(path); serr == nil { // 利用者の版管理下のファイルなので、権限は今のまま保つ
@@ -347,10 +351,10 @@ func appendKeeps(path, month string, keeps []Keep, date, layer string) error {
 		fresh = append(fresh, k)
 	}
 	if len(fresh) == 0 {
-		return nil
+		return 0, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+		return 0, err
 	}
 	var buf bytes.Buffer
 	if len(existing) == 0 {
@@ -359,7 +363,10 @@ func appendKeeps(path, month string, keeps []Keep, date, layer string) error {
 		buf.Write(existing)
 	}
 	buf.WriteString(KeepMarkdown(fresh, date, layer))
-	return writeAtomic(path, buf.Bytes(), perm)
+	if err := writeAtomic(path, buf.Bytes(), perm); err != nil {
+		return 0, err
+	}
+	return len(fresh), nil
 }
 
 // 不要ばかり付く取材先を主要表示から下ろす条件(決定 2026-09-06 → manual/news.md「決めたこと」)。

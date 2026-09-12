@@ -108,6 +108,30 @@ func TestIngest_keepに載せるのはhttpのみ(t *testing.T) {
 	}
 }
 
+// appendKeeps は Keep.Link が空(または安全でない)の記事を黙って落とすので、「残す N 件」の
+// メッセージは実際に足した件数(fresh)を数えなければならない。sel.Keeps の件数をそのまま数えると
+// 落ちた分も含んでしまい、件数が食い違う。
+func TestIngest_appendKeepsの件数は実際に足した数(t *testing.T) {
+	newsDir := filepath.Join(t.TempDir(), "news")
+	inbox := filepath.Join(newsDir, "inbox")
+	os.MkdirAll(inbox, 0o755)
+	keeps := `{"id": "a", "title": "リンク無し", "link": "", "feed": "F1"},` +
+		`{"id": "b", "title": "危ない", "link": "javascript:alert(1)", "feed": "F1"},` +
+		`{"id": "c", "title": "普通", "link": "https://x/ok", "feed": "F1"}`
+	os.WriteFile(filepath.Join(inbox, "braindex-news-selection_2026-08-15_daily_1.json"),
+		[]byte(selectionJSON("2026-08-15", "daily", keeps, `"F1": {"shown": 3, "kept": 3}`)), 0o644)
+
+	msgs, err := Ingest(newsDir, []string{inbox}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// sel.Keeps は 3 件だが、リンクが無い・安全でないの 2 件を落とすので実際に足したのは 1 件
+	want := "取り込み: braindex-news-selection_2026-08-15_daily_1.json（残す 1 件）"
+	if len(msgs) != 1 || msgs[0] != want {
+		t.Errorf("msgs: %q want [%q]", msgs, want)
+	}
+}
+
 func TestIngest(t *testing.T) {
 	newsDir := filepath.Join(t.TempDir(), "news")
 	inbox := filepath.Join(newsDir, "inbox")
