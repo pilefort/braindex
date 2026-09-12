@@ -162,6 +162,24 @@ func TestCheck_DateNotBumped(t *testing.T) {
 	wantNone(t, check(t, crlf, Options{Prev: prev, HasPrev: true}))
 }
 
+func TestCheck_DateNotBumpedToday(t *testing.T) {
+	for _, date := range []string{"2026-09-02", "2026-09-01"} {
+		t.Run(date, func(t *testing.T) {
+			prev := strings.Replace(good, "2026-09-01", date, 1)
+			changed := strings.Replace(prev, "A を B にする。", "A を C にする。", 1)
+			ws := check(t, changed, Options{
+				Today: time.Date(2026, 9, 2, 1, 0, 0, 0, time.FixedZone("UTC+9", 9*60*60)),
+				Prev:  []byte(prev), HasPrev: true,
+			})
+			if date == "2026-09-02" {
+				wantNone(t, ws)
+			} else {
+				wantOne(t, ws, 20, "最終更新", "HEAD")
+			}
+		})
+	}
+}
+
 // BOM と CRLF は正規化してから見る。同じ入力からは同じ指摘(決定性)。
 func TestCheck_NormalizeAndDeterministic(t *testing.T) {
 	bad := strings.Replace(good, "  ← いまここ", "", 1)
