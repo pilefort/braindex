@@ -131,7 +131,7 @@ func writeScan(b *strings.Builder, s ScanInfo) {
 			withNotes++
 		}
 	}
-	fmt.Fprintf(b, "- 索引に載る: %d 件（root 直下 %d リポのうち %d リポ）\n", s.Entries, len(s.Repos), withNotes)
+	fmt.Fprintf(b, "- 索引に載る: %d 件（%d リポのうち %d リポ）\n", s.Entries, len(s.Repos), withNotes)
 	if len(s.Gaps) == 0 {
 		b.WriteString("- 読めなかった範囲: なし\n")
 	} else {
@@ -149,7 +149,7 @@ func writeScan(b *strings.Builder, s ScanInfo) {
 		}
 	}
 	if len(s.Repos) == 0 {
-		b.WriteString("- リポ別: root 直下にディレクトリが無い（ドットで始まるものは見ない）\n")
+		b.WriteString("- リポ別: 設定された段数にリポのディレクトリが無い（ドットで始まるものは見ない）\n")
 	} else {
 		b.WriteString("- リポ別:\n")
 		for _, ri := range s.Repos {

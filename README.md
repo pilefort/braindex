@@ -138,7 +138,10 @@ braindex init -add all              フル: 上の全部。learn（学習の提�
 | `braindex schedule` | 設定の `schedule` 節 | OS のスケジューラへの登録 | [schedule](manual/schedule.md) |
 
 終了コードは共通で **0 成功／1 失敗（結果を書かない）／2 警告つき完了（結果は書いたが、飛ばしたものや取りこぼしがある）**。
-3 を使うのは `retro check`（閾値超え）と、`approvals serve`・`approvals wait`（時間切れ）だけ。場面ごとの表は [manual/README.md](manual/README.md#終了コード共通)。
+`braindex -check` は生成日の行を除いて保存済み索引と比べ、**0 最新／3 古い**を返す。古いときは差分の行数を表示する。
+ファイルは一切書かず、`catalog.md`・`changes.json` も更新しない。索引の不在・読み取り失敗は 1、差分なしで走査に警告がある場合は 2。
+詳しくは [索引の確認](manual/generate.md#索引が最新かを確認する--check)。
+3 は `retro check`（閾値超え）と、`approvals serve`・`approvals wait`（時間切れ）でも使う。場面ごとの表は [manual/README.md](manual/README.md#終了コード共通)。
 フラグの要約は `braindex -h`、各コマンドは `braindex <コマンド> -h`。
 
 ## 設計
