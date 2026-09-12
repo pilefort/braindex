@@ -39,8 +39,19 @@ const css = `
 .bx-fig figcaption{margin-top:.6em;color:var(--sub);font-size:13px;text-align:center}
 .bx-miss{border:1px dashed var(--line);border-radius:10px;padding:22px;text-align:center;
   color:var(--mut);background:var(--line2)}
+.bx-graph{margin:1.8em 0}
+.bx-chart{display:block;width:100%;height:auto}
+.bx-chart text{font-family:var(--jp)}
+.bx-chart .bx-grid{stroke:var(--line)}
+.bx-chart .bx-zero{stroke:var(--sub)}
+.bx-chart .bx-tick{fill:var(--mut);font-size:11px}
+.bx-chart .bx-lab,.bx-chart .bx-leg{fill:var(--sub);font-size:12px}
+.bx-chart .bx-line{fill:none;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
+.bx-chart .bx-bar{transform-box:fill-box;transform-origin:bottom;animation:bx-grow .7s cubic-bezier(.2,.7,.3,1) both}
+@keyframes bx-grow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
 @media (prefers-reduced-motion:reduce){
-  .bx-fig svg,.bx-fig svg *{animation:none!important;transition:none!important}}
+  .bx-fig svg,.bx-fig svg *{animation:none!important;transition:none!important}
+  .bx-chart .bx-bar{animation:none}}
 `
 
 // js は mdhtml の共通 JS の後ろに足す分。

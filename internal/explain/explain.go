@@ -42,6 +42,7 @@ type renderer struct {
 	opt      Options
 	md       mdhtml.Options
 	figs     int
+	graphs   int
 	figNums  map[string]bool // 本文に出てきた図番号(「図1」からのリンクを張れるか見る)
 	problems []string
 }
@@ -61,7 +62,8 @@ func (r *renderer) body(md string) string {
 		}
 	}
 	inFence := false
-	for _, line := range lines {
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
 		if strings.HasPrefix(strings.TrimLeft(line, " \t"), "```") {
 			inFence = !inFence
 		} else if !inFence {
@@ -69,6 +71,16 @@ func (r *renderer) body(md string) string {
 				flush()
 				out = append(out, r.figure(alt, src))
 				continue
+			}
+			if spec, probs, ok := parseGraphDirective(line); len(probs) > 0 || ok {
+				r.problems = append(r.problems, probs...)
+				flush()
+				if html, next := r.graph(spec, ok, lines, i+1); html != "" {
+					out = append(out, html)
+					i = next - 1
+					continue
+				}
+				continue // 指定の行は本文に出さない(読み取ったら捨てる)
 			}
 		}
 		prose = append(prose, line)
@@ -121,6 +133,26 @@ func (r *renderer) figure(alt, src string) string {
 		out += "\n<figcaption>" + escapeText(caption) + "</figcaption>"
 	}
 	return out + "\n</figure>"
+}
+
+// graph は graph の指定に続く表を、グラフと元の表の組にする。next は表の次の行の位置。
+// 表はグラフの下に残す——数字そのものを読めるようにするため(決定 2026-09-12)。
+// 指定の次の行に表が無ければ空文字を返し、指定の行だけを捨てる。
+func (r *renderer) graph(spec graphSpec, drawable bool, lines []string, i int) (string, int) {
+	if !isTableStart(lines, i) {
+		r.problems = append(r.problems, "graph の指定の次の行に表が無い")
+		return "", i
+	}
+	header, rows, raw, next := readTable(lines, i)
+	svg := ""
+	if drawable {
+		s, probs := chartSVG(spec, header, rows)
+		r.problems, svg = append(r.problems, probs...), s
+	}
+	r.graphs++
+	table := wrapTables(mdhtml.RenderBody(strings.Join(raw, "\n"), r.md))
+	return `<figure id="graph-` + strconv.Itoa(r.graphs) + `" class="bx-graph">` + "\n" +
+		svg + "\n" + table + "\n</figure>", next
 }
 
 // miss は図の代わりに出す印。同じ文言を stderr にも出すため problems にも積む。
