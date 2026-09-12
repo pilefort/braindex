@@ -244,8 +244,8 @@ func TestLocalURLBaseDir(t *testing.T) {
 		{"img/a b.png", "file:///base/docs/img/a%20b.png"}, // 空白は従来どおり % 表記
 		{"../assets/a.png", "file:///base/assets/a.png"},
 		{"other.md#見出し", "file:///base/docs/other.md#見出し"}, // 断片は付けたまま解決する
-		{"#見出し", "#見出し"},                                  // 同一文書内リンクは触らない
-		{"/abs/a.png", "file:///abs/a.png"},              // 絶対パスは従来どおり
+		{"#見出し", "#見出し"},                                   // 同一文書内リンクは触らない
+		{"/abs/a.png", "file:///abs/a.png"},                // 絶対パスは従来どおり
 		{"https://example.com/a.png", "https://example.com/a.png"},
 	}
 	for _, c := range cases {
