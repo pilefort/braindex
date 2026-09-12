@@ -351,5 +351,19 @@ func openBrowser(url string) error {
 	default:
 		c = exec.Command("xdg-open", url)
 	}
-	return c.Start()
+	return startAndReap(c)
+}
+
+// startAndReap は c.Start() のあと、終了を待たずに呼び出し元へ返る。子の終了はバックグラウンドの
+// goroutine が Wait() で拾う(reap する)。
+//
+// Start() だけだと、子が終わっても親が Wait() を呼ぶまでゾンビのまま残る。openBrowser の呼び出し元は
+// 回答が届くまで待ち続ける(最大で -timeout の秒数)ので、xdg-open / open のような「起動したらすぐ終わる」
+// 子でも、待っている間ずっとゾンビが残ってしまう。goroutine で reap するだけで、呼び出し元は待たない。
+func startAndReap(c *exec.Cmd) error {
+	if err := c.Start(); err != nil {
+		return err
+	}
+	go func() { _ = c.Wait() }()
+	return nil
 }
