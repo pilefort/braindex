@@ -1,17 +1,33 @@
 package schedule
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf16"
 )
+
+func TestTaskName_PathHash(t *testing.T) {
+	a := TaskName(`C:\first\hub`, "review")
+	if a == TaskName(`C:\second\hub`, "review") {
+		t.Fatalf("別の hub が同名: %s", a)
+	}
+	if !regexp.MustCompile(`^braindex-hub-[0-9a-f]{8}-review$`).MatchString(a) {
+		t.Fatalf("8 桁のハッシュが無い: %s", a)
+	}
+	for _, p := range []string{`c:/FIRST/HUB`, `C:\first\hub\`, `C:/first/other/../hub`} {
+		if got := TaskName(p, "review"); got != a {
+			t.Errorf("正規化: %s != %s", got, a)
+		}
+	}
+}
 
 const (
 	winHub = `C:\Users\u\hub`
 	winExe = `C:\Users\u\go\bin\braindex.exe`
 )
 
-func TestTaskName(t *testing.T) {
+func TestLegacyTaskName(t *testing.T) {
 	cases := []struct {
 		hub, job, want string
 	}{
@@ -24,7 +40,7 @@ func TestTaskName(t *testing.T) {
 		{"/", "review", "braindex-hub-review"},                    // 名前が残らないときも hub
 	}
 	for _, c := range cases {
-		if got := TaskName(c.hub, c.job); got != c.want {
+		if got := LegacyTaskName(c.hub, c.job); got != c.want {
 			t.Errorf("TaskName(%q,%q): got=%q want=%q", c.hub, c.job, got, c.want)
 		}
 	}
@@ -37,10 +53,10 @@ func TestInstallPlan_Windows(t *testing.T) {
 		t.Fatalf("InstallPlan: %v", err)
 	}
 	want := []Command{
-		{Name: "schtasks", Args: []string{"/Create", "/F", "/TN", "braindex-hub-review",
+		{Name: "schtasks", Args: []string{"/Create", "/F", "/TN", TaskName(winHub, "review"),
 			"/SC", "WEEKLY", "/D", "MON", "/ST", "09:00",
 			"/TR", `cmd /c cd /d "C:\Users\u\hub" && "C:\Users\u\go\bin\braindex.exe" review`}},
-		{Name: "schtasks", Args: []string{"/Create", "/F", "/TN", "braindex-hub-retro",
+		{Name: "schtasks", Args: []string{"/Create", "/F", "/TN", TaskName(winHub, "retro"),
 			"/SC", "WEEKLY", "/D", "MON", "/ST", "09:05",
 			"/TR", `cmd /c cd /d "C:\Users\u\hub" && "C:\Users\u\go\bin\braindex.exe" retro check`}},
 	}
@@ -54,7 +70,7 @@ func TestInstallPlan_Windows_毎日(t *testing.T) {
 		t.Fatalf("InstallPlan: %v", err)
 	}
 	want := []Command{
-		{Name: "schtasks", Args: []string{"/Create", "/F", "/TN", "braindex-hub-news",
+		{Name: "schtasks", Args: []string{"/Create", "/F", "/TN", TaskName(winHub, "news"),
 			"/SC", "DAILY", "/ST", "07:30",
 			"/TR", `cmd /c cd /d "C:\Users\u\hub" && "C:\Users\u\go\bin\braindex.exe" news fetch -layer daily`}},
 	}
@@ -110,8 +126,8 @@ func TestInstallPlan_Unix(t *testing.T) {
 		}
 		want := existing +
 			"# BEGIN braindex /home/u/hub\n" +
-			"0 9 * * 1 cd '/home/u/hub' && '/home/u/go/bin/braindex' 'review' # braindex:review\n" +
-			"5 9 * * 1 cd '/home/u/hub' && '/home/u/go/bin/braindex' 'retro' 'check' # braindex:retro\n" +
+			"0 9 * * 1 cd '/home/u/hub' && '/home/u/go/bin/braindex' 'review' >> '/home/u/hub/.braindex/schedule.log' 2>&1 # braindex:review\n" +
+			"5 9 * * 1 cd '/home/u/hub' && '/home/u/go/bin/braindex' 'retro' 'check' >> '/home/u/hub/.braindex/schedule.log' 2>&1 # braindex:retro\n" +
 			"# END braindex /home/u/hub\n"
 		if got[0].Stdin != want {
 			t.Errorf("InstallPlan(%s) の標準入力:\n got=%q\nwant=%q", goos, got[0].Stdin, want)
@@ -204,7 +220,9 @@ func TestUninstallPlan_Unix(t *testing.T) {
 func TestUninstallTasks(t *testing.T) {
 	got := UninstallTasks(winHub, []string{"review", "retro"})
 	want := []Command{
+		{Name: "schtasks", Args: []string{"/Delete", "/F", "/TN", TaskName(winHub, "review")}},
 		{Name: "schtasks", Args: []string{"/Delete", "/F", "/TN", "braindex-hub-review"}},
+		{Name: "schtasks", Args: []string{"/Delete", "/F", "/TN", TaskName(winHub, "retro")}},
 		{Name: "schtasks", Args: []string{"/Delete", "/F", "/TN", "braindex-hub-retro"}},
 	}
 	assertCommands(t, got, want)
@@ -227,7 +245,7 @@ func TestUninstallPlan_Unix_NoTarget(t *testing.T) {
 
 func TestQueryTask(t *testing.T) {
 	got := QueryTask(winHub, "review")
-	if got.Name != "schtasks" || strings.Join(got.Args, " ") != "/Query /TN braindex-hub-review" {
+	if got.Name != "schtasks" || strings.Join(got.Args, " ") != "/Query /TN "+TaskName(winHub, "review") {
 		t.Errorf("got=%+v", got)
 	}
 }
