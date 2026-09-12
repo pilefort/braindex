@@ -499,3 +499,15 @@ func TestDigest_Serendipity(t *testing.T) {
 		t.Errorf("同じ記事が 2 か所に出ている:\n%s", md)
 	}
 }
+
+func TestSettingsLLMBudget(t *testing.T) {
+	if (Settings{}).WithDefaults().LLMBudgetSec != 600 {
+		t.Fatal("default")
+	}
+	if (Settings{LLMBudgetSec: 5}).WithDefaults().LLMBudgetSec != 5 {
+		t.Fatal("explicit")
+	}
+	if (Settings{LLMBudgetSec: -1}).Validate() == nil {
+		t.Fatal("negative accepted")
+	}
+}

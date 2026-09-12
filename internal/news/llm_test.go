@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pilefort/braindex/internal/feed"
 	"github.com/pilefort/braindex/internal/interest"
@@ -317,5 +318,30 @@ func TestRenderHTML_脚注のLLM表記(t *testing.T) {
 	h = string(RenderHTML(rs, o))
 	if !strings.Contains(h, "LLM 補助") || strings.Contains(h, "採点は規則ベース") {
 		t.Errorf("適用ありなのに LLM の記述が無い/規則ベースが残っている")
+	}
+}
+
+type budgetAnnotator struct{ calls int }
+
+func (a *budgetAnnotator) Annotate(ctx context.Context, _ string) (string, error) {
+	a.calls++
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+func TestAnnotateBudgetStopsRemaining(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	a := &budgetAnnotator{}
+	cache := Annotations{}
+	results := []Result{{New: []feed.Entry{{ID: "a", Title: "A"}, {ID: "b", Title: "B"}}}}
+	rep := Annotate(ctx, a, results, cache, AnnotateOptions{Batch: 1})
+	if a.calls != 1 || rep.Failed == 0 || !strings.Contains(strings.Join(rep.Errors, " "), "時間上限") {
+		t.Fatalf("calls=%d report=%+v", a.calls, rep)
+	}
+	rk := Ranking{"a": interest.Score{Value: 2}, "b": interest.Score{Value: 1}}
+	got := ApplyAnnotations(rk, results, cache)
+	if got["a"].Value != 2 || got["b"].Value != 1 || got["b"].LLM {
+		t.Fatal(got)
 	}
 }

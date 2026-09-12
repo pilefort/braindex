@@ -40,6 +40,7 @@ type Settings struct {
 	LLM           string `json:"llm"`             // LLM 補助(翻訳＋採点)。"off"(既定)か "claude-cli"(claude CLI のヘッドレス呼び出し・opt-in)
 	LLMModel      string `json:"llm_model"`       // claude CLI に渡すモデル名(--model)。空なら CLI の既定
 	LLMTimeoutSec int    `json:"llm_timeout_sec"` // 1 バッチの待ち時間(秒)。既定 120
+	LLMBudgetSec  int    `json:"llm_budget_sec"`  // LLM 補助全体の待ち時間(秒)。既定 600
 }
 
 // LLM 補助の値。
@@ -47,6 +48,7 @@ const (
 	LLMOff               = "off"
 	LLMClaudeCLI         = "claude-cli"
 	DefaultLLMTimeoutSec = 120
+	DefaultLLMBudgetSec  = 600
 )
 
 // 既定値。
@@ -103,6 +105,9 @@ func (s Settings) WithDefaults() Settings {
 	if s.LLMTimeoutSec <= 0 {
 		s.LLMTimeoutSec = DefaultLLMTimeoutSec
 	}
+	if s.LLMBudgetSec <= 0 {
+		s.LLMBudgetSec = DefaultLLMBudgetSec
+	}
 	return s
 }
 
@@ -125,6 +130,9 @@ func (s Settings) MinScore() int {
 // Validate は設定ファイルに書かれた値を確かめる。範囲外は既定に丸めず、設定の誤りとしてエラーにする
 // (未知のキーを通さないのと同じ考え。丸めると、書いた値と動きが食い違ったまま気づけない)。
 func (s Settings) Validate() error {
+	if s.LLMBudgetSec < 0 {
+		return fmt.Errorf("設定 news.llm_budget_sec: 0 以上(0 は既定 %d): %d", DefaultLLMBudgetSec, s.LLMBudgetSec)
+	}
 	if s.ShowMinScore != nil && (*s.ShowMinScore < 0 || *s.ShowMinScore > interest.MaxScore) {
 		return fmt.Errorf("設定 news.show_min_score: 0〜%d のどれか(0 は全件を主要表示): %d", interest.MaxScore, *s.ShowMinScore)
 	}
