@@ -123,6 +123,11 @@ func applyReply(p approvals.Paths, replyPath, decisionsPath, today string, stdou
 			warnings = append(warnings, line)
 		}
 	}
+	// 見出しの重複は追記を止める理由にはしない(止めると回答が失われる)ので、終了コードの
+	// 「未反映の項目がある」判定(下の warnings)には混ぜず、気づけるように stderr にだけ出す。
+	for _, h := range res.DuplicateHeadings {
+		fmt.Fprintf(stderr, "warning: decisions.md に同じ見出しが既にある(重複の可能性・追記はした) → %s\n", h)
+	}
 	if move {
 		moveToApplied(p, rep, approvals.AppliedResult{Decided: res.Decided, Held: res.Held, Warnings: warnings}, stderr)
 	}

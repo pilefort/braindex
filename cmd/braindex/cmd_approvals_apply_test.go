@@ -95,6 +95,32 @@ func TestApprovalsApply_未反映は警告と2(t *testing.T) {
 	}
 }
 
+// decisions.md に同じ見出しが既にあっても追記は止めない(回答を失わないため)が、気づけるように
+// stderr へ警告を出す。この警告は「未反映の項目がある」の終了コード 2 とは別枠(反映はできている)。
+func TestApprovalsApply_DuplicateHeadingWarnsButStillApplies(t *testing.T) {
+	dir := t.TempDir()
+	hub := filepath.Join(dir, "hub")
+	ap := filepath.Join(hub, "work", "APPROVALS.md")
+	dec := filepath.Join(hub, "docs", "decisions.md")
+	tmp := filepath.Join(dir, "tmp")
+	writeFile(t, ap, sampleApprovals)
+	writeFile(t, dec, "# 設計判断\n\n## 設定ファイルの形式 → B. TOML\n\n記録日: 2026-01-01\n理由: r\n根拠: e\n")
+	p, err := approvals.Resolve(ap, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, p.Reply, sampleReply)
+
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"approvals", "apply", "-file", ap, "-dir", tmp, "-date", "2026-03-04"}, &so, &se); code != 0 {
+		t.Fatalf("code=%d\n%s", code, se.String())
+	}
+	mustContain(t, "stderr", se.String(), "warning: decisions.md に同じ見出しが既にある(重複の可能性・追記はした) → 設定ファイルの形式 → B. TOML")
+	if n := strings.Count(readFile(t, dec), "## 設定ファイルの形式 → B. TOML"); n != 2 {
+		t.Errorf("追記が止まっている:\n%s", readFile(t, dec))
+	}
+}
+
 // readAppliedResult は applied.json の反映結果を読む(無ければ nil)。
 func readAppliedResult(t *testing.T, path string) *approvals.AppliedResult {
 	t.Helper()
