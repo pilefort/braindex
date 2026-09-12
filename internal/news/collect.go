@@ -263,7 +263,9 @@ func Digest(results []Result, o DigestOptions) []byte {
 		}
 		fmt.Fprintf(&sb, "新着 %d 件", len(r.New))
 		if o.Ranking != nil {
-			fmt.Fprintf(&sb, "・主要 %d 件", len(main))
+			// 上限(o.Cap)で切った後、実際に書く件数に揃える(HTML の <h3> と同じ考え方。
+			// 決定 2026-09-12「主要 N 件は上限で切った後の数に揃える」→ manual/news.md「決めたこと」)。
+			fmt.Fprintf(&sb, "・主要 %d 件", len(capped(main, o.Cap)))
 		}
 		sb.WriteString("）\n")
 		writeTier(&sb, main, o, "")

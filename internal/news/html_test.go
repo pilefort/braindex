@@ -73,6 +73,30 @@ func TestRenderHTML(t *testing.T) {
 	}
 }
 
+// フィードの見出し「主要 N 件」は、タイトルの合計と同じく上限(Cap)で切った後の件数(実際に表示した件数)に揃える
+// (決定 2026-09-12「主要 N 件は上限で切った後の数に揃える」→ manual/news.md「決めたこと」)。
+// タイトルの合計は totalMain(shown の件数の和)から出すのに、見出しは切る前の len(main) を出すと数が食い違う。
+func TestRenderHTML_主要件数は上限後の件数に揃う(t *testing.T) {
+	p := interest.Profile{Terms: []interest.Term{{Word: "ゴルーチン", Weight: 2}}}
+	res := []Result{{Source: Source{Name: "A", Category: "tech"}, New: []feed.Entry{
+		{ID: "1", Title: "ゴルーチン 1", Link: "https://x/1"},
+		{ID: "2", Title: "ゴルーチン 2", Link: "https://x/2"},
+		{ID: "3", Title: "ゴルーチン 3", Link: "https://x/3"},
+		{ID: "4", Title: "ゴルーチン 4", Link: "https://x/4"},
+	}}}
+	o := DigestOptions{Layer: "daily", Today: "2026-08-15", Cap: 2, Ranking: Rank(res, p, nil), MinScore: 2}
+	h := string(RenderHTML(res, o))
+	if !strings.Contains(h, "<title>ニュースダイジェスト 2026-08-15（daily 層・新着 4 件・主要 2 件）</title>") {
+		t.Errorf("タイトルの主要件数が上限後(2 件)になっていない:\n%s", h)
+	}
+	if !strings.Contains(h, "<h3>A（新着 4 件・主要 2 件）</h3>") {
+		t.Errorf("見出しの主要件数がタイトルと揃っていない(上限後の 2 件になっていない):\n%s", h)
+	}
+	if strings.Contains(h, "主要 4 件") {
+		t.Errorf("見出しが上限前の件数(4 件)のまま:\n%s", h)
+	}
+}
+
 // フィードのリンクは http(s) だけを載せる。javascript: などは href にも data-link にも出さず、題名だけ出す
 // (決定 2026-09-03 → manual/design.md「決めたこと」)。data-link にも出さないのは、選別 JSON 経由で keep に入るのを止めるため。
 func TestRenderHTML_リンクのスキームを絞る(t *testing.T) {

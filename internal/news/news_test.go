@@ -362,6 +362,32 @@ func TestDigest_Ranked(t *testing.T) {
 	}
 }
 
+// フィードの見出し「主要 N 件」は上限(Cap)で切った後、実際に書いた件数に揃える
+// (決定 2026-09-12「主要 N 件は上限で切った後の数に揃える」→ manual/news.md「決めたこと」)。
+// 主要と判定した件数が上限を超えるとき、見出しの N が上限前の件数のままだと、
+// 実際に書いた項目数(上限後)と食い違う。
+func TestDigest_主要件数は上限後の件数に揃う(t *testing.T) {
+	p := interest.Profile{Terms: []interest.Term{{Word: "ゴルーチン", Weight: 2}}}
+	res := []Result{{Source: Source{Name: "A"}, New: []feed.Entry{
+		{ID: "1", Title: "ゴルーチン 1", Link: "https://x/1"},
+		{ID: "2", Title: "ゴルーチン 2", Link: "https://x/2"},
+		{ID: "3", Title: "ゴルーチン 3", Link: "https://x/3"},
+		{ID: "4", Title: "ゴルーチン 4", Link: "https://x/4"},
+	}}}
+	rk := Rank(res, p, nil)
+	main, _ := Split(res[0].New, rk, 2)
+	if len(main) != 4 {
+		t.Fatalf("前提: 主要の判定が 4 件でない: %v", main)
+	}
+	got := string(Digest(res, DigestOptions{Layer: "daily", Today: "2026-08-15", Cap: 2, Ranking: rk, MinScore: 2}))
+	if !strings.Contains(got, "## A（新着 4 件・主要 2 件）") {
+		t.Errorf("見出しの主要件数が上限後(2 件)になっていない:\n%s", got)
+	}
+	if strings.Contains(got, "主要 4 件") {
+		t.Errorf("見出しが上限前の件数(4 件)のまま:\n%s", got)
+	}
+}
+
 // 下げた取材先の記事は関心度の上限が DemotedMaxScore になる。ほかの取材先は変わらない。
 func TestRank_下げた取材先は上限が下がる(t *testing.T) {
 	p := interest.Profile{Today: "2026-09-06", Terms: []interest.Term{

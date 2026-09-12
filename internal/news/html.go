@@ -93,7 +93,10 @@ func RenderHTML(results []Result, o DigestOptions) []byte {
 			totalMain += len(shown)
 			fmt.Fprintf(&parts, "<h3>%s（新着 %d 件", esc(r.Source.Name), len(r.New))
 			if o.Ranking != nil {
-				fmt.Fprintf(&parts, "・主要 %d 件", len(main))
+				// 上限(o.Cap)で切った後の件数(shown)に揃える。タイトルの合計「主要 N 件」も shown の和なので、
+				// ここを切る前の len(main) にすると合計と各フィードの和が食い違う
+				// (決定 2026-09-12「主要 N 件は上限で切った後の数に揃える」→ manual/news.md「決めたこと」)。
+				fmt.Fprintf(&parts, "・主要 %d 件", len(shown))
 			}
 			parts.WriteString("）</h3>\n<ul>\n")
 			for _, e := range shown {
