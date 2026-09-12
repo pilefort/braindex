@@ -1,6 +1,7 @@
 package schedule
 
 import (
+	"path"
 	"strings"
 )
 
@@ -27,7 +28,9 @@ func CronLine(hub, exe string, j Job) (string, error) {
 		b.WriteString(" ")
 		b.WriteString(shellQuote(a))
 	}
-	b.WriteString(" # braindex:")
+	b.WriteString(" >> ")
+	b.WriteString(shellQuote(path.Join(hub, ".braindex", "schedule.log")))
+	b.WriteString(" 2>&1 # braindex:")
 	b.WriteString(j.Name)
 	// cron はシェルの引用符内でも % を改行として扱う。
 	return strings.ReplaceAll(b.String(), "%", `\%`), nil

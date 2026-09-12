@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pilefort/braindex/internal/schedule"
 	"github.com/pilefort/braindex/internal/template"
 )
 
@@ -234,7 +235,7 @@ func TestInit_ThenSchedulePrint(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d\n%s", code, errs)
 	}
-	for _, want := range []string{"braindex-hub-review", "braindex-hub-retro", "09:00", "09:05", "retro check"} {
+	for _, want := range []string{schedule.TaskName(hub, "review"), schedule.TaskName(hub, "retro"), "09:00", "09:05", "retro check"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("print の出力に %q が無い:\n%s", want, out)
 		}

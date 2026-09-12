@@ -10,6 +10,14 @@ var (
 	jobRetro  = Job{Name: "retro", Args: []string{"retro", "check"}, When: "weekly:mon:09:05"}
 )
 
+func TestCronLine_Log(t *testing.T) {
+	got, err := CronLine("/hub%dir", "/bin/braindex", jobReview)
+	want := `0 9 * * 1 cd '/hub\%dir' && '/bin/braindex' 'review' >> '/hub\%dir/.braindex/schedule.log' 2>&1 # braindex:review`
+	if err != nil || got != want {
+		t.Fatalf("got=%q want=%q err=%v", got, want, err)
+	}
+}
+
 func TestCronLine(t *testing.T) {
 	cases := []struct {
 		hub, exe string
@@ -17,17 +25,17 @@ func TestCronLine(t *testing.T) {
 		want     string
 	}{
 		{"/home/u/hub", "/home/u/go/bin/braindex", jobReview,
-			"0 9 * * 1 cd '/home/u/hub' && '/home/u/go/bin/braindex' 'review' # braindex:review"},
+			"0 9 * * 1 cd '/home/u/hub' && '/home/u/go/bin/braindex' 'review' >> '/home/u/hub/.braindex/schedule.log' 2>&1 # braindex:review"},
 		{"/home/u/hub", "/home/u/go/bin/braindex", jobRetro,
-			"5 9 * * 1 cd '/home/u/hub' && '/home/u/go/bin/braindex' 'retro' 'check' # braindex:retro"},
+			"5 9 * * 1 cd '/home/u/hub' && '/home/u/go/bin/braindex' 'retro' 'check' >> '/home/u/hub/.braindex/schedule.log' 2>&1 # braindex:retro"},
 		{"/home/u/hub", "/home/u/go/bin/braindex", Job{Name: "news", Args: []string{"news", "fetch"}, When: "daily:07:30"},
-			"30 7 * * * cd '/home/u/hub' && '/home/u/go/bin/braindex' 'news' 'fetch' # braindex:news"},
+			"30 7 * * * cd '/home/u/hub' && '/home/u/go/bin/braindex' 'news' 'fetch' >> '/home/u/hub/.braindex/schedule.log' 2>&1 # braindex:news"},
 		// 単引用符を含むパスは '"'"' で退避する(sh の定石)
 		{"/home/o'brien/hub", "/bin/braindex", jobReview,
-			`0 9 * * 1 cd '/home/o'"'"'brien/hub' && '/bin/braindex' 'review' # braindex:review`},
+			`0 9 * * 1 cd '/home/o'"'"'brien/hub' && '/bin/braindex' 'review' >> '/home/o'"'"'brien/hub/.braindex/schedule.log' 2>&1 # braindex:review`},
 		// 空白を含むパスは単引用符の中に入るので分割されない
 		{"/home/u/my hub", "/bin/braindex", jobReview,
-			"0 9 * * 1 cd '/home/u/my hub' && '/bin/braindex' 'review' # braindex:review"},
+			"0 9 * * 1 cd '/home/u/my hub' && '/bin/braindex' 'review' >> '/home/u/my hub/.braindex/schedule.log' 2>&1 # braindex:review"},
 	}
 	for _, c := range cases {
 		got, err := CronLine(c.hub, c.exe, c.job)
@@ -49,7 +57,7 @@ const hub = "/home/u/hub"
 func TestCronLine_Percent(t *testing.T) {
 	j := Job{Name: "review", Args: []string{"review", "100%", "a'%b", `a\%b`}, When: "daily:09:00"}
 	got, err := CronLine("/hub%dir", "/bin%dir/braindex", j)
-	want := `0 9 * * * cd '/hub\%dir' && '/bin\%dir/braindex' 'review' '100\%' 'a'"'"'\%b' 'a\\%b' # braindex:review`
+	want := `0 9 * * * cd '/hub\%dir' && '/bin\%dir/braindex' 'review' '100\%' 'a'"'"'\%b' 'a\\%b' >> '/hub\%dir/.braindex/schedule.log' 2>&1 # braindex:review`
 	if err != nil || got != want {
 		t.Fatalf("got=%q want=%q err=%v", got, want, err)
 	}

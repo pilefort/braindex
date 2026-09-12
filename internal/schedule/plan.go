@@ -1,7 +1,9 @@
 package schedule
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"path"
 	"strings"
 	"unicode/utf16"
 )
@@ -39,9 +41,17 @@ const maxTR = 261
 // IsWindows は goos が Windows かを返す(呼び出し側は runtime.GOOS を渡す)。
 func IsWindows(goos string) bool { return goos == "windows" }
 
-// TaskName は Windows のタスク名 "braindex-<hub のフォルダ名>-<ジョブ名>" を返す。
-// フォルダ名の英数とハイフン以外はハイフンに畳む(タスク名に使えない文字とパス区切りを落とすため)。
+// TaskName は絶対パスのハッシュを含む Windows のタスク名を返す。
+// hub は呼び出し側で絶対パスにする。OS に依存せず大小文字と区切りを揃える。
 func TaskName(hub, job string) string {
+	normalized := path.Clean(strings.ToLower(strings.ReplaceAll(hub, `\`, "/")))
+	sum := sha256.Sum256([]byte(normalized))
+	return LegacyTaskName(normalized, fmt.Sprintf("%x-%s", sum[:4], job))
+}
+
+// LegacyTaskName は移行前のタスク名を返す。
+// フォルダ名の英数とハイフン以外はハイフンに畳む(タスク名に使えない文字とパス区切りを落とすため)。
+func LegacyTaskName(hub, job string) string {
 	base := baseName(hub)
 	var b strings.Builder
 	for _, r := range base {
@@ -213,16 +223,22 @@ func UninstallPlan(goos, hub string, names []string, existing string) ([]Command
 
 // UninstallTasks は Windows で名前を指定してタスクを消すコマンド列を返す。
 func UninstallTasks(hub string, names []string) []Command {
-	cmds := make([]Command, 0, len(names))
+	cmds := make([]Command, 0, 2*len(names))
 	for _, n := range names {
 		cmds = append(cmds, Command{Name: "schtasks", Args: []string{"/Delete", "/F", "/TN", TaskName(hub, n)}})
+		cmds = append(cmds, Command{Name: "schtasks", Args: []string{"/Delete", "/F", "/TN", LegacyTaskName(hub, n)}})
 	}
 	return cmds
 }
 
 // QueryTask は Windows で登録の有無を調べるコマンドを返す(終了コード 0 なら登録済み)。
 func QueryTask(hub, name string) Command {
-	return Command{Name: "schtasks", Args: []string{"/Query", "/TN", TaskName(hub, name)}}
+	return QueryNamedTask(TaskName(hub, name))
+}
+
+// QueryNamedTask は新旧いずれかのタスク名を指定して照会する。
+func QueryNamedTask(task string) Command {
+	return Command{Name: "schtasks", Args: []string{"/Query", "/TN", task}}
 }
 
 // ReadCrontab は現在の crontab を読むコマンドを返す。

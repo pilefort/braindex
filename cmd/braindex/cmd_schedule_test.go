@@ -11,6 +11,137 @@ import (
 	"github.com/pilefort/braindex/internal/schedule"
 )
 
+func TestSchedule_Install_Unix_LogDirectory(t *testing.T) {
+	for _, dry := range []bool{true, false} {
+		hub := schedHub(t, "")
+		r := &fakeRunner{}
+		args := []string{"install", "-config", filepath.Join(hub, "braindex.json")}
+		if dry {
+			args = append(args, "-dry-run")
+		}
+		code, _, se := execSchedule(t, "linux", r, args...)
+		if code != 0 {
+			t.Fatal(se)
+		}
+		info, err := os.Stat(filepath.Join(hub, ".braindex"))
+		if dry {
+			if !os.IsNotExist(err) {
+				t.Fatalf("dry-run がフォルダを作った: %v", err)
+			}
+		} else if err != nil || !info.IsDir() {
+			t.Fatalf("ログ用フォルダが無い: %v", err)
+		} else if b, err := os.ReadFile(filepath.Join(hub, ".braindex", ".gitignore")); err != nil || string(b) != "schedule.log\n" {
+			t.Fatalf("ログを git から外す .gitignore が無い: %q %v", b, err)
+		}
+	}
+}
+
+func TestSchedule_List_Unix_OldLine(t *testing.T) {
+	hub := schedHub(t, "")
+	r := &fakeRunner{}
+	code, _, se := execSchedule(t, "linux", r, "install", "-config", filepath.Join(hub, "braindex.json"))
+	if code != 0 {
+		t.Fatal(se)
+	}
+	lines := schedule.BlockLines(r.calls[1].Stdin, hub)
+	for i, line := range lines {
+		start, end := strings.Index(line, " >> "), strings.Index(line, " # braindex:")
+		if start >= 0 {
+			lines[i] = line[:start] + line[end:]
+		}
+	}
+	r.crontab = schedule.Merge("", hub, lines)
+	var so, stderr bytes.Buffer
+	code = runScheduleList([]string{"-config", filepath.Join(hub, "braindex.json")}, &so, &stderr)
+	if code != 0 || !strings.Contains(so.String(), "install で登録し直すと揃う") {
+		t.Fatalf("exit=%d stdout=%s stderr=%s", code, &so, &stderr)
+	}
+}
+
+func TestSchedule_Windows_LegacyMigration(t *testing.T) {
+	for _, sub := range []string{"install", "uninstall", "list"} {
+		t.Run(sub, func(t *testing.T) {
+			hub := schedHub(t, "")
+			old := "braindex-" + filepath.Base(hub) + "-review"
+			r := &fakeRunner{queryOK: map[string]bool{old: true}}
+			code, so, se := execSchedule(t, "windows", r, sub, "-config", filepath.Join(hub, "braindex.json"), "-job", "review")
+			if code != 0 {
+				t.Fatal(se)
+			}
+			if sub == "list" {
+				if !strings.Contains(so, "旧い名前で登録済み（install で移す）") {
+					t.Fatal(so)
+				}
+				return
+			}
+			if len(r.calls) != 3 || r.calls[1].Args[0] != "/Query" || r.calls[1].Args[2] != old || r.calls[2].Args[0] != "/Delete" || r.calls[2].Args[3] != old {
+				t.Fatalf("旧名の照会と削除: %+v", r.calls)
+			}
+			if sub == "install" && (r.calls[0].Args[0] != "/Create" || r.calls[0].Args[3] != schedule.TaskName(hub, "review")) {
+				t.Fatalf("新名を先に登録: %+v", r.calls)
+			}
+			if sub == "uninstall" && (r.calls[0].Args[0] != "/Query" || r.calls[0].Args[2] != schedule.TaskName(hub, "review")) {
+				t.Fatalf("新名も対象: %+v", r.calls)
+			}
+		})
+	}
+}
+
+func TestSchedule_Windows_LegacyMigrationFailure(t *testing.T) {
+	for _, fail := range []string{"/Create", "/Delete"} {
+		t.Run(fail, func(t *testing.T) {
+			hub := schedHub(t, "")
+			r := &fakeRunner{queryOK: map[string]bool{schedule.LegacyTaskName(hub, "review"): true}, failOn: fail}
+			code, so, se := execSchedule(t, "windows", r, "install", "-config", filepath.Join(hub, "braindex.json"), "-job", "review")
+			if code != 1 || !strings.Contains(se, "失敗した") || strings.Contains(so, "件を登録した") {
+				t.Fatalf("exit=%d stdout=%s stderr=%s", code, so, se)
+			}
+			if fail == "/Create" && len(r.calls) != 1 {
+				t.Fatalf("登録失敗後は旧名に触らない: %+v", r.calls)
+			}
+			if fail == "/Delete" && len(r.calls) != 3 {
+				t.Fatalf("新規登録後に旧名を照会して削除: %+v", r.calls)
+			}
+		})
+	}
+}
+
+func TestSchedule_Uninstall_Windows_BothNames(t *testing.T) {
+	hub := schedHub(t, "")
+	current, old := schedule.TaskName(hub, "review"), schedule.LegacyTaskName(hub, "review")
+	r := &fakeRunner{queryOK: map[string]bool{current: true, old: true}}
+	code, _, se := execSchedule(t, "windows", r, "uninstall", "-config", filepath.Join(hub, "braindex.json"), "-job", "review")
+	if code != 0 || len(r.calls) != 4 {
+		t.Fatalf("exit=%d stderr=%s calls=%+v", code, se, r.calls)
+	}
+	for i, name := range []string{current, old} {
+		if r.calls[i*2].Args[0] != "/Query" || r.calls[i*2].Args[2] != name || r.calls[i*2+1].Args[0] != "/Delete" || r.calls[i*2+1].Args[3] != name {
+			t.Fatalf("新旧両方を照会して削除: %+v", r.calls)
+		}
+	}
+}
+
+func TestSchedule_List_Windows_CurrentAndLegacy(t *testing.T) {
+	hub := schedHub(t, "")
+	r := &fakeRunner{queryOK: map[string]bool{schedule.TaskName(hub, "review"): true, schedule.LegacyTaskName(hub, "review"): true}}
+	code, so, se := execSchedule(t, "windows", r, "list", "-config", filepath.Join(hub, "braindex.json"), "-job", "review")
+	if code != 0 || !strings.Contains(so, "登録済み") || strings.Contains(so, "旧い名前") || len(r.calls) != 1 {
+		t.Fatalf("exit=%d stdout=%s stderr=%s calls=%+v", code, so, se, r.calls)
+	}
+}
+
+func TestSchedule_Install_Unix_LogDirectoryFailure(t *testing.T) {
+	hub := schedHub(t, "")
+	if err := os.WriteFile(filepath.Join(hub, ".braindex"), []byte("file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := &fakeRunner{}
+	code, _, se := execSchedule(t, "linux", r, "install", "-config", filepath.Join(hub, "braindex.json"))
+	if code != 1 || !strings.Contains(se, "ログ用フォルダを作れない") || len(r.calls) != 1 {
+		t.Fatalf("exit=%d stderr=%s calls=%+v", code, se, r.calls)
+	}
+}
+
 // fakeRunner は schtasks / crontab の代わり。呼ばれたコマンドを覚え、決まった応答を返す。
 type fakeRunner struct {
 	calls   []schedule.Command
@@ -85,8 +216,8 @@ func TestSchedule_Install_Windows(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d\nstdout=%s\nstderr=%s", code, so, se)
 	}
-	if len(r.calls) != 2 {
-		t.Fatalf("schtasks は 2 回: got=%d (%+v)", len(r.calls), r.calls)
+	if len(r.calls) != 4 {
+		t.Fatalf("登録 2 回と旧名の照会 2 回: got=%d (%+v)", len(r.calls), r.calls)
 	}
 	for i, want := range []string{"review", "retro"} {
 		c := r.calls[i]
@@ -150,7 +281,7 @@ func TestSchedule_Install_Job(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d\n%s", code, se)
 	}
-	if len(r.calls) != 1 || r.calls[0].Args[3] != schedule.TaskName(hub, "retro") {
+	if len(r.calls) != 2 || r.calls[0].Args[3] != schedule.TaskName(hub, "retro") {
 		t.Fatalf("retro だけ登録する: got=%+v", r.calls)
 	}
 	if !strings.Contains(so, "1 件を登録した") {
@@ -282,7 +413,7 @@ func TestSchedule_Uninstall_Windows(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d\n%s", code, se)
 	}
-	if len(r.calls) != 3 || r.calls[0].Args[0] != "/Query" || r.calls[1].Args[0] != "/Delete" || r.calls[2].Args[0] != "/Query" {
+	if len(r.calls) != 5 || r.calls[0].Args[0] != "/Query" || r.calls[1].Args[0] != "/Delete" || r.calls[2].Args[0] != "/Query" {
 		t.Fatalf("照会し、登録済みの 1 本だけ消す: got=%+v", r.calls)
 	}
 	// 登録が無いタスクの削除は失敗するが、消すものが無いだけなので成功のまま続ける
