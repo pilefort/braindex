@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -193,4 +194,32 @@ func TestApprovalsServe_RoundTrip(t *testing.T) {
 		t.Errorf("2 回目(時間切れ): code=%d", code)
 	}
 	mustContain(t, "stderr", se.String(), "note: 未反映の回答がある(このまま回答すると上書きする)")
+}
+
+// TestHelperProcess はテストバイナリ自身を子プロセスとして再実行するときの踏み台。
+// 実際の xdg-open / open / rundll32 の代わりに使い、すぐ終了するだけの子プロセスにする。
+func TestHelperProcess(t *testing.T) {
+	if os.Getenv("BRAINDEX_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+	os.Exit(0)
+}
+
+// startAndReap は Start() した子を stdout/stderr を汚さずバックグラウンドで reap する(ゾンビにしない)。
+// openBrowser はこれを経由するので、呼び出し側を待たせたまま(=serve の応答待ちを塞いだまま)にはしない。
+func TestStartAndReap(t *testing.T) {
+	c := exec.Command(os.Args[0], "-test.run=TestHelperProcess")
+	c.Env = append(os.Environ(), "BRAINDEX_WANT_HELPER_PROCESS=1")
+	if err := startAndReap(c); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	// バックグラウンドの Wait が子を reap すると c.ProcessState が埋まる。
+	// startAndReap 自身は呼び出し側を待たせない(ここでの待ちはテストの確認のためだけ)。
+	deadline := time.Now().Add(3 * time.Second)
+	for c.ProcessState == nil && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if c.ProcessState == nil {
+		t.Fatal("バックグラウンドで reap されなかった(Start() だけだとゾンビのまま残る)")
+	}
 }

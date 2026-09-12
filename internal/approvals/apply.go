@@ -7,11 +7,12 @@ import (
 
 // ApplyResult は Apply の出力。Approvals と Decisions は書き戻す新しい内容。
 type ApplyResult struct {
-	Approvals []byte   // 答えた項目を消し、保留に印を付け、番号を振り直した APPROVALS.md
-	Decisions []byte   // 決定を 3 段で末尾に追記した decisions.md(決定が無ければ入力のまま)
-	Summary   []string // 1 項目 1 行の要約(警告も含む)
-	Decided   int      // decisions に移した件数
-	Held      int      // 保留にした件数
+	Approvals         []byte   // 答えた項目を消し、保留に印を付け、番号を振り直した APPROVALS.md
+	Decisions         []byte   // 決定を 3 段で末尾に追記した decisions.md(決定が無ければ入力のまま)
+	Summary           []string // 1 項目 1 行の要約(警告も含む)
+	Decided           int      // decisions に移した件数
+	Held              int      // 保留にした件数
+	DuplicateHeadings []string // 追記しようとした見出しが decisions.md に既にあったもの(重複の可能性。追記は止めない)
 }
 
 // Apply は回答を APPROVALS.md と decisions.md に反映する。純粋関数(ファイルは触らない)。
@@ -41,6 +42,9 @@ func Apply(approvalsMD, decisionsMD []byte, rep Reply, today string) ApplyResult
 	decided := map[int]bool{}
 	holds := map[int]string{}
 	var entries []string
+	// 既存の見出し(decisions.md に既にあるもの)。同じ判断を 2 回積んで気づけない事故を防ぐため、
+	// これから追記する見出しと重ならないかを見る(追記は止めない。止めると回答が失われるため)。
+	existingHeadings := decisionHeadings(decisionsMD)
 	for _, r := range rep.Items {
 		title := strings.TrimSpace(r.Title)
 		// 回答は番号と題の両方を持つ。番号の指す項目の題が一致すればそれ、違えば題で引く。
@@ -136,6 +140,10 @@ func Apply(approvalsMD, decisionsMD []byte, rep Reply, today string) ApplyResult
 			evidence += "。なぜ今決めたか: " + sentence(strings.Join(nonEmptyLines(why), " "))
 		}
 		evidence += "。文面は braindex approvals apply の機械生成（結論文は整えてよい）"
+		if existingHeadings[heading] {
+			res.DuplicateHeadings = append(res.DuplicateHeadings, heading)
+		}
+		existingHeadings[heading] = true // 同じ回答の中で同じ見出しが重なる場合も検知する
 		entries = append(entries, fmt.Sprintf("\n## %s\n\n記録日: %s\n理由: %s\n根拠: %s\n", heading, today, reason, evidence))
 		decided[idx] = true
 		res.Decided++
@@ -182,6 +190,18 @@ func Apply(approvalsMD, decisionsMD []byte, rep Reply, today string) ApplyResult
 		res.Decisions = []byte(base + "\n" + strings.Join(entries, ""))
 	}
 	return res
+}
+
+// decisionHeadings は decisions.md に既にある見出し(## の後ろ)を集める。
+// Apply が追記しようとする見出しと重ならないかを見るため(見出しの形式は headRe と共通)。
+func decisionHeadings(decisionsMD []byte) map[string]bool {
+	out := map[string]bool{}
+	for _, line := range strings.Split(string(decisionsMD), "\n") {
+		if m := headRe.FindStringSubmatch(line); m != nil {
+			out[strings.TrimSpace(m[2])] = true
+		}
+	}
+	return out
 }
 
 // sentence は文の末尾の句点と空白を落とす(「。」で連結したとき「。。」にしない)。

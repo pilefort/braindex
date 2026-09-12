@@ -48,8 +48,10 @@ func runApprovalsStatus(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "id=%s project=%s\n", p.ID, p.Project)
 	fmt.Fprintf(stdout, "approvals=%s items=%d\n", p.Approvals, len(d.Items))
 	fmt.Fprintf(stdout, "decisions=%s (%s)\n", p.Decisions, exists(p.Decisions))
+	hasReply := false
 	replyState := "なし"
 	if _, err := os.Stat(p.Reply); err == nil {
+		hasReply = true
 		replyState = "未反映の回答あり → braindex approvals apply"
 	}
 	fmt.Fprintf(stdout, "reply=%s (%s)\n", p.Reply, replyState)
@@ -64,7 +66,14 @@ func runApprovalsStatus(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout)
 	}
 	warned := printApprovalWarnings(d, stderr)
-	if warned > 0 || replyState != "なし" {
+	return approvalsStatusExitCode(warned, hasReply)
+}
+
+// approvalsStatusExitCode は status の終了コードを決める。
+// 判定は表示文字列(replyState 等)を比較せず、真偽値(記載漏れの件数・回答ファイルの有無)だけで行う。
+// 表示の文言を変えても判定は壊れない。
+func approvalsStatusExitCode(warned int, hasReply bool) int {
+	if warned > 0 || hasReply {
 		return 2
 	}
 	return 0

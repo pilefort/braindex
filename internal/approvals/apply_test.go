@@ -125,6 +125,31 @@ func TestApply_OtherAndAllDecided(t *testing.T) {
 	}
 }
 
+// decisions.md に同じ見出しが既にあるときは、追記はするが検知して知らせる(同じ判断を 2 回積んでも気づけないため)。
+func TestApply_DuplicateHeadingWarns(t *testing.T) {
+	dec := []byte("# 設計判断\n\n## 設定ファイルの形式を JSON にするか TOML にするか → A. JSON\n\n記録日: 2026-01-01\n理由: r\n根拠: e\n")
+	rep := Reply{ReceivedAt: "2026-03-04T10:00:00+09:00", Items: []ReplyItem{
+		{N: 1, Title: "設定ファイルの形式を JSON にするか TOML にするか", Choice: "A"},
+	}}
+	res := Apply(load(t, "two-items.md"), dec, rep, "2026-03-04")
+	if res.Decided != 1 {
+		t.Fatalf("decided=%d summary=%v", res.Decided, res.Summary)
+	}
+	if len(res.DuplicateHeadings) != 1 || res.DuplicateHeadings[0] != "設定ファイルの形式を JSON にするか TOML にするか → A. JSON" {
+		t.Errorf("重複見出しを検知できない: %v", res.DuplicateHeadings)
+	}
+	// 追記そのものは止めない(止めると回答が失われる)。同じ見出しが 2 回出る。
+	if n := strings.Count(string(res.Decisions), "## 設定ファイルの形式を JSON にするか TOML にするか → A. JSON"); n != 2 {
+		t.Errorf("追記が止まっている:\n%s", res.Decisions)
+	}
+	// 見出しが違えば検知しない
+	rep2 := Reply{Items: []ReplyItem{{N: 2, Title: "ログの出力先", Choice: "hold"}}}
+	res2 := Apply(load(t, "two-items.md"), dec, rep2, "2026-03-04")
+	if len(res2.DuplicateHeadings) != 0 {
+		t.Errorf("違う見出しなのに検知した: %v", res2.DuplicateHeadings)
+	}
+}
+
 func TestApply_UnknownAndNoop(t *testing.T) {
 	src := load(t, "two-items.md")
 	dec := []byte("# 設計判断\n")
