@@ -43,8 +43,8 @@ func runReview(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.config, "config", "", "設定ファイルのパス(既定: カレントの braindex.json。そのディレクトリを hub とみなす)")
 	fs.StringVar(&o.date, "date", "", "今日として使う日付 YYYY-MM-DD(既定: 実行日)。出力ファイル名と閾値の基準。再現可能な出力が要るときに使う")
 	fs.StringVar(&o.since, "since", "", "前回レビュー日 YYYY-MM-DD(既定: 記録の置き場にある今日より前で最新の YYYY-MM-DD.md → 無ければ review.since_days 日前)")
-	fs.StringVar(&o.out, "out", "", "出力先(既定: 設定 review.dir の <今日>.md)。既にあれば書かない")
-	fs.BoolVar(&o.stdout, "stdout", false, "ファイルに書かず標準出力に出す")
+	fs.StringVar(&o.out, "out", "", "出力先(既定: 設定 review.dir の <今日>.md)。既にあれば書かない。-stdout と同時には使えない")
+	fs.BoolVar(&o.stdout, "stdout", false, "ファイルに書かず標準出力に出す。-out と同時には使えない")
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方: braindex review [-config braindex.json] [-date YYYY-MM-DD] [-since YYYY-MM-DD] [-out <path>] [-stdout]")
 		fmt.Fprintln(stderr, "  hub のルートで実行し、週次レビューの下書きを work/review/<今日>.md に書く。機械節(索引の増減・")
@@ -64,6 +64,10 @@ func runReview(args []string, stdout, stderr io.Writer) int {
 	if fs.NArg() > 0 {
 		fmt.Fprintf(stderr, "braindex review: 引数 %q は受け付けない(フラグだけを渡す)\n", fs.Args())
 		fs.Usage()
+		return 1
+	}
+	if o.stdout && o.out != "" {
+		fmt.Fprintln(stderr, "braindex review: -stdout と -out は同時に使えない(-stdout は出力先を持たない)")
 		return 1
 	}
 	fail := func(err error) int {
@@ -89,7 +93,7 @@ func runReview(args []string, stdout, stderr io.Writer) int {
 	}
 	hubDir := filepath.Dir(cfgPath)
 	s := fc.Review.WithDefaults()
-	reviewDir := filepath.Join(hubDir, filepath.FromSlash(s.Dir))
+	reviewDir := joinIfRelative(hubDir, filepath.FromSlash(s.Dir))
 
 	since, note, err := resolveSince(o.since, reviewDir, s.Dir, today, s.SinceDays)
 	if err != nil {

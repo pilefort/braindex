@@ -25,7 +25,7 @@ import (
 
 // Settings は braindex.json の review 節。省略・0 は既定値。
 type Settings struct {
-	Dir            string `json:"dir"`              // レビュー記録の置き場(hub 相対・スラッシュ区切り)。既定 work/review
+	Dir            string `json:"dir"`              // レビュー記録の置き場(hub 相対か絶対・スラッシュ区切り)。既定 work/review
 	SinceDays      int    `json:"since_days"`       // 前回の記録が無いときに遡る日数。既定 14
 	StaleTodoWeeks int    `json:"stale_todo_weeks"` // TODO を放置とみなす週数。既定 4
 	ArchiveMonths  int    `json:"archive_months"`   // アーカイブ候補にする古さ(月)。既定 6
