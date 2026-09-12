@@ -272,7 +272,7 @@ func TestReview_前回の判断の節が空なら伝える(t *testing.T) {
 		t.Fatalf("exit=%d want 2\nstderr=%s", code, se.String())
 	}
 	want := "前回（2026-08-26）の判断の節が空のまま: 今週の差分ダイジェスト（リポ別）・次アクション"
-	mustContain(t, "下書き", so.String(), "## 次アクション\n\n（1〜3 件）\n\n- "+want+"\n")
+	mustContain(t, "下書き", so.String(), "## 次アクション\n\n（1〜3 件）\n\n- （braindex）"+want+"\n")
 	mustContain(t, "stderr", se.String(), want)
 
 	// 埋まっていれば何も言わない
@@ -286,4 +286,31 @@ func TestReview_前回の判断の節が空なら伝える(t *testing.T) {
 	if strings.Contains(so.String(), "判断の節が空のまま") {
 		t.Errorf("埋まっているのに言っている:\n%s", so.String())
 	}
+}
+
+// braindex 自身が「判断の節が空のまま」と書き足した行を、翌週に人の記入と数えてはいけない。
+// 数えると、誰も次アクションを埋めていないのに翌週から警告が出なくなる(Codex レビュー 2026-09-12)。
+func TestReview_自分で書いた空欄の警告を人の記入と数えない(t *testing.T) {
+	_, hub := hubWithRepo(t)
+	cfg := filepath.Join(hub, "braindex.json")
+	writeFile(t, filepath.Join(hub, "work", "review", "2026-08-26.md"), "# 週次レビュー 2026-08-26\n"+
+		"\n## 今週の差分ダイジェスト（リポ別）\n\n（差分ファイルを実物で読み、リポごとに 1〜3 行）\n"+
+		"\n## アーカイブ（実施・見送りと理由）\n\n（候補ごとに 実施／見送り と理由）\n"+
+		"\n## 次アクション\n\n（1〜3 件）\n")
+
+	// 1 週目: 2026-09-02 の下書きを保存する。この下書きの「次アクション」には braindex が
+	// 書いた警告行だけが入り、人は何も書いていない
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"review", "-config", cfg, "-date", "2026-09-02"}, &so, &se); code != 2 {
+		t.Fatalf("1 週目 exit=%d want 2\nstderr=%s", code, se.String())
+	}
+	draft := readFile(t, filepath.Join(hub, "work", "review", "2026-09-02.md"))
+	mustContain(t, "1 週目の下書き", draft, "判断の節が空のまま")
+
+	// 2 週目: 前回(2026-09-02)の 3 節はどれも人が埋めていないので、3 節とも空と言うはず
+	so.Reset()
+	se.Reset()
+	dispatch([]string{"review", "-config", cfg, "-date", "2026-09-09"}, &so, &se)
+	want := "前回（2026-09-02）の判断の節が空のまま: 今週の差分ダイジェスト（リポ別）・アーカイブ（実施・見送りと理由）・次アクション"
+	mustContain(t, "2 週目の stderr", se.String(), want)
 }
