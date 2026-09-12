@@ -95,6 +95,10 @@ func TestServe_RoundTrip(t *testing.T) {
 		t.Errorf("GET /other = %d", res.StatusCode)
 	}
 
+	// Origin なしを拒否し、その後のフォーム相当の送信は受理する。
+	if code, _ := post(t, url, "", `{"nonce":"n1","items":[{"n":1,"choice":"A"}]}`); code != 403 {
+		t.Fatalf("Origin なし = %d", code)
+	}
 	// nonce 違い・Origin 違い・GET は拒否し、サーバは待ち続ける
 	if code, body := post(t, url, url[:len(url)-1], `{"nonce":"bad","items":[{"n":1,"choice":"A"}]}`); code != 403 || !strings.Contains(body, "error") {
 		t.Errorf("nonce 違い = %d %s", code, body)
