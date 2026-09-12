@@ -54,7 +54,7 @@ func newsFetch(t *testing.T, hub string, args ...string) (code int, so, se strin
 }
 
 // 範囲外の show_min_score は既定に丸めず、設定の誤り(終了コード 1)にする。
-// 丸めると、書いた値と実際の動きが食い違ったまま気づけない(決定 2026-09-03)。
+// 丸めると、書いた値と実際の動きが食い違ったまま気づけない(決定 2026-09-03 → manual/news.md「決めたこと」)。
 func TestNewsFetch_設定の範囲外(t *testing.T) {
 	hub, _ := newsHub(t)
 	writeFile(t, filepath.Join(hub, "braindex.json"), `{"root": "..", "news": {"show_min_score": 4}}`)
@@ -176,7 +176,7 @@ func TestNewsFetch_Flow(t *testing.T) {
 		t.Errorf("既読:\n%s", seen)
 	}
 
-	// 2 回目: 同じ日の出力先が既にあるので書かずに終了コード 1(braindex review と同じ規則・決定 2026-09-03)。
+	// 2 回目: 同じ日の出力先が既にあるので書かずに終了コード 1(braindex review と同じ規則・決定 2026-09-03 → manual/news.md「決めたこと」)。
 	// 取得の前に確かめるので、既読も進まない
 	seenBefore := readFile(t, filepath.Join(hub, "news", ".seen.json"))
 	code, so, se = newsFetch(t, hub)

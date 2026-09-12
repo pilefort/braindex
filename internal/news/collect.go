@@ -89,7 +89,7 @@ type Ranking map[string]interest.Score
 // 照合する文字列は 見出し＋概要。
 //
 // demoted に名前がある取材先は、点の上限を DemotedMaxScore に下げる(不要ばかり付く取材先を
-// 主要表示から下ろす。決定 2026-09-06)。nil なら下げない。
+// 主要表示から下ろす。決定 2026-09-06 → manual/news.md「決めたこと」)。nil なら下げない。
 func Rank(results []Result, p interest.Profile, demoted map[string]bool) Ranking {
 	if len(p.Terms) == 0 {
 		return nil

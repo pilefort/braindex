@@ -84,7 +84,7 @@ func TestNewsFetch_途中で止まった同じ日は再実行で完了する(t *
 				}
 			}
 
-			// 完了した後の同じ日は、これまでどおり「既にある」で止まる(決定 2026-09-03 は完了した回に効く)
+			// 完了した後の同じ日は、これまでどおり「既にある」で止まる(決定 2026-09-03 → manual/news.md「決めたこと」は完了した回に効く)
 			code, _, se = newsFetch(t, hub, "-layer", "weekly")
 			if code != 1 || !strings.Contains(se, "既にある") {
 				t.Errorf("完了後の再実行: exit=%d\n%s", code, se)

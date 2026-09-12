@@ -358,7 +358,7 @@ func appendKeeps(path, month string, keeps []Keep, date, layer string) error {
 	return writeAtomic(path, buf.Bytes(), perm)
 }
 
-// 不要ばかり付く取材先を主要表示から下ろす条件(決定 2026-09-06)。
+// 不要ばかり付く取材先を主要表示から下ろす条件(決定 2026-09-06 → manual/news.md「決めたこと」)。
 const (
 	// DemoteMinJudged は減点の判定に必要な「残す／不要を選んだ数」。これ未満は材料不足として下げない。
 	DemoteMinJudged = 10

@@ -33,7 +33,7 @@ func newsProfile(t *testing.T, hub string, args ...string) (code int, so, se str
 }
 
 // 窓の起点は retro と同じ「ローカルの 0 時」。UTC の 0 時にすると、同じ「N 日前から」が
-// retro と別の日を指し、両方を定期実行に載せたときに食い違う(決定 2026-09-03)。
+// retro と別の日を指し、両方を定期実行に載せたときに食い違う(決定 2026-09-03 → manual/news.md「決めたこと」)。
 func TestProfileSince_窓の起点はローカル0時(t *testing.T) {
 	loc := time.FixedZone("JST", 9*60*60)
 	old := localLoc
