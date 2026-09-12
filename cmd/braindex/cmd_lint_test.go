@@ -319,3 +319,57 @@ func TestLint_JSON(t *testing.T) {
 		t.Errorf("指摘なし: exit=%d stdout=%q", code, so.String())
 	}
 }
+
+// decisions.md の失効行は正常なら 0、違反なら行番号つきの指摘と JSON を出して 2。
+func TestLint_Supersede(t *testing.T) {
+	for _, tt := range []struct {
+		name, line, kind, label string
+	}{
+		{"失効", "失効: 2026-09-12 → 後継の方式", "", ""},
+		{"一部失効", "一部失効: 2026-09-12 → 後継の方式（保存先）", "", ""},
+		{"書式違反", "失効: 2026-09-12 後継の方式", "supersede_format", "失効行の書式"},
+		{"相対日付", "失効: 同日 → 後継の方式", "supersede_date", "失効行の日付"},
+		{"後継なし", "失効: 2026-09-12 → 存在しない方式", "supersede_target", "失効行の後継"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			p := filepath.Join(dir, "decisions.md")
+			glossary := filepath.Join(dir, "glossary.md")
+			writeFile(t, glossary, "")
+			writeFile(t, p, "# 決定\n\n## 以前の方式\n"+tt.line+"\n記録日: 2026-09-01\n理由: 保存先を統一するため。\n根拠: 会話 2026-09-01\n\n## 後継の方式を採用する\n記録日: 2026-09-12\n理由: 保存先を統一するため。\n根拠: 会話 2026-09-12\n")
+			wantCode := 0
+			if tt.kind != "" {
+				wantCode = 2
+			}
+			var so, se bytes.Buffer
+			if code := dispatch([]string{"lint", "-glossary", glossary, p}, &so, &se); code != wantCode {
+				t.Fatalf("exit=%d want %d\nstdout=%s\nstderr=%s", code, wantCode, so.String(), se.String())
+			}
+			if tt.kind != "" && !strings.Contains(so.String(), filepath.ToSlash(p)+":4: ["+tt.label+"]") {
+				t.Errorf("指摘の表示が違う: %s", so.String())
+			}
+			so.Reset()
+			se.Reset()
+			if code := dispatch([]string{"lint", "-json", "-glossary", glossary, p}, &so, &se); code != wantCode {
+				t.Fatalf("JSON の exit=%d want %d\nstdout=%s\nstderr=%s", code, wantCode, so.String(), se.String())
+			}
+			if tt.kind == "" {
+				if strings.TrimSpace(so.String()) != "[]" {
+					t.Errorf("正常行に指摘がある: %s", so.String())
+				}
+				return
+			}
+			var got []map[string]any
+			if err := json.Unmarshal(so.Bytes(), &got); err != nil {
+				t.Fatalf("JSON でない: %v\n%s", err, so.String())
+			}
+			if len(got) != 1 {
+				t.Fatalf("指摘の件数=%d want 1: %s", len(got), so.String())
+			}
+			msg, _ := got[0]["msg"].(string)
+			if got[0]["path"] != filepath.ToSlash(p) || got[0]["line"] != float64(4) || got[0]["kind"] != tt.kind || got[0]["severity"] != "warn" || !strings.HasPrefix(msg, "["+tt.label+"] ") {
+				t.Errorf("JSON の内容が違う: %s", so.String())
+			}
+		})
+	}
+}

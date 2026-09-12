@@ -54,7 +54,7 @@ type Input struct {
 	Today string // YYYY-MM-DD
 	Days  int    // 直近何日を窓にするか(index と sessions)。keep は KeepMonths か月
 	// Since と Until はセッションの発話を絞る時刻の窓 [Since, Until)。呼び出し側がローカルの 0 時で作る
-	// (retro と同じ起点。決定 2026-09-03)。ここで日付から作ると UTC の 0 時になり、retro と別の日を指した
+	// (retro と同じ起点。決定 2026-09-03 → manual/news.md「決めたこと」)。ここで日付から作ると UTC の 0 時になり、retro と別の日を指した
 	// (設計レビュー 2026-09-06 M3b)。
 	Since      time.Time
 	Until      time.Time

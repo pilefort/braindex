@@ -214,7 +214,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		progress = stderr
 	}
 
-	// 出力先は取得の前に確かめる。既にあれば書かない(braindex review と同じ規則・決定 2026-09-03)。
+	// 出力先は取得の前に確かめる。既にあれば書かない(braindex review と同じ規則・決定 2026-09-03 → manual/news.md「決めたこと」)。
 	// 取得の後に落とすと、既読だけ進んで手元に何も残らない回ができる。
 	// 例外は前回の fetch が途中で止まった出力先(news/.pending.json に記録が残っている): 完了していないので書き直す。
 	pendingPath := filepath.Join(newsDir, news.PendingFile)
@@ -243,6 +243,12 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		} else if serr != nil && !errors.Is(serr, iofs.ErrNotExist) {
 			return fail(serr)
 		}
+	}
+	// 書き直す回は、その日に付いた既読の印を外してから数え直す。既読を書いた後・記録を消す前に止まると
+	// 既読だけが進んで記録が残り、そのまま数えると新着 0 件になって、書けていたダイジェストを消してしまう
+	// (外部レビュー 2026-09-12)。外した印は下の Collect が付け直す。
+	if resuming && !o.replay && resume.Date != "" {
+		seen.Forget(resume.Date)
 	}
 	// 別の回の未完了は、この実行では完了させられない。伝えて、記録は残す
 	for _, r := range pending.Runs {
@@ -284,6 +290,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	// 採点(関心プロファイル)。出典が無い警告は fetch の警告として数える
 	var ranking news.Ranking
 	var profileTerms []string
+	var demoted map[string]bool // 上限を下げる取材先。LLM の点を重ねた後にもう一度効かせる
 	profileWarnings := 0
 	if !o.noScore {
 		p, ws, err := loadProfile(fc, hubDir, today, 0, o.sessions, o.allProjects)
@@ -294,8 +301,8 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "braindex news fetch: 警告:", w)
 		}
 		profileWarnings = len(ws)
-		// 不要ばかり付く取材先は点の上限を下げて主要表示から下ろす(決定 2026-09-06)
-		demoted := news.DemotedFeeds(stats.Totals())
+		// 不要ばかり付く取材先は点の上限を下げて主要表示から下ろす(決定 2026-09-06 → manual/news.md「決めたこと」)
+		demoted = news.DemotedFeeds(stats.Totals())
 		ranking = news.Rank(results, p, demoted)
 		if ranking == nil {
 			fmt.Fprintln(stdout, "関心プロファイルが空なので採点なし(全件を主要表示)")
@@ -322,7 +329,9 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		llmWarnings = len(ws)
 		if ann != nil {
 			annotations = ann
-			ranking = news.ApplyAnnotations(ranking, results, ann)
+			// LLM の点は語の点を上書きするので、下げた取材先の上限はここでもう一度かける
+			// (かけないと「上限を下げた」と言いながら主要表示に出る)
+			ranking = news.CapDemoted(news.ApplyAnnotations(ranking, results, ann), results, demoted)
 		}
 	}
 	do := news.DigestOptions{Layer: o.layer, Today: today, Cap: s.Cap(o.layer), Ranking: ranking, MinScore: s.MinScore(), Totals: stats.Totals(), Annotations: annotations}
@@ -435,7 +444,7 @@ func resumeCommand(r news.PendingRun) string {
 // unusedPath は path が無ければそのまま、あれば拡張子の前に -2, -3 … を付けた未使用の名前を返す。
 // reserved はこれから書く名前(まだ無いが使えない)。大文字小文字は区別しない(Windows に合わせる)。
 // 使うのは -out に .html を渡された場合だけ: md と html を同じ名前に書くと md を消してしまう。
-// 同じ日の 2 回目そのものは、出力先が既にあれば書かない(決定 2026-09-03)。
+// 同じ日の 2 回目そのものは、出力先が既にあれば書かない(決定 2026-09-03 → manual/news.md「決めたこと」)。
 func unusedPath(path string, reserved ...string) (string, error) {
 	ext := filepath.Ext(path)
 	base := path[:len(path)-len(ext)]

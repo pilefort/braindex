@@ -381,7 +381,7 @@ func runRetroExtract(args []string, stdout, stderr io.Writer) int {
 		Loc:         localLoc,
 		Home:        env.home,
 	})
-	// 前回の出力を消してから書く(出力先が常に今回の窓だけになる。決定 2026-09-03)。消すのは自分が書く sessions/ と index.tsv だけ
+	// 前回の出力を消してから書く(出力先が常に今回の窓だけになる。決定 2026-09-03 → manual/retro.md「決めたこと」)。消すのは自分が書く sessions/ と index.tsv だけ
 	if err := os.RemoveAll(filepath.Join(outDir, "sessions")); err != nil {
 		return fail(err)
 	}

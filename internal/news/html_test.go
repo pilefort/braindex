@@ -74,7 +74,7 @@ func TestRenderHTML(t *testing.T) {
 }
 
 // フィードのリンクは http(s) だけを載せる。javascript: などは href にも data-link にも出さず、題名だけ出す
-// (決定 2026-09-03)。data-link にも出さないのは、選別 JSON 経由で keep に入るのを止めるため。
+// (決定 2026-09-03 → manual/design.md「決めたこと」)。data-link にも出さないのは、選別 JSON 経由で keep に入るのを止めるため。
 func TestRenderHTML_リンクのスキームを絞る(t *testing.T) {
 	res := []Result{{Source: Source{Name: "A"}, New: []feed.Entry{
 		{ID: "1", Title: "危ない", Link: "javascript:alert(1)"},

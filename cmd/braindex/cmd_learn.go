@@ -26,7 +26,7 @@ func init() {
 
 // learnAnswersPath は候補への回答の置き場(hub 相対)。
 // work/ は揮発側(上書きされる・索引に載らない)で、週次レビューの記録 work/review/ と同じ扱い。
-// 回答は本人の入力で再生成できないので、news の既読のような .gitignore の作業ファイルにはしない(決定 2026-09-06)。
+// 回答は本人の入力で再生成できないので、news の既読のような .gitignore の作業ファイルにはしない(決定 2026-09-06 → manual/learn.md「決めたこと」)。
 const learnAnswersPath = "work/learn/answers.json"
 
 type learnOptions struct {

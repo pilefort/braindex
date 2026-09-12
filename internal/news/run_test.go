@@ -1,6 +1,7 @@
 package news
 
 import (
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -133,5 +134,46 @@ func TestPending(t *testing.T) {
 	}
 	if _, err := LoadPending(path); err == nil || !strings.Contains(err.Error(), "壊れている") {
 		t.Errorf("壊れた記録: %v", err)
+	}
+}
+
+// 古い残留ロックを 2 つの実行が同時に見つけても、外していいのは片方だけ。
+// 先に外して取り直した側のロックを、後から来た方が消してはいけない(外部レビュー 2026-09-12)。
+func TestLock_残留を同時に見つけても他人のロックは消さない(t *testing.T) {
+	newsDir := filepath.Join(t.TempDir(), "news")
+	if err := os.MkdirAll(newsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(newsDir, LockFile)
+	old := time.Now().Add(-LockStaleAfter - time.Minute).Format(time.RFC3339)
+	b, _ := json.Marshal(lockInfo{PID: 1, Started: old, Op: "fetch"})
+	if err := os.WriteFile(path, append(b, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// B はここで残留ロックを読んだ。まだ外していない
+	readByB, _, err := readLock(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A が先に残留を外して取り直す
+	unlockA, stale, err := Lock(newsDir, "fetch")
+	if err != nil || !strings.Contains(stale, "残留") {
+		t.Fatalf("A: err=%v stale=%q", err, stale)
+	}
+	defer unlockA()
+	mine, _, err := readLock(path)
+	if err != nil || mine.PID != os.Getpid() {
+		t.Fatalf("A のロックが無い: err=%v %+v", err, mine)
+	}
+	// B が自分の読んだ残留ロックを外そうとする。A のロックは消さない
+	if ok, err := stealStale(path, readByB); ok || err != nil {
+		t.Errorf("他人のロックを外した: ok=%v err=%v", ok, err)
+	}
+	if got, _, err := readLock(path); err != nil || got != mine {
+		t.Errorf("A のロックが消えた/変わった: err=%v %+v", err, got)
+	}
+	// B は「別の braindex news が動いている」で止まる(2 つが同時に取れない)
+	if _, _, err := Lock(newsDir, "fetch"); !errors.Is(err, ErrLocked) {
+		t.Errorf("B も取れてしまった: %v", err)
 	}
 }

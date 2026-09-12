@@ -129,7 +129,7 @@ func TestInline_Italic(t *testing.T) {
 }
 
 // Markdown リンクの href に載せるのは http(s) と、スキームの無いもの(相対パス・#見出し)だけ。
-// javascript: などをそのまま href に出すと、開いただけでコードが動く(決定 2026-09-03)。
+// javascript: などをそのまま href に出すと、開いただけでコードが動く(決定 2026-09-03 → manual/design.md「決めたこと」)。
 func TestInline_リンクのスキームを絞る(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"[表示](javascript:alert)", "表示"}, // 括弧を含む URL は既存の正規表現が途中で切るので、ここでは使わない

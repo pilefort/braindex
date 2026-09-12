@@ -218,3 +218,44 @@ func TestNewsFetch_LLM無しでもキャッシュは効く(t *testing.T) {
 	mustContain(t, "stderr", se, "claude CLI が見つからない")
 	mustContain(t, "stdout", so, "[記事2](https://example.com/2) ★3（LLM）／訳: 記事二の訳")
 }
+
+// 不要ばかり付く取材先の上限(決定 2026-09-06)は、LLM の採点でも外れない。
+// 外れると「上限を 1 に下げた」と言いながら 3 で主要表示に出る(外部レビュー 2026-09-12)。
+func TestNewsFetch_LLMの点でも下げた取材先の上限は効く(t *testing.T) {
+	hub, _ := newsHub(t)
+	writeFile(t, filepath.Join(hub, "braindex.json"), `{"root": "..", "news": {"llm": "claude-cli", "serendipity": 0}}`)
+	writeFile(t, filepath.Join(hub, "news", "interests.md"), "ゴルーチン\n")
+	// A は不要率 10/11 = 91%(DemoteMinJudged 10 件以上・DemoteDropRate 80% 超)なので下げる取材先
+	writeFile(t, filepath.Join(hub, "news", ".stats.json"),
+		`{"digests": {"digest_2026-08-14_daily.md": {"A": {"shown": 11, "kept": 1, "dropped": 10, "hidden": 0, "rescued": 0}}}}`)
+
+	ids := map[string]string{}
+	newNewsAnnotator = func(news.Settings) (news.Annotator, error) {
+		return annotatorFunc(func(_ context.Context, p string) (string, error) {
+			for _, l := range strings.Split(p, "\n") {
+				if strings.HasPrefix(l, "[{") {
+					var got []map[string]string
+					if err := json.Unmarshal([]byte(l), &got); err != nil {
+						return "", err
+					}
+					for _, g := range got {
+						ids[g["t"]] = g["id"]
+					}
+				}
+			}
+			// LLM は両方を 3(最高)と採点する
+			return `[{"id":"` + ids["記事1"] + `","t":"訳1","s":"","r":3},{"id":"` + ids["記事2"] + `","t":"訳2","s":"","r":3}]`, nil
+		}), nil
+	}
+	t.Cleanup(func() { newNewsAnnotator = nil })
+
+	code, so, se := llmFetch(t, hub)
+	if code != 2 { // 取得失敗 1 本(C)の警告
+		t.Fatalf("exit=%d\n%s%s", code, so, se)
+	}
+	mustContain(t, "stdout", so, "不要が多い取材先 1 本は関心度の上限を 1 に下げた",
+		"[記事1](https://example.com/1) ★1（LLM）", "[記事2](https://example.com/2) ★1（LLM）")
+	if strings.Contains(so, "★3") {
+		t.Errorf("下げた取材先の記事が LLM の点で戻った:\n%s", so)
+	}
+}

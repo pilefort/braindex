@@ -89,7 +89,7 @@ type Ranking map[string]interest.Score
 // 照合する文字列は 見出し＋概要。
 //
 // demoted に名前がある取材先は、点の上限を DemotedMaxScore に下げる(不要ばかり付く取材先を
-// 主要表示から下ろす。決定 2026-09-06)。nil なら下げない。
+// 主要表示から下ろす。決定 2026-09-06 → manual/news.md「決めたこと」)。nil なら下げない。
 func Rank(results []Result, p interest.Profile, demoted map[string]bool) Ranking {
 	if len(p.Terms) == 0 {
 		return nil
@@ -97,13 +97,31 @@ func Rank(results []Result, p interest.Profile, demoted map[string]bool) Ranking
 	rk := Ranking{}
 	rater := interest.NewRater(p) // 重み表は 1 回だけ作る(記事ごとに作り直さない)
 	for _, r := range results {
-		down := demoted[r.Source.Name]
 		for _, e := range r.New {
-			s := rater.Rate(e.Title + " " + e.Summary)
-			if down && s.Value > DemotedMaxScore {
+			rk[e.ID] = rater.Rate(e.Title + " " + e.Summary)
+		}
+	}
+	return CapDemoted(rk, results, demoted)
+}
+
+// CapDemoted は demoted に名前がある取材先の記事の点を DemotedMaxScore まで下げる(当たった語は残す)。
+// 点を書き換えた後(LLM の採点を重ねた後など)にもう一度呼んでよい。rk か demoted が空ならそのまま返す。
+//
+// 採点の後で点を上書きする経路(ApplyAnnotations)があるので、下げるのは Rank の中だけにしない。
+// 中だけにすると「上限を 1 に下げた」と言いながら LLM の 3 で主要表示に出る(外部レビュー 2026-09-12)。
+func CapDemoted(rk Ranking, results []Result, demoted map[string]bool) Ranking {
+	if rk == nil || len(demoted) == 0 {
+		return rk
+	}
+	for _, r := range results {
+		if !demoted[r.Source.Name] {
+			continue
+		}
+		for _, e := range r.New {
+			if s, ok := rk[e.ID]; ok && s.Value > DemotedMaxScore {
 				s.Value = DemotedMaxScore
+				rk[e.ID] = s
 			}
-			rk[e.ID] = s
 		}
 	}
 	return rk

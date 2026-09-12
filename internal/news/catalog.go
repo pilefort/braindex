@@ -13,7 +13,7 @@ import (
 // catalogJSON は同梱の取材先目録(catalog.json)。docs/notes/project/news-feed-catalog-2026-09-05.md の 98 本を JSON にしたもの。
 // tags はノートの分類そのまま(表示用)。keywords は照合語で、関心プロファイルの語(interest.Words の規則: ラテン文字は小文字・
 // 3 文字以上・ストップワード除外)と完全一致で照合する。照合語は Claude が付けた推測で、記事の内容を実測して付けたものではない
-// (決定 2026-09-05)。外れは試用で直す。
+// (決定 2026-09-05 → manual/news.md「決めたこと」)。外れは試用で直す。
 //
 //go:embed catalog.json
 var catalogJSON []byte
