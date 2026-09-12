@@ -31,7 +31,8 @@ var (
 // Render は解説の md を 1 枚の HTML にする。
 // 返す problems は本文にも印を出した問題(図が無い等)。呼び出し側がこれを警告と終了コードにする。
 func Render(md, title string, opt Options) (string, []string) {
-	r := &renderer{opt: opt, md: mdhtml.Options{BaseDir: opt.BaseDir}, figNums: map[string]bool{}}
+	mdOpt := mdhtml.Options{BaseDir: opt.BaseDir, SoftWrap: true}
+	r := &renderer{opt: opt, md: mdOpt, figNums: map[string]bool{}}
 	// 図番号のリンクは本文を全部読んでから張る。「図1」が図より前に出てくることがあるため。
 	body, items := addHeadingIDs(linkFigureRefs(r.body(md), r.figNums))
 	return mdhtml.Shell(title, tocHTML(items)+body, mdhtml.Parts{CSS: css, JS: js, MainClass: "explain"}), r.problems
