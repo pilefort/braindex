@@ -5,6 +5,7 @@ import "sort"
 // Score は記事の関心度 0〜3 と、当たった語(プロファイルの重み降順)。
 type Score struct {
 	Value   int      `json:"value"`
+	LLM     bool     `json:"llm,omitempty"` // LLM が付けた点なら true。
 	Matched []string `json:"matched,omitempty"`
 }
 
@@ -50,10 +51,10 @@ func (r Rater) Rate(text string) Score {
 			s.Matched = append(s.Matched, w)
 		}
 	}
+	sort.SliceStable(s.Matched, func(i, j int) bool { return r.weights[s.Matched[i]] > r.weights[s.Matched[j]] })
 	if raw == 0 || r.max <= 0 {
 		return s
 	}
-	sort.SliceStable(s.Matched, func(i, j int) bool { return r.weights[s.Matched[i]] > r.weights[s.Matched[j]] })
 	switch q := raw / r.max; {
 	case q < 0.5:
 		s.Value = 1

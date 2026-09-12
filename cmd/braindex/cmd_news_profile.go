@@ -17,6 +17,7 @@ import (
 	"github.com/pilefort/braindex/internal/config"
 	"github.com/pilefort/braindex/internal/interest"
 	"github.com/pilefort/braindex/internal/news"
+	"github.com/pilefort/braindex/internal/retro"
 	"github.com/pilefort/braindex/internal/review"
 	"github.com/pilefort/braindex/internal/sessions"
 )
@@ -105,7 +106,7 @@ func runNewsProfile(args []string, stdout, stderr io.Writer) int {
 			return fail(err)
 		}
 	} else {
-		out = p.Marshal(o.top)
+		out = p.Marshal(o.top, "は -top で増やす")
 	}
 	if _, err := stdout.Write(out); err != nil {
 		return fail(err)
@@ -180,12 +181,15 @@ func loadProfileInput(fc config.Config, hubDir, today string, days int, sessions
 	}
 
 	// 出典 2: セッション
+	home, _ := os.UserHomeDir()
 	sessDir := sessionsDir
 	if sessDir == "" {
-		sessDir = s.SessionsDir
+		sessDir = retro.ResolvePath(s.SessionsDir, hubDir, home)
+	} else {
+		sessDir = retro.ExpandHome(sessDir, home)
 	}
 	if sessDir == "" {
-		sessDir = fc.Retro.SessionsDir
+		sessDir = retro.ResolvePath(fc.Retro.SessionsDir, hubDir, home)
 	}
 	if sessDir == "" {
 		var err error
