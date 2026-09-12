@@ -85,6 +85,8 @@ braindex learn answers [-json]
 置き場は hub の **`work/learn/answers.json`**（節・語・回答・回答日・再提示日だけ。本文は書かない）。`work/` は揮発側（上書きされる・索引に載らない）で、
 週次レビューの記録 `work/review/` と同じ扱い。回答は本人の入力で作り直せないので、`news/.seen.json` のような `.gitignore` の作業ファイルにはしない。
 壊れていると、`braindex learn` は回答を反映せずに出して警告（終了コード 2）、`learn answer` と `learn answers` は失敗（終了コード 1・上に書かない）。直すかファイルごと消す。
+保存はファイルの全件置換なので、`learn answer` は書き込む直前に回答ファイルを読み直し、自分が読んだあとに他所で保存された回答があればそれを残したまま書く
+（並行して別の語に答えても、後から保存した側が前の回答を消さない）。
 
 ```text
 $ braindex learn answer unwanted istio

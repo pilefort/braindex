@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pilefort/braindex/internal/learn"
 	"github.com/pilefort/braindex/internal/scan/scantest"
 )
 
@@ -389,6 +390,44 @@ func TestLearnAnswer_引数の誤りは1(t *testing.T) {
 		var so, se bytes.Buffer
 		if code := dispatch(args, &so, &se); code != 0 || !strings.Contains(se.String(), "使い方: braindex learn answer") {
 			t.Errorf("%v: exit=%d\n%s", args, code, se.String())
+		}
+	}
+}
+
+// 回答の保存は全件置換なので、読んでから書くまでの間に別のプロセスが別の語へ回答していると、
+// そのまま書けば後勝ちで相手の回答が消える。書き込み直前に読み直し、消さずに足す
+// (Codex レビュー 2026-09-12)。mutate の中が「別プロセスが保存した」瞬間にあたる。
+func TestUpdateAnswers_同時に保存しても相手の回答が消えない(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "work", "learn", "answers.json")
+	mine := learn.Feedback{Section: learn.SectionStumbles, Word: "mine", Answer: learn.Known, Date: "2026-09-01"}
+	theirs := learn.Feedback{Section: learn.SectionStumbles, Word: "theirs", Answer: learn.Unwanted, Date: "2026-09-01"}
+
+	err := updateAnswers(path, func(fb *learn.Feedbacks) error {
+		// ここで別のプロセスが自分の回答を保存した(こちらは保存前の中身を持っている)
+		var other learn.Feedbacks
+		other.Set(theirs)
+		if err := other.Save(path); err != nil {
+			return err
+		}
+		fb.Set(mine)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("updateAnswers: %v", err)
+	}
+
+	got, err := learn.LoadFeedbacks(path)
+	if err != nil {
+		t.Fatalf("LoadFeedbacks: %v", err)
+	}
+	for _, want := range []learn.Feedback{mine, theirs} {
+		f, ok := got.Find(want.Section, want.Word)
+		if !ok {
+			t.Errorf("%s の回答が消えた: %+v", want.Word, got.Answers)
+			continue
+		}
+		if f != want {
+			t.Errorf("%s の回答が変わった: got=%+v want=%+v", want.Word, f, want)
 		}
 	}
 }

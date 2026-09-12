@@ -322,28 +322,34 @@ func runLearnAnswer(args []string, stdout, stderr io.Writer) int {
 		return fail(err)
 	}
 	path := h.answersPath()
-	// 壊れた回答ファイルの上に書かない(本人の回答を失う)。直すか消すかは本人が決める
-	fb, err := learn.LoadFeedbacks(path)
-	if err != nil {
-		return fail(fmt.Errorf("%w(直すか、ファイルごと消してから回答する)", err))
+	// 壊れた回答ファイルの上に書かない(本人の回答を失う)。候補の走査に入る前に確かめる
+	if _, err := loadAnswersForWrite(path); err != nil {
+		return fail(err)
 	}
 	targets := learn.Sections()
 	if section != "" {
 		targets = []learn.Section{section}
 	}
 	var lines, warnings []string
+	// mutate は回答ファイルへの書き換えだけを行う(材料は読まない)。書き込み直前に読み直して
+	// やり直すことがあるので、何度呼ばれても同じ結果になるようにする
+	var mutate func(fb *learn.Feedbacks) error
 	if clear {
-		for _, w := range terms {
-			n := 0
-			for _, sec := range targets {
-				if fb.Clear(sec, w) {
-					n++
-					lines = append(lines, fmt.Sprintf("解除: %s: %s", sec.Title(), w))
+		mutate = func(fb *learn.Feedbacks) error {
+			lines = nil
+			for _, w := range terms {
+				n := 0
+				for _, sec := range targets {
+					if fb.Clear(sec, w) {
+						n++
+						lines = append(lines, fmt.Sprintf("解除: %s: %s", sec.Title(), w))
+					}
+				}
+				if n == 0 {
+					return fmt.Errorf("回答が無い: %s(回答の一覧は braindex learn answers)", w)
 				}
 			}
-			if n == 0 {
-				return fail(fmt.Errorf("回答が無い: %s(回答の一覧は braindex learn answers)", w))
-			}
+			return nil
 		}
 	} else {
 		r, ws, err := buildLearn(h, o.learnOptions)
@@ -369,28 +375,35 @@ func runLearnAnswer(args []string, stdout, stderr io.Writer) int {
 				return fail(fmt.Errorf("-until は今日(%s)より後の日にする: %s", h.today, until))
 			}
 		}
+		// 候補に当たるかは回答ファイルと関係なく決まるので、書き換えの前に確かめる
+		hit := map[string][]learn.Section{}
 		for _, w := range terms {
-			var hit []learn.Section
 			for _, sec := range targets {
 				if present[sec][w] {
-					hit = append(hit, sec)
+					hit[w] = append(hit[w], sec)
 				}
 			}
-			if len(hit) == 0 {
+			if len(hit[w]) == 0 {
 				where := ""
 				if section != "" {
 					where = section.Title() + ": "
 				}
 				return fail(fmt.Errorf("候補に無い: %s%s(いまの候補は braindex learn -top 0 で見る。何も書いていない)", where, w))
 			}
-			for _, sec := range hit {
-				f := learn.Feedback{Section: sec, Word: w, Answer: answer, Date: h.today, Until: until}
-				fb.Set(f)
-				lines = append(lines, fmt.Sprintf("回答: %s: %s — %s", sec.Title(), w, f.Describe(h.today)))
+		}
+		mutate = func(fb *learn.Feedbacks) error {
+			lines = nil
+			for _, w := range terms {
+				for _, sec := range hit[w] {
+					f := learn.Feedback{Section: sec, Word: w, Answer: answer, Date: h.today, Until: until}
+					fb.Set(f)
+					lines = append(lines, fmt.Sprintf("回答: %s: %s — %s", sec.Title(), w, f.Describe(h.today)))
+				}
 			}
+			return nil
 		}
 	}
-	if err := fb.Save(path); err != nil {
+	if err := updateAnswers(path, mutate); err != nil {
 		return fail(err)
 	}
 	for _, l := range lines {
@@ -398,6 +411,44 @@ func runLearnAnswer(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "保存先: %s\n", path)
 	return learnWarnings("braindex learn answer", warnings, stderr)
+}
+
+// loadAnswersForWrite は書き換えるために回答ファイルを読む。壊れていたら上に書かずに失敗する
+// (全件置換なので、壊れたファイルを空と見なして書くと本人の回答を全部失う)。直すか消すかは本人が決める。
+func loadAnswersForWrite(path string) (learn.Feedbacks, error) {
+	fb, err := learn.LoadFeedbacks(path)
+	if err != nil {
+		return learn.Feedbacks{}, fmt.Errorf("%w(直すか、ファイルごと消してから回答する)", err)
+	}
+	return fb, nil
+}
+
+// updateAnswers は path の回答を読み、mutate で書き換えて保存する。
+//
+// 保存は全件置換(fsutil.WriteAtomic)なので、読んでから書くまでの間に別のプロセスが
+// 別の語へ回答していると、そのまま書けば後勝ちで相手の回答が消える。読んだ時点の中身と
+// 書く直前の中身を比べ、変わっていたら読み直した方へ mutate をやり直してから書く。
+// 読み直しから置き換えまでの隙間は残るが、候補の走査と人が打つ時間ぶんの窓は無くなる。
+func updateAnswers(path string, mutate func(*learn.Feedbacks) error) error {
+	fb, err := loadAnswersForWrite(path)
+	if err != nil {
+		return err
+	}
+	before := string(fb.JSON()) // JSON() は同じ内容なら常に同じバイト列なので、そのまま突き合わせに使える
+	if err := mutate(&fb); err != nil {
+		return err
+	}
+	cur, err := loadAnswersForWrite(path)
+	if err != nil {
+		return err
+	}
+	if string(cur.JSON()) != before {
+		if err := mutate(&cur); err != nil {
+			return err
+		}
+		fb = cur
+	}
+	return fb.Save(path)
 }
 
 // learnTerms は打たれた語を候補と同じ規則(interest.Words)で 1 語にする。候補の語はラテン文字を小文字に畳んであるので、
