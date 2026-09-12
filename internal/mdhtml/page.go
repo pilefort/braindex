@@ -192,21 +192,33 @@ func Page(md, title string) string { return PageWith(md, title, Options{}) }
 
 // PageWith は Page に変換の設定を渡す形。相対パスの基準(Options.BaseDir)を指定できる。
 func PageWith(md, title string, opt Options) string {
-	return shell(title, renderBody(md, opt), "")
+	return Shell(title, RenderBody(md, opt), Parts{})
 }
 
-// renderBody は Markdown を本文の HTML にする(裸の URL のリンク化と、チェックボックスの有効化まで)。
-func renderBody(md string, opt Options) string {
+// RenderBody は Markdown を本文の HTML にする(裸の URL のリンク化と、チェックボックスの有効化まで)。
+// Shell と組にして使う。explain のように本文を自分で組み立てるコマンドが、この 2 つを直に呼ぶ。
+func RenderBody(md string, opt Options) string {
 	body := Linkify(BodyWith(md, opt))
 	body = strings.ReplaceAll(body, `<input type="checkbox" disabled checked>`, `<input type="checkbox" checked>`)
 	return strings.ReplaceAll(body, `<input type="checkbox" disabled>`, `<input type="checkbox">`)
 }
 
-// shell は本文の HTML を 1 枚の文書に包む。extraJS は共通の js の後ろに足す追加分(スレッド用)。
-func shell(title, main, extraJS string) string {
+// Parts は Shell に足す追加分。ゼロ値が answer の 1 枚もの。
+type Parts struct {
+	CSS       string // 共通の css の後ろに足す(同じ指定は後勝ちで上書きできる)
+	JS        string // 共通の js の後ろに足す
+	MainClass string // <main> の class に足す語(既定の "doc" は必ず付く)
+}
+
+// Shell は本文の HTML を 1 枚の文書に包む。
+func Shell(title, main string, p Parts) string {
+	cls := "doc"
+	if p.MainClass != "" {
+		cls += " " + p.MainClass
+	}
 	return "<!doctype html>\n<html lang=\"ja\">\n<head>\n<meta charset=\"utf-8\">\n" +
 		"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n" +
-		"<title>" + escapeAttr(title) + "</title>\n<style>" + css + "</style>\n</head>\n<body>\n" +
-		`<main class="doc">` + main + "</main>\n" + `<button id="t" class="tgl">◐ 表示</button>` + "\n" +
-		"<script>" + js + extraJS + "</script>\n</body>\n</html>\n"
+		"<title>" + escapeAttr(title) + "</title>\n<style>" + css + p.CSS + "</style>\n</head>\n<body>\n" +
+		`<main class="` + cls + `">` + main + "</main>\n" + `<button id="t" class="tgl">◐ 表示</button>` + "\n" +
+		"<script>" + js + p.JS + "</script>\n</body>\n</html>\n"
 }
