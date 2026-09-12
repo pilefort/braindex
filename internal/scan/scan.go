@@ -610,6 +610,7 @@ func isMarkdown(name string) bool {
 // 含まないパターンはファイル名・ディレクトリ名に掛ける。不正なパターンは Scan の入口で弾いてあるので、ここでは無視する。
 func excluded(name, relFromBase string, patterns []string) bool {
 	for _, pat := range patterns {
+		pat = strings.TrimRight(pat, "/")
 		target := name
 		if strings.Contains(pat, "/") {
 			target = relFromBase

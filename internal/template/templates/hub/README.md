@@ -19,6 +19,12 @@
 - **知識はそれが属するリポに書く**: 調べて分かった事実はそのリポの `docs/notes/`、決めたことは `docs/decisions.md`。
   どのリポにも属さない知識だけを、この hub の `docs/notes/` に書く。
 
+## ノートの点検
+
+`record-lint` は、1 枚のノートの曖昧な表現や根拠の抜けを点検する。保存・追記の前後に使う。
+`contradiction-scan` は、複数のノートを読み比べ、記述の矛盾や古くなった情報を探す。定期点検や大きな決定の前に使う。
+どちらも `braindex init -add conventions` で入るスキル。エージェントにスキル名と点検したい対象を伝える。
+
 ## 週次レビュー
 
 週に 1 回、このディレクトリで `braindex review` を実行する。`work/review/YYYY-MM-DD.md` に下書きができ、

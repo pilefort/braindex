@@ -2,11 +2,138 @@ package main
 
 import (
 	"bytes"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestCheck_ReadOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		changed, dateOnly bool
+		want              int
+	}{
+		{"latest", false, false, 0}, {"body", true, false, 3}, {"date", false, true, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, hub := makeRoot(t), t.TempDir()
+			out := filepath.Join(hub, "index", "catalog.md")
+			runOK(t, options{root: root, out: out, date: "2026-01-03"})
+			if tc.changed {
+				writeFile(t, filepath.Join(root, "repo-a", "docs", "notes", "a.md"), "# A\n\n結論: changed\n記録日: 2026-01-02\n")
+			}
+			snapshot := func() map[string]string {
+				t.Helper()
+				files := map[string]string{}
+				err := filepath.WalkDir(hub, func(p string, d fs.DirEntry, err error) error {
+					if err != nil {
+						return err
+					}
+					if d.IsDir() {
+						return nil
+					}
+					b, err := os.ReadFile(p)
+					if err != nil {
+						return err
+					}
+					info, err := d.Info()
+					if err != nil {
+						return err
+					}
+					files[p] = string(b) + info.ModTime().String()
+					return nil
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return files
+			}
+			before := snapshot()
+			date := "2026-01-03"
+			if tc.dateOnly {
+				date = "2026-01-04"
+			}
+			var so, se bytes.Buffer
+			code := dispatch([]string{"-check", "-root", root, "-out", out, "-date", date}, &so, &se)
+			if code != tc.want {
+				t.Fatalf("exit=%d want %d: %s", code, tc.want, &se)
+			}
+			if tc.changed && so.String() != "catalog 確認: 古い（差分 1 行）\n" {
+				t.Errorf("差分表示: %s", &so)
+			}
+			after := snapshot()
+			if len(before) != len(after) {
+				t.Fatal("ファイル数が変わった")
+			}
+			for p, b := range before {
+				if after[p] != b {
+					t.Errorf("ファイルが変わった: %s", p)
+				}
+			}
+		})
+	}
+}
+
+func TestCheck_MissingCatalogDoesNotCreateFiles(t *testing.T) {
+	hub := t.TempDir()
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"-check", "-root", makeRoot(t), "-out", filepath.Join(hub, "index", "catalog.md")}, &so, &se); code != 1 {
+		t.Fatalf("exit=%d want 1", code)
+	}
+	es, err := os.ReadDir(hub)
+	if err != nil || len(es) != 0 {
+		t.Fatalf("書き込みが発生: %v %v", es, err)
+	}
+}
+
+func TestCatalogLineDiff(t *testing.T) {
+	for _, tc := range []struct {
+		a, b string
+		want int
+	}{
+		{"a\nb\nc\n", "a\nx\nb\nc\n", 1},
+		{"a\nb\nc\n", "a\nc\n", 1},
+		{"a\nb\nc\n", "a\nx\nc\n", 1},
+		{"a\nb\n", "b\na\n", 2},
+		{"生成: 2026-01-01\na\n", "生成: 2026-01-02\na\n", 0},
+	} {
+		if got := catalogLineDiff([]byte(tc.a), []byte(tc.b)); got != tc.want {
+			t.Errorf("diff(%q,%q)=%d want %d", tc.a, tc.b, got, tc.want)
+		}
+	}
+}
+
+func TestCheck_Help(t *testing.T) {
+	var se bytes.Buffer
+	parseArgs([]string{"-h"}, &se)
+	if !strings.Contains(se.String(), "-check") || !strings.Contains(se.String(), "3 古い") {
+		t.Fatalf("check の説明が無い: %s", &se)
+	}
+}
+
+func TestCheck_Warnings(t *testing.T) {
+	root, hub := makeRoot(t), t.TempDir()
+	out := filepath.Join(hub, "catalog.md")
+	runOK(t, options{root: root, out: out, date: "2026-01-03"})
+	cfg := filepath.Join(hub, "braindex.json")
+	writeFile(t, cfg, `{"extra":[{"repo":"repo-a","path":"missing","kind":"extra"}]}`)
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"-check", "-config", cfg, "-root", root, "-out", out, "-date", "2026-01-03"}, &so, &se); code != 2 {
+		t.Fatalf("exit=%d want 2: %s", code, &se)
+	}
+	if !strings.Contains(se.String(), "missing") {
+		t.Fatalf("警告が無い: %s", &se)
+	}
+}
+
+func TestRun_EmptyRootHint(t *testing.T) {
+	_, se := runOK(t, options{root: t.TempDir(), out: filepath.Join(t.TempDir(), "catalog.md")})
+	if !strings.Contains(se, "root（走査の起点）の設定") {
+		t.Fatalf("root の案内が無い: %s", se)
+	}
+}
 
 // writeFile はテスト用にファイルを書く(親ディレクトリも作る)。
 func writeFile(t *testing.T, path, content string) {

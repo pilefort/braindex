@@ -24,6 +24,42 @@ func testConfig() Config {
 	}
 }
 
+func TestScan_ExcludeTrailingSlashAndCovers(t *testing.T) {
+	for _, pattern := range []string{"drafts/", "sub/drafts/", "*/drafts/"} {
+		t.Run(pattern, func(t *testing.T) {
+			root := t.TempDir()
+			paths := []string{"alpha/research/drafts/a.md", "alpha/research/sub/drafts/b.md", "alpha/research/keep.md"}
+			for _, p := range paths {
+				abs := filepath.Join(root, filepath.FromSlash(p))
+				if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(abs, []byte("# Note\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cfg := Config{Root: root, Extra: []ExtraRule{{Repo: "alpha", Path: "research", Recursive: true, Kind: "research", Exclude: []string{pattern}}}}
+			res, err := Scan(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := map[string]bool{}
+			for _, f := range res.Files {
+				found[f.Rel] = true
+			}
+			for i, p := range paths {
+				want := i == 2 || (i == 0 && pattern != "drafts/")
+				if found[p] != want {
+					t.Errorf("Scan(%s)=%v want %v", p, found[p], want)
+				}
+				if got := Covers(cfg, p); got != want {
+					t.Errorf("Covers(%s)=%v want %v", p, got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestScan_FoundSet(t *testing.T) {
 	files, err := scanFiles(testConfig())
 	if err != nil {

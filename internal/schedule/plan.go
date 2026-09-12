@@ -181,9 +181,14 @@ func cronLines(hub, exe string, jobs []Job, existing string) ([]string, error) {
 //
 // names を渡したときは、その行だけを落とし、ブロックの中の見覚えのない行(利用者が書き足した行)は残す。
 // names が空のときは hub のブロックごと消すので、見覚えのない行も一緒に消える。
+// 消す対象が無ければコマンドを返さず、crontab を新規作成しない。
 func UninstallPlan(goos, hub string, names []string, existing string) ([]Command, error) {
 	if IsWindows(goos) {
 		return nil, fmt.Errorf("Windows の解除は UninstallTasks を使う")
+	}
+	_, inside, _, found := splitBlock(existing, hub)
+	if !found {
+		return nil, nil
 	}
 	var lines []string
 	if len(names) > 0 {
@@ -191,11 +196,16 @@ func UninstallPlan(goos, hub string, names []string, existing string) ([]Command
 		for _, n := range names {
 			drop[n] = true
 		}
-		for _, l := range BlockLines(existing, hub) {
+		removed := false
+		for _, l := range inside {
 			if drop[JobOfLine(l)] {
+				removed = true
 				continue
 			}
 			lines = append(lines, l)
+		}
+		if !removed {
+			return nil, nil
 		}
 	}
 	return []Command{{Name: "crontab", Args: []string{"-"}, Stdin: Merge(existing, hub, lines)}}, nil
@@ -230,9 +240,8 @@ func ReadCrontab() Command {
 // 利用者の crontab を全消しする。逆に「失敗は全部エラー」にすると、crontab がまだ無い利用者が install できない。
 // 文言の違う cron 実装(未確認: busybox)ではエラー側に倒れるだけで、全消しにはならない。
 //
-// 「no crontab を含む」で見ると緩すぎる。呼び出し側は stdout と stderr を混ぜて渡すので、
-// 利用者の crontab 本文に "# no crontab entries below" のような行があると「無い」と誤判定し、
-// まさに防ぎたい全消しを起こす。実測した文言はどちらも 1 行なので、行頭一致＋単一行に絞る
+// 「no crontab を含む」で見ると緩すぎる。呼び出し側は stdout が空のときだけ stderr を渡す。
+// 別の診断を「無い」と誤判定して全消ししないよう、行頭一致＋単一行に絞る
 // (2026-09-03 実測・macOS 15: 終了コード 1・"crontab: no crontab for <user>" の 1 行 39 バイトのみ)。
 func IsNoCrontab(output string) bool {
 	s := strings.ToLower(strings.TrimSpace(output))

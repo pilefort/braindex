@@ -8,6 +8,7 @@
 //   - 0: 成功
 //   - 1: 失敗(フラグの誤り・設定・root が読めない等。索引は書かない)
 //   - 2: 警告つきで完了(読めないファイルや存在しない extra を飛ばした。索引は書く)
+//   - 3: -check で保存済み索引と差分がある(-check は終了コードによらず書き込まない)
 package main
 
 import (
@@ -34,6 +35,7 @@ const (
 
 // options は索引生成のコマンドラインで与える値。空は「未指定」。
 type options struct {
+	check   bool   // -check。書き込まずに保存済み索引と比較する
 	config  string // -config。未指定なら既定 braindex.json(無くてもよい)
 	root    string // -root。設定ファイルの root より優先
 	out     string // -out。未指定なら設定ファイルと同じディレクトリの index/catalog.md
@@ -72,6 +74,7 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 func parseArgs(args []string, stderr io.Writer) (o options, code int, done bool) {
 	fs := flag.NewFlagSet("braindex", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	fs.BoolVar(&o.check, "check", false, "索引を書き換えずに確認（生成日の行を除いて比較）。0 最新／3 古い。差分の行数を表示")
 	fs.StringVar(&o.config, "config", "", "設定ファイルのパス(既定: カレントの braindex.json。無ければフラグだけで動き、-root が必須)")
 	fs.StringVar(&o.root, "root", "", "走査のルート。直下の各ディレクトリを 1 リポとみなす(設定ファイルの root より優先)")
 	fs.StringVar(&o.out, "out", "", "索引の出力先(既定: 設定ファイルと同じディレクトリの index/catalog.md)")
@@ -130,6 +133,26 @@ func run(o options, stdout, stderr io.Writer) int {
 	for _, w := range res.Warnings {
 		fmt.Fprintln(stderr, "braindex: 警告:", w)
 	}
+	if res.Entries == 0 {
+		fmt.Fprintln(stderr, "braindex: 索引が 0 件です。root（走査の起点）の設定を確かめてください。")
+	}
+	if o.check {
+		saved, err := os.ReadFile(outPath)
+		if err != nil {
+			fmt.Fprintln(stderr, "braindex:", err)
+			return 1
+		}
+		n := catalogLineDiff(saved, res.Catalog)
+		if n > 0 {
+			fmt.Fprintf(stdout, "catalog 確認: 古い（差分 %d 行）\n", n)
+			return 3
+		}
+		fmt.Fprintln(stdout, "catalog 確認: 最新")
+		if len(warnings) > 0 {
+			return 2
+		}
+		return 0
+	}
 	// 記録は索引を書く前に読む(壊れていれば、索引は書くが記録は据え置く)
 	histPath := filepath.Join(filepath.Dir(outPath), changehistory.FileName)
 	prev, herr := changehistory.Load(histPath)
@@ -158,6 +181,45 @@ func run(o options, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return 0
+}
+
+// catalogLineDiff は生成日の行を除き、行の追加・削除・置換の最小回数を返す。
+// 共通の前後を取り除いてから、1 行分の作業領域で編集距離を求める。
+func catalogLineDiff(a, b []byte) int {
+	lines := func(data []byte) []string {
+		out := []string{}
+		for _, line := range strings.Split(string(data), "\n") {
+			if !strings.HasPrefix(line, "生成: ") {
+				out = append(out, line)
+			}
+		}
+		return out
+	}
+	x, y := lines(a), lines(b)
+	for len(x) > 0 && len(y) > 0 && x[0] == y[0] {
+		x, y = x[1:], y[1:]
+	}
+	for len(x) > 0 && len(y) > 0 && x[len(x)-1] == y[len(y)-1] {
+		x, y = x[:len(x)-1], y[:len(y)-1]
+	}
+	dp := make([]int, len(y)+1)
+	for j := range dp {
+		dp[j] = j
+	}
+	for i, left := range x {
+		prev := dp[0]
+		dp[0] = i + 1
+		for j, right := range y {
+			old := dp[j+1]
+			cost := 0
+			if left != right {
+				cost = 1
+			}
+			dp[j+1] = min(dp[j]+1, old+1, prev+cost)
+			prev = old
+		}
+	}
+	return dp[len(y)]
 }
 
 // describeChanges は本文の変更の記録を更新した結果を 1 行にする。
