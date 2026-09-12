@@ -81,7 +81,7 @@ candidate（種別名に「(候補)」が付く）は本文の意味で真偽を
 
 ## 決めたこと
 
-記録日・理由・根拠は `docs/decisions.md` にあった当時の記録のままです。
+記録日・理由・根拠は `docs/decisions.md` にあった当時の記録のまま。
 
 ### `braindex lint` で `work/ISSUE-*.md` を決定論で検査する。索引には載せない
 

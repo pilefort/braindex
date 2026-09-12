@@ -101,7 +101,7 @@ braindex update                                               # 2. 雛形の追�
 
 ## 決めたこと
 
-記録日・理由・根拠は `docs/decisions.md` にあった当時の記録のままです。
+記録日・理由・根拠は `docs/decisions.md` にあった当時の記録のまま。
 
 ### `braindex.example.json` を消して、設定の雛形の正を `braindex init` の埋め込みテンプレ 1 つにするか → A. example json を消し、README の使い方 2 を「`braindex init` で雛形を展開」に変え、地図の行を削る
 

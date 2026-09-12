@@ -106,8 +106,8 @@ braindex retro extract [-since YYYY-MM-DD | -window-days N] [-out DIR]          
 
 ## 決めたこと
 
-記録日・理由・根拠は当時の記録のままです。本文中で参照している 2026-09-03 の閾値 0.08 の決定も、この節にあります。
-位置別集計の根拠にある「同上ノート」は、`docs/notes/project/skill-state-paper-and-braindex-2026-09-02.md` を指します。
+記録日・理由・根拠は当時の記録のまま。本文中で参照している 2026-09-03 の閾値 0.08 の決定も、この節にある。
+位置別集計の根拠にある「同上ノート」は `docs/notes/project/skill-state-paper-and-braindex-2026-09-02.md` を指す。
 
 ### `retro stats` に訂正発話のセッション内位置（何発話目か）の区間別集計を出す
 

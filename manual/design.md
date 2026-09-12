@@ -46,7 +46,7 @@ go test ./...   # 依存なし。CI は gofmt -l . と go vet ./... も回す
 
 ## 決めたこと
 
-記録日・理由・根拠は `docs/decisions.md` にあった当時の記録のままです。
+記録日・理由・根拠は `docs/decisions.md` にあった当時の記録のまま。
 
 ### module パスは `github.com/pilefort/braindex` のまま維持する（相対 import にはしない）
 

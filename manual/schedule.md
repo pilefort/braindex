@@ -53,7 +53,7 @@ crontab 側では、`crontab -l` が読めなければ**何もせず終了コー
 
 ## 決めたこと
 
-記録日・理由・根拠は `docs/decisions.md` にあった当時の記録のままです。
+記録日・理由・根拠は `docs/decisions.md` にあった当時の記録のまま。
 
 ### 定期実行の登録は `braindex schedule` が行い、`braindex init` はやらない
 

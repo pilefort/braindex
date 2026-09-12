@@ -219,7 +219,7 @@ braindex scope -dir docs/notes     # 索引を使わず、ディレクトリ配�
 
 ## 決めたこと
 
-記録日・理由・根拠は `docs/decisions.md` にあった当時の記録のままです。
+記録日・理由・根拠は `docs/decisions.md` にあった当時の記録のまま。
 
 ### `braindex answer` の Markdown 変換は依存を足さず自前パーサで書き、決定性テストで担保する
 
