@@ -2,6 +2,67 @@
 
 [← README](../README.md) ／ [手引きの目次](README.md)
 
+## braindex verify session — 発話と実行記録の照合
+
+アシスタントが「テストが通りました」「コミットしました」などと書いた文について、
+同じセッション内の、その発話より前の Bash 呼び出しを照合する。本体とサブエージェントの
+発話・実行を含む。ノートや ISSUE は読まず、外部への通信もしない。
+
+```sh
+braindex verify session sample-session
+braindex verify session ./logs/sample-session.jsonl
+braindex verify -json session ./logs/sample-session.jsonl
+```
+
+ID は `sessions.DefaultDir` が返す既定の置き場（`~/.claude/projects`）の各プロジェクトから探す。
+同じ ID が複数あれば `ERROR`。パスは `.jsonl` ファイルを指定する。`-json` は `session` より前に置く。
+
+### 固定の辞書
+
+括弧内の助詞は省略できる。英語の発話は大文字・小文字を区別しない。
+コマンドは表の文字列が Bash の `command` に含まれるかで照合する。
+
+| 種 | 発話に含まれる表現 | 対応するコマンド |
+|---|---|---|
+| test | テスト（が／を／は）通・パス・成功、test/tests pass/passed | `go test`、`npm test`、`npm run test`、`pnpm test`、`yarn test`、`pytest`、`cargo test`、`make test` |
+| build | ビルド（が／は）通・成功、vet（が）通 | `go build`、`go vet`、`npm run build`、`cargo build` |
+| commit | コミットした／しました／済み | `git commit` |
+| push | pushした／しました／済み、プッシュした／しました | `git push`、`gh pr create` |
+
+本文を句点・終止符（`。！？.!?`）と改行で区切る。バッククォートまたはチルダのフェンス、
+4 空白またはタブで字下げしたコード行、`>` で始まる引用行は除く。
+同じ文に `ない`、`なかった`、`ません`、`未`、`ず`、`これから`、`予定`、`つもり`、
+英単語 `no/not/never/will/plan/planned` または `n't` があれば、その文は拾わない。
+同じ文で同じ種が繰り返されても 1 件とし、異なる種はそれぞれ出す。
+
+### 判定と終了コード
+
+出力は既存の `Kind Target Status Detail` のタブ区切り、または `-json` の JSON 配列。
+`Kind` は `session:test` など、`Target` は主張の文（改行・タブ等は空白）。
+対応する実行の詳細には、呼び出し時刻、`subagent=true/false`、空白を整えたコマンドの先頭 60 文字を出す。
+
+| 判定 | 意味 | 終了コード |
+|---|---|---|
+| FOUND | 発話より前の最後の対応する呼び出しが `IsError=false` | 0 |
+| FAILED | 最後の対応する呼び出しが `IsError=true` | 2 |
+| NOT FOUND | 発話より前に対応する呼び出しがない、または発話の時刻がない | 2 |
+| ERROR | セッションを読めない、対象ログに読み取り警告がある、ID が一意でない | 1 |
+
+混在時は `ERROR` を優先する。主張がなければ `session`・`FOUND`・「照合対象の主張がない」を
+1 行出して成功する（JSON でも結果 1 件）。同時刻の実行は「発話より前」に含めない。
+対応する呼び出し同士が同時刻なら、読み取り順の後を採用する（本体の後にサブエージェント）。
+
+### 限界
+
+- 辞書にない言い回しは拾わない。否定語の部分一致や単純な文区切りによって、見逃しも起こる。
+- 時刻のない行は照合できない。時刻のない呼び出しは候補から外し、時刻のない主張には理由を表示する。
+- コマンドの部分一致であり、シェルの構文や対象リポジトリは解析しない。コメントや `echo` 内の文字列も一致する。
+- `IsError` だけで判定する。`HasResult=false` でも `IsError=false` なら `FOUND` になるが、詳細に
+  「結果の記録がないため成否未確認」を添える。結果の受信時刻は読み取り API にないため、発話までに完了したかは判定できない。
+- 既存の `sessions.Dir` は人間の発話がないログを返さないため、そのログは `ERROR` になる。
+  単一ファイルを読む公開 API がないため、パス指定でも親の置き場を読み、対象だけを取り出す。
+  同じ置き場にログが多い場合は時間が掛かる。本文ブロックが束ねられた発話には、既存 API の発話時刻を使う。
+
 ## braindex approvals — 判断待ちのフォーム
 
 `work/APPROVALS.md` の判断待ち（1 項目 1 判断・5 欄「決めたいこと／なぜ今決めるか／選択肢／私の案／決めないとどうなるか」）を
