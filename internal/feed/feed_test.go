@@ -188,3 +188,14 @@ func TestParse_LenientEntities(t *testing.T) {
 		t.Errorf("title=%q", d.Entries[0].Title)
 	}
 }
+
+func TestAtomSummaryPreservesProseAfterMetadata(t *testing.T) {
+	raw := `<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Title</title><summary type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><p>Points: 12</p><p>Actual explanation.</p></div></summary></entry></feed>`
+	d, err := ParseBytes([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Entries[0].Summary != "Points: 12 Actual explanation." {
+		t.Fatal(d.Entries[0].Summary)
+	}
+}

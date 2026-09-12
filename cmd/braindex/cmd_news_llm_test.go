@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pilefort/braindex/internal/news"
 )
@@ -257,5 +258,32 @@ func TestNewsFetch_LLMの点でも下げた取材先の上限は効く(t *testin
 		"[記事1](https://example.com/1) ★1（LLM・ゴルーチン）", "[記事2](https://example.com/2) ★1（LLM）")
 	if strings.Contains(so, "★3") {
 		t.Errorf("下げた取材先の記事が LLM の点で戻った:\n%s", so)
+	}
+}
+
+func TestNewsFetchLLMBudgetWarning(t *testing.T) {
+	hub, _ := newsHub(t)
+	writeFile(t, filepath.Join(hub, "braindex.json"), `{"root":"..","news":{"llm":"claude-cli","llm_budget_sec":1,"serendipity":0}}`)
+	writeFile(t, filepath.Join(hub, "news", "interests.md"), "ゴルーチン\n")
+	old := newNewsAnnotator
+	defer func() { newNewsAnnotator = old }()
+	calls := 0
+	newNewsAnnotator = func(news.Settings) (news.Annotator, error) {
+		return annotatorFunc(func(ctx context.Context, _ string) (string, error) {
+			calls++
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				t.Fatal("no whole-run deadline")
+			}
+			if time.Until(deadline) > time.Second {
+				t.Fatal("configured budget ignored")
+			}
+			<-ctx.Done()
+			return "", ctx.Err()
+		}), nil
+	}
+	code, out, errs := llmFetch(t, hub)
+	if code != 2 || calls != 1 || !strings.Contains(errs, "LLM 補助全体の時間上限") || !strings.Contains(out, "★2") {
+		t.Fatalf("code=%d calls=%d\n%s\n%s", code, calls, out, errs)
 	}
 }

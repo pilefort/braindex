@@ -500,7 +500,9 @@ func annotateWithLLM(s news.Settings, newsDir string, results []news.Result, ter
 	for _, k := range keeps {
 		examples = append(examples, k.Title)
 	}
-	rep := news.Annotate(context.Background(), a, results, cache, news.AnnotateOptions{
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.WithDefaults().LLMBudgetSec)*time.Second)
+	defer cancel()
+	rep := news.Annotate(ctx, a, results, cache, news.AnnotateOptions{
 		Terms:    terms,
 		Examples: examples,
 	})

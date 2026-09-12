@@ -6,6 +6,10 @@
 
 hub リポ（引数なし）か各プロジェクトのリポ（`-repo <dir>`）に骨格を展開する。既存ファイルは上書きしない。
 
+news の設定を新しく書くときは、PATH に `claude` があれば LLM 補助（訳と採点）を有効にする。
+見つからなければ無効で作り、導入後に `news.llm` を `claude-cli` にする案内を出す。既存の news 節は変更しない。
+保持した既存ファイルは `保持(既存): N 件` の 1 行にまとめ、新しく作成・追記したファイルはそれぞれ 1 行で表示する。
+
 hub の既定は「利用者の置き場と書き方を変えない」機能: `core`（`README.md`・`CLAUDE.md`・`.gitattributes`・`braindex.json` の
 `root`／`notes_dirs`／`extra`）と `retro`・`news`・`schedule`。規約への乗り換えを迫る `conventions` と、それに依存する `review` は
 `-add <機能>[,<機能>...]` で足す（2026-09-05 の入口の設計。同日の「既定は段 0」を上書き）。`-add core` なら索引の設定だけになる。

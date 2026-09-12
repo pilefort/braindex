@@ -5,10 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os/exec"
 	"strings"
 
 	"github.com/pilefort/braindex/internal/template"
 )
+
+var initLookPath = exec.LookPath
 
 func init() {
 	register(&command{
@@ -88,7 +91,15 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 		feats, added = template.Resolve(req)
-		res, err = template.InstallFeatures(dir, feats)
+		missingClaude := false
+		res, err = template.InstallFeatures(dir, feats, func() bool {
+			_, lookupErr := initLookPath("claude")
+			missingClaude = lookupErr != nil
+			return !missingClaude
+		})
+		if err == nil && missingClaude {
+			fmt.Fprintln(stdout, "claude が見つからないので LLM 補助（訳と採点）は無効にした。入れたら braindex.json の news.llm を claude-cli にする")
+		}
 	}
 	// 途中で失敗しても、そこまでに作った／足した／残したものは列挙する(書いたものを無言にしない)
 	for _, p := range res.Created {
@@ -97,8 +108,8 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	for _, p := range res.Merged {
 		fmt.Fprintln(stdout, "追記(無い節・行を足した):", p)
 	}
-	for _, p := range res.Skipped {
-		fmt.Fprintln(stdout, "保持(既存):", p)
+	if len(res.Skipped) > 0 {
+		fmt.Fprintf(stdout, "保持(既存): %d 件\n", len(res.Skipped))
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "braindex init:", err)

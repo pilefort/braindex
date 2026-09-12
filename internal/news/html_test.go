@@ -1,6 +1,7 @@
 package news
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -174,5 +175,35 @@ func TestRenderHTML_Serendipity(t *testing.T) {
 	// ほかの記事の折りたたみは残る(lo2 だけ)
 	if !strings.Contains(h, "ほかの記事 1 件") {
 		t.Errorf("折りたたみの件数が違う:\n%s", h)
+	}
+}
+
+func TestMetadataSummaryDisplayAndPrompt(t *testing.T) {
+	for _, raw := range []string{"", "Article URL: https://example.com/a\nPoints: 12", "Actual explanation."} {
+		results := []Result{{Source: Source{Name: "Example", Lang: "en"}, New: []feed.Entry{{ID: "a", Title: "Headline", Summary: feed.CleanSummary(raw, feed.SummaryLimit)}}}}
+		f := &fakeAnnotator{reply: func(p string) (string, error) {
+			if strings.HasPrefix(raw, "Article") && strings.Contains(p, "Article URL:") {
+				t.Fatal("metadata in prompt")
+			}
+			if raw == "Actual explanation." && !strings.Contains(p, raw) {
+				t.Fatal("missing prose")
+			}
+			return `[{"id":"a","t":"訳","s":"","r":2}]`, nil
+		}}
+		Annotate(context.Background(), f, results, Annotations{}, AnnotateOptions{})
+		opts := DigestOptions{Annotations: Annotations{"a": {Title: "訳", Summary: "古いメタデータの訳"}}}
+		rendered := string(RenderHTML(results, opts))
+		if raw == "" || strings.HasPrefix(raw, "Article") {
+			if !strings.Contains(rendered, `<p class="sum">概要がありません。原文を開くか、解説を相談できます。</p>`) {
+				t.Errorf("missing empty-summary guidance for %q", raw)
+			}
+			for _, output := range []string{rendered, string(Digest(results, opts))} {
+				if strings.Contains(output, "Article URL:") || strings.Contains(output, "古いメタデータの訳") {
+					t.Fatal("metadata rendered")
+				}
+			}
+		} else if !strings.Contains(rendered, raw) {
+			t.Fatal("missing prose")
+		}
 	}
 }

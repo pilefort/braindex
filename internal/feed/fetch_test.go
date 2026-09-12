@@ -108,3 +108,24 @@ func TestFetch_Unreachable(t *testing.T) {
 		t.Error("キャンセル済み ctx がエラーにならない")
 	}
 }
+
+func TestFetchLinklessIDIncludesFeed(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<rss><channel><item><title>Same</title></item><item><title>Linked</title><link>https://example.com/a</link></item></channel></rss>`))
+	}))
+	defer s.Close()
+	fetch := func(path string) Document {
+		d, err := (Fetcher{Client: s.Client()}).Fetch(context.Background(), s.URL+path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	a, b, again := fetch("/a"), fetch("/b"), fetch("/a")
+	if a.Entries[0].ID == b.Entries[0].ID || a.Entries[0].ID != again.Entries[0].ID {
+		t.Fatal("linkless identity")
+	}
+	if a.Entries[1].ID != "2dce0a4c50441bfc" || b.Entries[1].ID != a.Entries[1].ID {
+		t.Fatal("linked identity changed")
+	}
+}

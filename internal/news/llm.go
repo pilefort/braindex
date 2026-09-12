@@ -214,7 +214,7 @@ func Annotate(ctx context.Context, a Annotator, results []Result, cache Annotati
 			retry = append(retry, it)
 		}
 	}
-	if len(retry) > 0 {
+	if len(retry) > 0 && ctx.Err() == nil {
 		rep.Retried = len(retry)
 		size := o.Batch / 2
 		if size < 1 {
@@ -222,7 +222,7 @@ func Annotate(ctx context.Context, a Annotator, results []Result, cache Annotati
 		}
 		askInBatches(ctx, a, retry, cache, o, size, &rep)
 		for _, it := range retry {
-			if c, ok := cache[it.ID]; ok && needTranslation(c, it.Lang) {
+			if c, ok := cache[it.ID]; ok && needTranslation(c, it.Lang) && ctx.Err() == nil {
 				c.NoTitle = true
 				cache[it.ID] = c
 			}
@@ -245,11 +245,21 @@ func needTranslation(c Annotation, lang string) bool {
 // askInBatches は todo を size 件ずつ聞いて cache に合流させる。失敗したまとまりは数えて次へ進む。
 func askInBatches(ctx context.Context, a Annotator, todo []annotationItem, cache Annotations, o AnnotateOptions, size int, rep *AnnotateReport) {
 	for i := 0; i < len(todo); i += size {
+		if err := ctx.Err(); err != nil {
+			rep.Failed++
+			rep.Errors = append(rep.Errors, "LLM 補助全体の時間上限: "+err.Error())
+			return
+		}
 		end := i + size
 		if end > len(todo) {
 			end = len(todo)
 		}
 		out, err := a.Annotate(ctx, BuildAnnotationPrompt(todo[i:end], o.Terms, o.Examples))
+		if ctx.Err() != nil {
+			rep.Failed++
+			rep.Errors = append(rep.Errors, "LLM 補助全体の時間上限: "+ctx.Err().Error())
+			return
+		}
 		if err != nil {
 			rep.Failed++
 			rep.Errors = append(rep.Errors, err.Error())
