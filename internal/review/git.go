@@ -7,13 +7,15 @@ import (
 	"os/exec"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
 // Git は git コマンドの薄い包み。git はあれば使うだけで braindex の依存にはしない
 // (無い環境では git を使う節を飛ばして警告する)。
 type Git struct {
-	path string // 実行ファイルのパス
+	path          string // 実行ファイルのパス
+	sinceAsFilter bool   // --since-as-filter(git 2.37 以降)に対応するか。バージョンが読めない/パースできないときは安全側(false=従来の --since)
 }
 
 // LookGit は PATH から git を探す。無ければ ok=false。
@@ -22,7 +24,39 @@ func LookGit() (g Git, ok bool) {
 	if err != nil {
 		return Git{}, false
 	}
-	return Git{path: p}, true
+	g = Git{path: p}
+	g.sinceAsFilter = g.detectSinceAsFilter()
+	return g, true
+}
+
+// gitVersionRe は `git version 2.39.2.windows.1` のような出力から主・副バージョンを取り出す。
+var gitVersionRe = regexp.MustCompile(`^git version (\d+)\.(\d+)`)
+
+// sinceAsFilterFromVersion は `git version` の出力から --since-as-filter(2.37 以降)に対応するかを判定する
+// 純関数。バージョン文字列が読み取れない/パースできないときは安全側(false)に倒す(2026-09-12 ユーザー判断)。
+func sinceAsFilterFromVersion(out string) bool {
+	m := gitVersionRe.FindStringSubmatch(strings.TrimSpace(out))
+	if m == nil {
+		return false
+	}
+	major, errMajor := strconv.Atoi(m[1])
+	minor, errMinor := strconv.Atoi(m[2])
+	if errMajor != nil || errMinor != nil {
+		return false
+	}
+	if major != 2 {
+		return major > 2
+	}
+	return minor >= 37
+}
+
+// detectSinceAsFilter は実際に `git version` を実行してバージョンを調べる。失敗したときも安全側(false)に倒す。
+func (g Git) detectSinceAsFilter() bool {
+	out, err := g.run(".", "version")
+	if err != nil {
+		return false
+	}
+	return sinceAsFilterFromVersion(out)
 }
 
 // run は dir をカレントにして git を実行し、stdout を返す。失敗時は stderr の要点をエラーに含める。
@@ -110,11 +144,18 @@ var hashLine = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 // ChangedSince は dir で since 以降のコミットが pathspecs の範囲で触ったファイルを集める。
 // since は git が読める時刻の文字列(ISO8601 か "YYYY-MM-DD HH:MM:SS")。git の --since はその時刻ちょうどの
 // コミットを含む(2026-09-06 実測 → docs/notes/common/git-since-boundary.md)。
+// --since は「古いコミットに当たったら、その先を辿るのをやめる」ので、コミット日時が履歴の順序と食い違って
+// いると新しいコミットを取りこぼす(同記録)。g.sinceAsFilter(git 2.37 以降)なら --since-as-filter を使い、
+// 打ち切らずに全部見る。未満のときは従来どおり --since のまま(2026-09-12 ユーザー判断)。
 // 同じファイルが複数のコミットに現れたら 1 行にまとめ、前回日の時点と今の有無で 追加／変更／削除 を決める。
 // 窓の中で作られて消えたファイルは載せない(前回にも今にも無い)。リネームは旧パスを削除・新パスを追加として扱う。
 // パスは dir 相対(--relative)。dir の外のファイルは含まれない。
 func (g Git) ChangedSince(dir, since string, pathspecs []string) (RepoChanges, error) {
-	args := []string{"log", "--since=" + startOfDayIfDate(since), "--name-status", "--relative", "--format=%H", "--"}
+	sinceFlag := "--since=" + startOfDayIfDate(since)
+	if g.sinceAsFilter {
+		sinceFlag = "--since-as-filter=" + startOfDayIfDate(since)
+	}
+	args := []string{"log", sinceFlag, "--name-status", "--relative", "--format=%H", "--"}
 	args = append(args, pathspecs...)
 	out, err := g.run(dir, args...)
 	if err != nil {

@@ -13,7 +13,7 @@ hub で `braindex review` を実行すると、`work/review/<今日>.md` に週�
 | 節 | 中身 | 埋めるのは |
 |---|---|---|
 | 索引（件数と増減） | 前回レビュー時点の索引（hub が git 管理下ならそのコミット、無ければディスクの索引）と、いま走査した結果の差。リポ別に 追加／変更（変わった列名つき）／削除。前回にあって今回無い行のうち、今回読めなかった範囲にあるものは「確認不能」、いまの設定では走査しない場所にあるものは「対象外」に分け、削除に数えない。節の頭に確認不能・対象外の数（0 なら出さない）と、今回・前回の走査の記録（読めなかった範囲の一覧） | CLI |
-| 差分ファイル（リポ別） | 各リポで前回以降のコミットが `notes_dirs` と `docs/decisions.md` に触れたファイル（`git log --since --name-status`）。git 管理外のリポは飛ばして警告 | CLI |
+| 差分ファイル（リポ別） | 各リポで前回以降のコミットが `notes_dirs` と `docs/decisions.md` に触れたファイル（`git log --name-status`。git 2.37 以降は `--since-as-filter`、未満は従来の `--since`。理由は下の「決めたこと」）。git 管理外のリポは飛ばして警告 | CLI |
 | 放置 TODO | 各リポの `work/TODO.md` の未完了項目のうち、行が最後に変わった日（`git blame`）が `stale_todo_weeks` 週より前のもの。git で追えなければ mtime に `~` | CLI |
 | アーカイブ候補（機械条件のみ） | `archive_months` か月より前で、今回の差分に無いノート。`decisions` は含めない。読めなかった範囲のノートは候補に入れず、判断もしない（節にその旨を断る） | CLI |
 | 今週の差分ダイジェスト／アーカイブ（実施・見送りと理由）／次アクション | 見出しだけ | 人 |
@@ -26,7 +26,7 @@ hub で `braindex review` を実行すると、`work/review/<今日>.md` に週�
 頭の `（braindex）` は braindex 自身が書いた行の印で、翌週の判定ではこの行を人の記入と数えない
 （数えると、誰も埋めていないのに翌週から警告が出なくなる）。
 
-フラグ: `-config`（設定ファイル＝hub の位置。既定はカレントの `braindex.json`。無ければ失敗）`-date YYYY-MM-DD`（今日の固定）`-since YYYY-MM-DD`（前回日。既定は記録の置き場にある最新の `YYYY-MM-DD.md`、無ければ `since_days` 日前）
+フラグ: `-config`（設定ファイル＝hub の位置。既定はカレントの `braindex.json`。無ければ失敗）`-date YYYY-MM-DD`（今日の固定）`-since YYYY-MM-DD`（前回日。既定は記録の置き場にある最新の `YYYY-MM-DD.md`、無ければ `since_days` 日前。`-date` と同日を含めて以降の日付は拒否・終了コード 1）
 `-out`（出力先。既にあれば書かない）`-stdout`（標準出力へ）。`-out` と `-stdout` は同時に指定できない（終了コード 1）。
 設定 `review.dir` は hub 相対か絶対パス。
 終了コード: 0 成功／1 失敗（フラグの誤り・設定が無い・出力先が既にある。何も書かない）／2 警告つき完了（git 不在・git 管理外のリポを飛ばした）。
@@ -159,3 +159,15 @@ candidate（種別名に「(候補)」が付く）は本文の意味で真偽を
 記録日: 2026-09-06
 理由: 機械節（索引の増減・差分ファイル・放置 TODO・訂正率）は毎週埋まるので、回路が回っているように見える。しかし判断の層（差分の要約・アーカイブの可否・次アクション・振り返りの所見）が空のままだと、材料を作っているだけで何も決めていない。それを検出するのに新しい状態ファイルは作らない——「振り返ったか」の答えはノートや下書きの中身そのもので、別に記録すると食い違う。`review` は前回の下書きの節 5〜7 が見出しとひな型だけなら今回の「次アクション」の直下に 1 行書いて終了コード 2、`retro check` は鳴らしたときだけ `docs/notes/retro-<窓の中の日付>.md` の有無を見て 1 行に添える。見出しごと無い下書き・`docs/notes/` ごと無い hub には言わない（その規約を採っていない人に、直しようのないことを毎回言わない）。
 根拠: 設計レビュー 2026-09-06 M7（`docs/notes/project/design-review-2026-09-06.md`）／実装は `internal/review/judgement.go` と `cmd/braindex/retro_note.go`、判定は `TestEmptyJudgementSections`・`TestReview_前回の判断の節が空なら伝える`・`TestRetroCheck_所見ノートが無ければ添える`（PR `review/m7-loop-check`）
+
+### `braindex review` の差分ファイルは git の版で `--since`/`--since-as-filter` を分岐する（未満は従来どおり `--since`）
+
+記録日: 2026-09-12
+理由: `git log --since` はコミット日時が履歴の順序と食い違うと走査を打ち切り、その先の新しいコミットを取りこぼす（2026-09-06 実測 → `docs/notes/common/git-since-boundary.md`）。`--since-as-filter`（git 2.37 以降）は打ち切らずに全部見るが、未満の git では使えない。`git --version` を実行して主・副バージョンを読み、2.37 以上なら `--since-as-filter`、未満なら従来の `--since` にする。バージョン文字列が読めない・パースできないときは安全側（`--since` のまま）に倒す。
+根拠: ユーザー判断 2026-09-12／実装は `internal/review/git.go` の `sinceAsFilterFromVersion`・`detectSinceAsFilter`・`ChangedSince`、判定は `TestChangedSince_順序が食い違っても打ち切らない`（実行環境の git 2.39.2 で実際に打ち切りが再現しないことを確認）・`TestSinceAsFilterFromVersion`（2.37 未満の git が手元に無いため、バージョン文字列のパースだけを別途確かめる）
+
+### `braindex review -since` は今日（`-date`）以降の日付を同日を含めて拒否する（終了コード 1）
+
+記録日: 2026-09-12
+理由: `-since 2026-12-31 -date 2026-09-12` のように未来の日付を渡せてしまうと、前回日が未来になり「前回: 2026-12-31」という下書きが出る（2026-09-12 実測）。SPEC の「フラグの誤り＝終了コード 1」に当たるので、`-stdout`/`-out` の同時指定拒否（PR #12）と同じ型で拒否する。
+根拠: SPEC「フラグの誤り＝1」／実装は `cmd/braindex/cmd_review.go` の `resolveSince`、判定は `TestReview_SinceNotBeforeTodayRejected`

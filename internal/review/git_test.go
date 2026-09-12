@@ -363,6 +363,61 @@ func TestWriteChangesSection(t *testing.T) {
 
 // 差分ファイルの起点は「前回の索引を取ったコミットの時刻」。前回日の 0 時にすると、
 // その日のうち索引を取る前に入った変更を前回と今回で二重に数える(設計レビュー 2026-09-06 M3b)。
+// git log --since は、コミット日時が履歴の順序と食い違うとそこで走査を打ち切り、その先にある新しいコミットを
+// 取りこぼす(2026-09-06 実測 → docs/notes/common/git-since-boundary.md)。--since-as-filter(git 2.37 以降)は
+// 打ち切らない。実行環境の git(2.39.2 以上)は対応しているはずなので、打ち切りが起きないことを実物で確かめる
+// (2.37 未満での分岐は TestSinceAsFilterFromVersion がバージョン文字列のパースだけを別途確かめる)。
+func TestChangedSince_順序が食い違っても打ち切らない(t *testing.T) {
+	r := newTestRepo(t)
+	if !r.git.sinceAsFilter {
+		t.Skip("この環境の git は --since-as-filter に対応していない(2.37 未満)")
+	}
+	r.write("docs/notes/first.md", "# first\n")
+	r.commitAt("2026-09-06T12:00:00", "first")
+	r.write("docs/notes/second.md", "# second\n") // コミット日時が親コミットより古い(履歴の順序と食い違う)
+	r.commitAt("2026-09-06T11:00:00", "second")
+	r.write("docs/notes/third.md", "# third\n")
+	r.commitAt("2026-09-06T13:00:00", "third")
+
+	rc, err := r.git.ChangedSince(r.dir, "2026-09-06 12:00:00", []string{"docs/notes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, f := range rc.Files {
+		got[f.Path] = true
+	}
+	// 打ち切られていると first.md(ちょうど起点の時刻)が落ちる(--since だけだと 2026-09-06 実測のとおり再現する)
+	if !got["docs/notes/first.md"] || !got["docs/notes/third.md"] || got["docs/notes/second.md"] {
+		t.Errorf("打ち切りが起きている(または second.md が誤って入っている): files=%v", rc.Files)
+	}
+}
+
+// バージョン文字列のパースだけを確かめる(2.37 未満の git が手元に無いため、実際の分岐はこの純関数のテストで代える)。
+func TestSinceAsFilterFromVersion(t *testing.T) {
+	cases := []struct {
+		out  string
+		want bool
+	}{
+		{"git version 2.37.0\n", true},
+		{"git version 2.37.0.windows.1\n", true},
+		{"git version 2.39.2.windows.1\n", true},
+		{"git version 2.40.0\n", true},
+		{"git version 3.0.0\n", true},
+		{"git version 2.36.9\n", false},
+		{"git version 2.9.5\n", false},
+		{"git version 1.9.5\n", false},
+		{"git version 2\n", false},
+		{"not a version string\n", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := sinceAsFilterFromVersion(c.out); got != c.want {
+			t.Errorf("%q: want %v got %v", c.out, c.want, got)
+		}
+	}
+}
+
 // git の --since はその時刻ちょうどのコミットを含む(docs/notes/common/git-since-boundary.md)。
 func TestChangedSince_起点は時刻で渡せる(t *testing.T) {
 	r := newTestRepo(t)
