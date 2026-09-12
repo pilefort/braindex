@@ -210,6 +210,21 @@ func TestUninstallTasks(t *testing.T) {
 	assertCommands(t, got, want)
 }
 
+func TestUninstallPlan_Unix_NoTarget(t *testing.T) {
+	for _, existing := range []string{"", "keep\r\n", Merge("", hub+"-other", []string{"x"})} {
+		for _, names := range [][]string{nil, {"review"}} {
+			got, err := UninstallPlan("linux", hub, names, existing)
+			if err != nil || len(got) != 0 {
+				t.Errorf("got=%+v err=%v", got, err)
+			}
+		}
+	}
+	got, err := UninstallPlan("linux", hub, []string{"review"}, Merge("", hub, []string{"x # braindex:retro"}))
+	if err != nil || len(got) != 0 {
+		t.Errorf("got=%+v err=%v", got, err)
+	}
+}
+
 func TestQueryTask(t *testing.T) {
 	got := QueryTask(winHub, "review")
 	if got.Name != "schtasks" || strings.Join(got.Args, " ") != "/Query /TN braindex-hub-review" {

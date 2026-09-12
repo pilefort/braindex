@@ -19,34 +19,35 @@ type fakeRunner struct {
 	failOn  string          // Display() にこの文字列を含むコマンドを失敗させる
 
 	// crontabErr が空でなければ、crontab -l はこの出力と error を返す(「crontab が無い」以外の失敗)。
-	crontabErr string
+	crontabErr    string
+	crontabStderr string
 }
 
-func (f *fakeRunner) Run(c schedule.Command) (string, error) {
+func (f *fakeRunner) Run(c schedule.Command) (string, string, error) {
 	f.calls = append(f.calls, c)
 	if f.failOn != "" && strings.Contains(c.Display(), f.failOn) {
-		return "スケジューラの出力", errors.New("exit status 1")
+		return "", "スケジューラの出力", errors.New("exit status 1")
 	}
 	switch {
 	case c.Name == "crontab" && len(c.Args) > 0 && c.Args[0] == "-l":
 		if f.crontabErr != "" {
-			return f.crontabErr, errors.New("exit status 1")
+			return "", f.crontabErr, errors.New("exit status 1")
 		}
 		if f.crontab == "" {
-			return "no crontab for user", errors.New("exit status 1")
+			return "", "no crontab for user", errors.New("exit status 1")
 		}
-		return f.crontab, nil
+		return f.crontab, f.crontabStderr, nil
 	case c.Name == "schtasks" && len(c.Args) > 0 && c.Args[0] == "/Query":
 		if f.queryOK[c.Args[2]] {
-			return "タスク名: " + c.Args[2], nil
+			return "タスク名: " + c.Args[2], "", nil
 		}
-		return "ERROR: 指定されたタスクが存在しません。", errors.New("exit status 1")
+		return "", "ERROR: 指定されたタスクが存在しません。", errors.New("exit status 1")
 	case c.Name == "schtasks" && len(c.Args) > 0 && c.Args[0] == "/Delete":
 		if f.queryOK != nil && !f.queryOK[c.Args[3]] {
-			return "ERROR: 指定されたタスクが存在しません。", errors.New("exit status 1")
+			return "", "ERROR: 指定されたタスクが存在しません。", errors.New("exit status 1")
 		}
 	}
-	return "", nil
+	return "", "", nil
 }
 
 // schedHub は braindex.json を置いた一時 hub を作る。cfg が空なら {}(既定のジョブ)。
@@ -281,8 +282,8 @@ func TestSchedule_Uninstall_Windows(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d\n%s", code, se)
 	}
-	if len(r.calls) != 2 || r.calls[0].Args[0] != "/Delete" {
-		t.Fatalf("2 本とも消しにいく: got=%+v", r.calls)
+	if len(r.calls) != 3 || r.calls[0].Args[0] != "/Query" || r.calls[1].Args[0] != "/Delete" || r.calls[2].Args[0] != "/Query" {
+		t.Fatalf("照会し、登録済みの 1 本だけ消す: got=%+v", r.calls)
 	}
 	// 登録が無いタスクの削除は失敗するが、消すものが無いだけなので成功のまま続ける
 	if !strings.Contains(so, "解除: review") || !strings.Contains(so, "未登録: retro") {
@@ -385,5 +386,91 @@ func TestSchedule_使い方の誤り(t *testing.T) {
 	}
 	if code, _, _ := execSchedule(t, "windows", &fakeRunner{}, "-h"); code != 0 {
 		t.Errorf("-h は 0: exit=%d", code)
+	}
+}
+
+func TestSchedule_Uninstall_Windows_DeleteFailure(t *testing.T) {
+	hub := schedHub(t, "")
+	r := &fakeRunner{queryOK: map[string]bool{schedule.TaskName(hub, "review"): true}, failOn: "/Delete"}
+	code, so, se := execSchedule(t, "windows", r, "uninstall", "-config", filepath.Join(hub, "braindex.json"), "-job", "review")
+	if code != 1 || strings.Contains(so, "未登録") || !strings.Contains(se, "失敗した") {
+		t.Fatalf("exit=%d stdout=%s stderr=%s", code, so, se)
+	}
+}
+
+func TestSchedule_Uninstall_Unix_NoTarget(t *testing.T) {
+	hub := schedHub(t, "")
+	for _, existing := range []string{"", "keep\r\n", schedule.Merge("", hub, []string{"x # braindex:retro"})} {
+		r := &fakeRunner{crontab: existing}
+		code, so, se := execSchedule(t, "linux", r, "uninstall", "-config", filepath.Join(hub, "braindex.json"), "-job", "review")
+		if code != 0 || len(r.calls) != 1 || !strings.Contains(so, "未登録") {
+			t.Errorf("exit=%d calls=%+v stdout=%s stderr=%s", code, r.calls, so, se)
+		}
+	}
+}
+
+func TestSchedule_List_Unix_Drift(t *testing.T) {
+	hub := schedHub(t, "")
+	r := &fakeRunner{crontab: schedule.Merge("", hub, []string{"0 0 * * * old # braindex:review"})}
+	code, so, se := execSchedule(t, "linux", r, "list", "-config", filepath.Join(hub, "braindex.json"))
+	if code != 0 || !strings.Contains(so, "設定と異なる") || !strings.Contains(so, "install") || len(r.calls) != 1 {
+		t.Fatalf("exit=%d stdout=%s stderr=%s calls=%+v", code, so, se, r.calls)
+	}
+}
+
+func TestSchedule_List_Unix_Current(t *testing.T) {
+	hub := schedHub(t, "")
+	r := &fakeRunner{}
+	// execSchedule が設定した実行ファイルの位置を使って、一致する登録を作る。
+	code, _, se := execSchedule(t, "linux", r, "install", "-config", filepath.Join(hub, "braindex.json"))
+	if code != 0 {
+		t.Fatal(se)
+	}
+	r.crontab = r.calls[1].Stdin
+	r.calls = nil
+	var so, stderr bytes.Buffer
+	code = runScheduleList([]string{"-config", filepath.Join(hub, "braindex.json")}, &so, &stderr)
+	if code != 0 || strings.Contains(so.String(), "設定と異なる") || strings.Count(so.String(), "登録済み") != 2 || len(r.calls) != 1 {
+		t.Fatalf("exit=%d stdout=%s stderr=%s calls=%+v", code, &so, &stderr, r.calls)
+	}
+}
+
+func TestSchedule_Install_Unix_StderrNotWritten(t *testing.T) {
+	hub := schedHub(t, "")
+	r := &fakeRunner{crontab: "keep\n", crontabStderr: "diagnostic\n"}
+	code, _, se := execSchedule(t, "linux", r, "install", "-config", filepath.Join(hub, "braindex.json"))
+	if code != 0 || len(r.calls) != 2 {
+		t.Fatalf("exit=%d stderr=%s calls=%+v", code, se, r.calls)
+	}
+	if !strings.HasPrefix(r.calls[1].Stdin, "keep\n") || strings.Contains(r.calls[1].Stdin, "diagnostic") {
+		t.Fatalf("書き戻す本文=%q", r.calls[1].Stdin)
+	}
+}
+
+func TestSchedule_Uninstall_Unix_NoBlock(t *testing.T) {
+	hub := schedHub(t, "")
+	for _, existing := range []string{"", "keep\n"} {
+		r := &fakeRunner{crontab: existing}
+		code, so, se := execSchedule(t, "linux", r, "uninstall", "-config", filepath.Join(hub, "braindex.json"))
+		if code != 0 || len(r.calls) != 1 || !strings.Contains(so, "未登録") || strings.Contains(so, "解除:") {
+			t.Fatalf("exit=%d stdout=%s stderr=%s calls=%+v", code, so, se, r.calls)
+		}
+	}
+}
+
+// スケジューラの代わりにテスト自身を子プロセスとして起動する。
+func TestExecRunner_StdoutOnly(t *testing.T) {
+	if os.Getenv("BRAINDEX_SCHEDULE_HELPER") == "1" {
+		_, _ = os.Stdout.WriteString("cron body\n")
+		_, _ = os.Stderr.WriteString("diagnostic\n")
+		os.Exit(0)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, diagnostic, err := (execRunner{}).Run(schedule.Command{Name: exe, Args: []string{"-test.run=^TestExecRunner_StdoutOnly$"}, Env: []string{"BRAINDEX_SCHEDULE_HELPER=1"}})
+	if err != nil || out != "cron body\n" || diagnostic != "diagnostic\n" {
+		t.Fatalf("out=%q err=%v", out, err)
 	}
 }
