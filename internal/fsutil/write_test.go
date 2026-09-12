@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -28,6 +29,35 @@ func TestWriteAtomic(t *testing.T) {
 	// 一時ファイルを残さない
 	if n := countTemp(t, dir); n != 0 {
 		t.Errorf("一時ファイルが %d 件残った", n)
+	}
+}
+
+// 渡した perm がそのままファイルの権限になる(呼び出し側が機密性の高い出力を 0600 に絞れることの土台)。
+// os.CreateTemp が作る一時ファイルの既定権限(0600)に紛れないよう、あえて緩い 0644 でも確かめる。
+// Windows は POSIX の権限ビットをほぼ持たないので検査しない。
+func TestWriteAtomic_渡した権限がそのまま反映される(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows では POSIX の権限ビットがほぼ効かない")
+	}
+	dir := t.TempDir()
+	p := filepath.Join(dir, "reply.json")
+
+	if err := WriteAtomic(p, []byte("秘密\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Stat(p); err != nil {
+		t.Fatal(err)
+	} else if perm := fi.Mode().Perm(); perm != 0o600 {
+		t.Errorf("1 回目(0600 指定) = %o, want 0600", perm)
+	}
+	// 置き換え(2 回目)でも渡した perm がそのまま反映される(前回の権限を引き継がない)。
+	if err := WriteAtomic(p, []byte("公開\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Stat(p); err != nil {
+		t.Fatal(err)
+	} else if perm := fi.Mode().Perm(); perm != 0o644 {
+		t.Errorf("2 回目(0644 指定) = %o, want 0644", perm)
 	}
 }
 

@@ -19,6 +19,8 @@ braindex approvals wait           # hook が開いたフォームの回答を待
 「**保留（日付）:**」を付ける。反映した回答 JSON は、反映の結果（決定・保留の件数と警告）を書き足して `.applied.json` に移すので、2 回反映されない。
 フラグ: `-file`（判断待ちのファイル）`-dir`（回答 JSON の置き場。既定は OS の一時ディレクトリの `braindex-approvals`）
 `-config`（設定ファイル。既定はカレントの `braindex.json`。無くてもよい）`-timeout 秒`（0 で無期限）`-no-open` `-apply` `-decisions` `-date` `-reply`。
+回答 JSON とその置き場は、共有 `/tmp` を持つ環境で同じマシンの他ユーザーから読めないよう `0600`／`0700` に絞って書く（Unix 系のみ。
+Windows は POSIX の権限ビットをほぼ持たない）。
 
 ### 開き忘れを拾う（`hook`）
 

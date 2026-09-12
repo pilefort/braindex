@@ -236,6 +236,34 @@ func TestServe_SavesReplyBeforeResponding(t *testing.T) {
 	}
 }
 
+// 回答 JSON の置き場は OS の共有一時ディレクトリの下(DefaultDir)。同じマシンの他ユーザーから
+// 回答を読めないように、ファイルは 0600・新しく作るディレクトリは 0700 に絞る(設計判断 2026-09-12)。
+// Windows は POSIX の権限ビットをほぼ持たない(os.Chmod は読み取り専用属性しか触れない)ので検査しない。
+func TestWriteReply_権限(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows では POSIX の権限ビットがほぼ効かない")
+	}
+	dir := filepath.Join(t.TempDir(), "sub")
+	path := filepath.Join(dir, "approvals-x.reply.json")
+	if err := WriteReply(path, Reply{Nonce: "n0", Items: []ReplyItem{{N: 1, Choice: "A"}}}); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0o600 {
+		t.Errorf("回答 JSON の権限 = %o, want 0600", perm)
+	}
+	di, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := di.Mode().Perm(); perm != 0o700 {
+		t.Errorf("置き場ディレクトリの権限 = %o, want 0700", perm)
+	}
+}
+
 // 置き換えに失敗しても、前回の回答は壊れない(半端な JSON で上書きしない)。
 // 回答 JSON は apply が読むので、途中まで書けたファイルは黙って読めない・取り込めないになる(設計レビュー 2026-09-06 M14)。
 func TestWriteReply_置き換えに失敗しても前回の回答は壊れない(t *testing.T) {
