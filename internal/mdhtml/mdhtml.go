@@ -6,6 +6,7 @@
 package mdhtml
 
 import (
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -14,6 +15,13 @@ import (
 
 	"github.com/pilefort/braindex/internal/weblink"
 )
+
+// Options は変換の設定。ゼロ値(何も指定しない)が従来の動き。
+type Options struct {
+	// BaseDir は md に書かれた相対パスを解決する基準ディレクトリ(ふつうは md の置き場所)。
+	// 空なら相対パスをそのまま出す。
+	BaseDir string
+}
 
 var (
 	h1RE       = regexp.MustCompile(`(?m)^#\s+(.+?)\s*$`)
@@ -112,12 +120,49 @@ func attrURL(u string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(u, `"`, "%22"), " ", "%20")
 }
 
+// hasScheme は URL のスキーム("https:" など)が付いているかを返す。
+// weblink.Safe と同じ読み方をする: "://" より前に / ? # があればスキーム区切りではなく、
+// 1 文字のスキームは Windows のドライブ文字として扱う。
+func hasScheme(s string) bool {
+	i := strings.IndexByte(s, ':')
+	if i < 0 {
+		return false
+	}
+	if j := strings.IndexAny(s, "/?#"); j >= 0 && j < i {
+		return false
+	}
+	if i == 1 {
+		if r := rune(s[0]); ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z') {
+			return false // Windows のドライブ文字
+		}
+	}
+	return true
+}
+
+// isRelativeLocal は BaseDir からの解決の対象かを返す。スキーム付き・絶対パス・同一文書内リンク(#)は対象外。
+func isRelativeLocal(p string) bool {
+	return p != "" && !strings.HasPrefix(p, "#") && !strings.HasPrefix(p, "/") &&
+		!driveRE.MatchString(p) && !hasScheme(p)
+}
+
 // localURL は href / src に出す値。ローカルの絶対パス(Windows のドライブ文字・/ 始まり)は file:// の URL にする。
 // HTML は一時置き場に書かれ Markdown と同じ場所に無いので、絶対パスで参照させる。"C:/..." を素のまま出しても
-// file と解釈するかはブラウザと OS 次第なので明示する。相対パスはそのまま(HTML から見た相対)。
+// file と解釈するかはブラウザと OS 次第なので明示する。
+// opt.BaseDir があれば相対パスもそこからの絶対パスにする。HTML が md と別のディレクトリに書かれる以上、
+// 相対のままでは解決できない(2026-09-12 実測: `![図](./fig.svg)` が開けなかった)。BaseDir が空なら従来どおりそのまま。
 // Markdown 側で file:// と書いたものは、リンクと同じく落とす(決定 2026-09-03。パスで書けばよい)。
-func localURL(p string) string {
+func localURL(p string, opt Options) string {
 	p = strings.TrimSpace(p)
+	if opt.BaseDir != "" && isRelativeLocal(p) {
+		path, frag := p, ""
+		if i := strings.IndexByte(p, '#'); i >= 0 {
+			path, frag = p[:i], p[i:]
+		}
+		if path != "" {
+			// 区切りは / に戻す。Windows の Join は \ を返し、下の判定(先頭の / とドライブ文字)に掛からない
+			p = filepath.ToSlash(filepath.Join(opt.BaseDir, filepath.FromSlash(path))) + frag
+		}
+	}
 	switch {
 	case driveRE.MatchString(p):
 		p = "file:///" + strings.ReplaceAll(p, `\`, "/")
@@ -130,7 +175,7 @@ func localURL(p string) string {
 // inline は行内記法を HTML にする。コード退避 → エスケープ → wiki → 画像 → リンク → 強調 → 復帰、の順。
 // 退避表には復帰時にそのまま出す HTML を入れる。行内コードのほか、<img> も入れて後段の強調・リンクに触らせない
 // (alt や src の中の * や [ を記法として解釈させないため)。
-func inline(text string) string {
+func inline(text string, opt Options) string {
 	var stash []string
 	keep := func(html string) string {
 		stash = append(stash, html)
@@ -158,7 +203,7 @@ func inline(text string) string {
 		}
 		// alt は属性値なので、退避したコードは文字に戻し、タグは剥がし、" をエスケープする
 		alt := strings.ReplaceAll(tagRE.ReplaceAllString(restore(sm[1]), ""), `"`, "&quot;")
-		return keep(`<img src="` + localURL(sm[2]) + `" alt="` + alt + `">`)
+		return keep(`<img src="` + localURL(sm[2], opt) + `" alt="` + alt + `">`)
 	})
 	text = linkRE.ReplaceAllStringFunc(text, func(m string) string {
 		sm := linkRE.FindStringSubmatch(m)
@@ -168,7 +213,7 @@ func inline(text string) string {
 		}
 		// 画像と同じく、ローカルの絶対パスは file:// にする。素のまま出すと file:// のページからは
 		// 相対パスとして解決されて開けない(実測 2026-09-06)
-		return `<a href="` + localURL(sm[2]) + `" target="_blank" rel="noopener">` + sm[1] + `</a>`
+		return `<a href="` + localURL(sm[2], opt) + `" target="_blank" rel="noopener">` + sm[1] + `</a>`
 	})
 	text = boldRE.ReplaceAllString(text, "<strong>$1</strong>")
 	text = italic(text)
@@ -232,7 +277,10 @@ func isTableStart(lines []string, i int) bool {
 }
 
 // Body は Markdown をブロック要素の HTML(本文だけ・<html> 無し)にする。
-func Body(md string) string {
+func Body(md string) string { return BodyWith(md, Options{}) }
+
+// BodyWith は Body に変換の設定を渡す形。相対パスの基準(Options.BaseDir)を指定できる。
+func BodyWith(md string, opt Options) string {
 	md = strings.ReplaceAll(md, "\r\n", "\n")
 	md = strings.ReplaceAll(md, "\r", "\n")
 	md = strings.ReplaceAll(md, "\x00", "") // 行内コードの退避に使う番兵と衝突するので落とす
@@ -267,7 +315,7 @@ func Body(md string) string {
 
 		if m := headingRE.FindStringSubmatch(line); m != nil {
 			lv := strconv.Itoa(len(m[1]))
-			out = append(out, "<h"+lv+">"+inline(strings.TrimSpace(m[2]))+"</h"+lv+">")
+			out = append(out, "<h"+lv+">"+inline(strings.TrimSpace(m[2]), opt)+"</h"+lv+">")
 			i++
 			continue
 		}
@@ -291,13 +339,13 @@ func Body(md string) string {
 					if c < len(r) {
 						cell = r[c]
 					}
-					body.WriteString("<td>" + inline(cell) + "</td>")
+					body.WriteString("<td>" + inline(cell, opt) + "</td>")
 				}
 				body.WriteString("</tr>")
 			}
 			var th strings.Builder
 			for _, c := range header {
-				th.WriteString("<th>" + inline(c) + "</th>")
+				th.WriteString("<th>" + inline(c, opt) + "</th>")
 			}
 			out = append(out, "<table><thead><tr>"+th.String()+"</tr></thead><tbody>"+body.String()+"</tbody></table>")
 			continue
@@ -308,7 +356,7 @@ func Body(md string) string {
 			for i < n && strings.HasPrefix(lstrip(lines[i]), ">") {
 				b := quoteRE.ReplaceAllString(lines[i], "")
 				if strings.TrimSpace(b) != "" {
-					parts = append(parts, inline(b))
+					parts = append(parts, inline(b, opt))
 				}
 				i++
 			}
@@ -333,11 +381,11 @@ func Body(md string) string {
 						}
 						content = tm[2]
 					}
-					it.content = inline(content)
+					it.content = inline(content, opt)
 					items = append(items, it)
 					i++
 				} else if strings.TrimSpace(lines[i]) != "" && (strings.HasPrefix(lines[i], " ") || strings.HasPrefix(lines[i], "\t")) && len(items) > 0 {
-					items[len(items)-1].content += " " + inline(strings.TrimSpace(lines[i]))
+					items[len(items)-1].content += " " + inline(strings.TrimSpace(lines[i]), opt)
 					i++
 				} else {
 					break
@@ -354,7 +402,7 @@ func Body(md string) string {
 				strings.HasPrefix(lstrip(l2), ">") || isTableStart(lines, i) {
 				break
 			}
-			buf = append(buf, inline(strings.TrimSpace(l2)))
+			buf = append(buf, inline(strings.TrimSpace(l2), opt))
 			i++
 		}
 		if len(buf) > 0 {

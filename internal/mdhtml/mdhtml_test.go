@@ -105,7 +105,7 @@ func TestBody_NUL(t *testing.T) {
 
 // 退避表の範囲外を指す目印が万一残っても落とさず、そのまま出す。
 func TestInline_StashOutOfRange(t *testing.T) {
-	if got := inline("\x0099\x00"); got != "\x0099\x00" {
+	if got := inline("\x0099\x00", Options{}); got != "\x0099\x00" {
 		t.Errorf("inline = %q, want 入力のまま", got)
 	}
 }
@@ -122,7 +122,7 @@ func TestInline_Italic(t *testing.T) {
 		{"(*a*)", "(<em>a</em>)"},
 	}
 	for _, c := range cases {
-		if got := inline(c.in); got != c.want {
+		if got := inline(c.in, Options{}); got != c.want {
 			t.Errorf("inline(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
@@ -140,7 +140,7 @@ func TestInline_リンクのスキームを絞る(t *testing.T) {
 		{"[ノート](docs/notes/a.md)", `<a href="docs/notes/a.md" target="_blank" rel="noopener">ノート</a>`},
 	}
 	for _, c := range cases {
-		if got := inline(c.in); got != c.want {
+		if got := inline(c.in, Options{}); got != c.want {
 			t.Errorf("inline(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
@@ -168,7 +168,7 @@ func TestInline_画像(t *testing.T) {
 		{"前 ![図](a.png) 後 [b](c.md)", `前 <img src="a.png" alt="図"> 後 <a href="c.md" target="_blank" rel="noopener">b</a>`},
 	}
 	for _, c := range cases {
-		if got := inline(c.in); got != c.want {
+		if got := inline(c.in, Options{}); got != c.want {
 			t.Errorf("inline(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
@@ -185,7 +185,7 @@ func TestInline_Windowsのパスをリンクに出す(t *testing.T) {
 		"[隣](docs/x.md)":          `<a href="docs/x.md" target="_blank" rel="noopener">隣</a>`, // 相対はそのまま
 	}
 	for in, want := range cases {
-		if got := inline(in); got != want {
+		if got := inline(in, Options{}); got != want {
 			t.Errorf("inline(%q) = %q, want %q", in, got, want)
 		}
 	}
@@ -227,5 +227,47 @@ func TestPage_NoExternalLoads(t *testing.T) {
 	}
 	if !strings.Contains(p, `<input type="checkbox" checked>`) || strings.Contains(p, "disabled") {
 		t.Error("Page のチェックボックスはクリック可能(disabled 無し)であるべき")
+	}
+}
+
+// TestLocalURLBaseDir は Options.BaseDir を渡したときの相対パスの解決を見る。
+// HTML は md と別のディレクトリ(一時置き場)に書かれるので、相対のままでは画像もリンクも開けない
+// (2026-09-12 の再現: `![図](./fig.svg)` が src="./fig.svg" のまま出ていた)。
+func TestLocalURLBaseDir(t *testing.T) {
+	const base = "/base/docs"
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"./fig.svg", "file:///base/docs/fig.svg"},
+		{"fig.svg", "file:///base/docs/fig.svg"},
+		{"img/a b.png", "file:///base/docs/img/a%20b.png"}, // 空白は従来どおり % 表記
+		{"../assets/a.png", "file:///base/assets/a.png"},
+		{"other.md#見出し", "file:///base/docs/other.md#見出し"}, // 断片は付けたまま解決する
+		{"#見出し", "#見出し"},                                   // 同一文書内リンクは触らない
+		{"/abs/a.png", "file:///abs/a.png"},                // 絶対パスは従来どおり
+		{"https://example.com/a.png", "https://example.com/a.png"},
+	}
+	for _, c := range cases {
+		if got := localURL(c.in, Options{BaseDir: base}); got != c.want {
+			t.Errorf("localURL(%q, base) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	// BaseDir が空なら従来どおり素のまま(既存の呼び出しを変えない)
+	if got := localURL("./fig.svg", Options{}); got != "./fig.svg" {
+		t.Errorf("localURL(%q, 空) = %q, want %q", "./fig.svg", got, "./fig.svg")
+	}
+}
+
+// TestBodyWithBaseDir は画像とリンクの両方が BaseDir で解決されることを見る。
+func TestBodyWithBaseDir(t *testing.T) {
+	got := BodyWith("![図](./fig.svg) と [メモ](notes/a.md)", Options{BaseDir: "/base"})
+	want := `<p><img src="file:///base/fig.svg" alt="図"> と ` +
+		`<a href="file:///base/notes/a.md" target="_blank" rel="noopener">メモ</a></p>`
+	if got != want {
+		t.Errorf("BodyWith() = %q, want %q", got, want)
+	}
+	if plain := Body("![図](./fig.svg)"); plain != `<p><img src="./fig.svg" alt="図"></p>` {
+		t.Errorf("Body() = %q（BaseDir 無しでは変えない）", plain)
 	}
 }

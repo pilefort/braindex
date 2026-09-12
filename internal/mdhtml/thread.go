@@ -84,7 +84,11 @@ func Prepend(md, fallbackTitle string, e Entry) string {
 }
 
 // ThreadPage はスレッド .md を自己完結 HTML にする(CSS・JS 埋め込み・外部読み込み無し)。
-func ThreadPage(md, title string) string {
+func ThreadPage(md, title string) string { return ThreadPageWith(md, title, Options{}) }
+
+// ThreadPageWith は ThreadPage に変換の設定を渡す形。BaseDir は今回渡された md の置き場所なので、
+// 別のディレクトリで書かれた古いエントリの相対パスまでは正しく解決しない(同じ場所で続ける使い方を想定する)。
+func ThreadPageWith(md, title string, opt Options) string {
 	t, entries := ParseThread(md)
 	if title == "" {
 		title = t
@@ -115,7 +119,7 @@ func ThreadPage(md, title string) string {
 			b.WriteString(`<span class="ent-q">` + escapeText(q) + `</span>`)
 		}
 		b.WriteString(`<span class="ent-n">新着</span></summary>` + "\n")
-		b.WriteString(`<div class="ent-b">` + renderBody(e.Body) + "</div>\n</details>\n")
+		b.WriteString(`<div class="ent-b">` + renderBody(e.Body, opt) + "</div>\n</details>\n")
 	}
 	return shell(title, b.String(), threadJS)
 }

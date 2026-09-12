@@ -103,7 +103,15 @@ func runAnswer(args []string, stdout, stderr io.Writer) int {
 	}
 	base := strings.TrimSuffix(filepath.Base(src), filepath.Ext(src))
 	title := mdhtml.ExtractTitle(md, filepath.Base(src))
-	page := mdhtml.Page
+	// md に書かれた相対パス(画像・リンク)は md の置き場所から解決する。HTML は一時置き場に書かれるので、
+	// 相対のままでは開けない(2026-09-12 実測)。
+	srcDir := filepath.Dir(src)
+	if abs, aerr := filepath.Abs(srcDir); aerr == nil {
+		srcDir = abs
+	}
+	opt := mdhtml.Options{BaseDir: srcDir}
+	page := func(md, title string) string { return mdhtml.PageWith(md, title, opt) }
+	threadPageFn := func(md, title string) string { return mdhtml.ThreadPageWith(md, title, opt) }
 	if topic != "" {
 		name, nerr := threadName(topic)
 		if nerr != nil {
@@ -117,11 +125,11 @@ func runAnswer(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		fmt.Fprintf(stdout, "braindex answer: 足した %s\n", threadPath)
-		md, base, page = thread, name, mdhtml.ThreadPage
+		md, base, page = thread, name, threadPageFn
 		title, _ = mdhtml.ParseThread(thread)
 	} else if mdhtml.IsThread(md) {
 		// スレッドの .md をそのまま渡されたら、エントリを足さずに描き直す(表示だけ作り直したいとき)。
-		page = mdhtml.ThreadPage
+		page = threadPageFn
 		if t, _ := mdhtml.ParseThread(md); t != "" {
 			title = t
 		}
