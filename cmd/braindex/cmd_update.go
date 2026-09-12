@@ -29,7 +29,7 @@ func init() {
 // 判定は台帳(.braindex/template.json)のハッシュで行う。配った版のままなら黙って今の版にし、利用者が
 // 編集していれば現物を残して隣に .new を置く。台帳が無い hub は、既存ファイルを全部「編集済み」として扱う。
 // 追従するのは台帳に記録された機能(init -add で足したもの)の分だけ。記録の無い hub は存在するファイルから
-// 機能を推定し、その旨を 1 行出す(決定 2026-09-05)。
+// 機能を推定し、その旨を 1 行出す(決定 2026-09-05 → manual/init-update.md「決めたこと」)。
 //
 // 終了コード: 0 要対応なし / 1 失敗 / 2 要対応あり(.new を置いた・索引生成が警告を出した)。
 func runUpdate(args []string, stdout, stderr io.Writer) int {
@@ -42,7 +42,7 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "使い方: braindex update [-repo] [-dry-run] [-force] [dir]")
 		fmt.Fprintln(stderr, "  dir(既定: カレントディレクトリ)の雛形由来ファイルを、今の braindex の版に追いつかせ、")
 		fmt.Fprintln(stderr, "  続けて索引を再生成する。利用者が編集したファイルは上書きせず、隣に .new を置く。")
-		fmt.Fprintln(stderr, "  -force でも braindex.json と .gitignore は上書きせず、無い節・行を足すだけ(root や利用者が足した行を消さない。決定 2026-09-05)。")
+		fmt.Fprintln(stderr, "  -force でも braindex.json と .gitignore は上書きせず、無い節・行を足すだけ(root や利用者が足した行を消さない。決定 2026-09-05 → manual/init-update.md「決めたこと」)。")
 		fmt.Fprintln(stderr, "  終了コード: 0 要対応なし / 1 失敗 / 2 要対応あり(.new を置いた・索引生成が警告)")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
@@ -133,7 +133,7 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "  .new は今の版。中身を見て、要るところだけ自分のファイルに取り込む(取り込んだら .new は消してよい)")
 	}
 
-	// 設定が変わるときの版差の注意(決定 2026-09-04「未知キーはエラーのまま据え置き、update が警告する」)。
+	// 設定が変わるときの版差の注意(決定 2026-09-04「未知キーはエラーのまま据え置き、update が警告する」 → manual/init-update.md「決めたこと」)。
 	// 新しい節の入った braindex.json を古い版の braindex で読むと、未知キーのエラーで全コマンドが止まる。
 	if touchesConfig(res) {
 		fmt.Fprintln(stderr, "braindex update: 警告: braindex.json が変わる。新しい節を取り込むと、"+

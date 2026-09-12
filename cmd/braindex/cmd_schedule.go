@@ -180,7 +180,7 @@ func jobNames(jobs []schedule.Job) []string {
 // 終了コード 1 になるので、その出力(schedule.IsNoCrontab)だけ「空の crontab」として扱う。
 //
 // それ以外の失敗(権限・一時的な失敗)まで空と畳むと、読みが失敗しつつ書きが通る状況で、
-// 書き戻し(crontab -)が利用者の crontab を全消しする。決定 2026-09-03(A')。
+// 書き戻し(crontab -)が利用者の crontab を全消しする。決定 2026-09-03(A') → manual/schedule.md「決めたこと」。
 func readCrontab() (string, error) {
 	out, err := scheduleRunner.Run(schedule.ReadCrontab())
 	if err == nil {

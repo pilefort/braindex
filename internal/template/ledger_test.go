@@ -7,7 +7,7 @@ import (
 )
 
 // Install は展開したファイルのハッシュを台帳に記録する。update が「利用者が編集したか」を
-// 見分ける材料になる(決定 2026-09-04)。
+// 見分ける材料になる(決定 2026-09-04 → manual/init-update.md「決めたこと」)。
 func TestInstall_WritesLedger(t *testing.T) {
 	dst := t.TempDir()
 	res, err := Install(dst, KindHub)

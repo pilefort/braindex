@@ -42,7 +42,7 @@ func TestArchiveCandidates(t *testing.T) {
 	if len(got) != 1 || len(got[0].Entries) != 1 || got[0].Entries[0].Path != "repo-both/docs/notes/misc/20260705_table.md" {
 		t.Errorf("閾値ちょうど: %+v", got)
 	}
-	// 初回(前回の索引が無い)は全件が「追加」= touched なので、閾値を未来にしても候補は出ない(決定 2026-09-02)
+	// 初回(前回の索引が無い)は全件が「追加」= touched なので、閾値を未来にしても候補は出ない(決定 2026-09-02 → manual/review-lint.md「決めたこと」)
 	d, err := DiffIndex(nil, afterCatalog(t), nil)
 	if err != nil {
 		t.Fatal(err)

@@ -56,7 +56,7 @@ func has(ss []string, s string) bool {
 }
 
 // 空の hub(台帳なし・ファイルなし)では、推定できる機能が無いので段 0(core)のファイルだけ作る
-// (足していない機能のファイルは作らない・決定 2026-09-05)。
+// (足していない機能のファイルは作らない・決定 2026-09-05 → manual/init-update.md「決めたこと」)。
 func TestUpdate_CreatesMissing(t *testing.T) {
 	dst := t.TempDir()
 	files, err := FeatureFiles(nil)
@@ -154,7 +154,7 @@ func TestUpdate_KeepsEditedAndWritesNew(t *testing.T) {
 	}
 }
 
-// 台帳が無い hub は、既存ファイルを全部「編集済み」として扱う(決定 2026-09-04)。
+// 台帳が無い hub は、既存ファイルを全部「編集済み」として扱う(決定 2026-09-04 → manual/init-update.md「決めたこと」)。
 func TestUpdate_NoLedgerTreatsExistingAsEdited(t *testing.T) {
 	dst := t.TempDir()
 	f := sampleFile(t)

@@ -256,7 +256,7 @@ func TestUpdate_BrokenConfigErrorHasPathOnce(t *testing.T) {
 	}
 }
 
-// -force でも braindex.json と .gitignore は節・行を足すだけで、利用者の root と行は消えない(決定 2026-09-05)。
+// -force でも braindex.json と .gitignore は節・行を足すだけで、利用者の root と行は消えない(決定 2026-09-05 → manual/init-update.md「決めたこと」)。
 func TestUpdate_ForceKeepsUserConfigAndGitignoreLines(t *testing.T) {
 	dst := t.TempDir()
 	if _, err := InstallFeatures(dst, []Feature{FeatureNews}); err != nil {

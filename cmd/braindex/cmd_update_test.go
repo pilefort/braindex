@@ -125,7 +125,7 @@ func TestUpdate_Repo(t *testing.T) {
 	}
 }
 
-// 設定が変わるときは、古い版の braindex が読めなくなることを警告する(決定 2026-09-04)。
+// 設定が変わるときは、古い版の braindex が読めなくなることを警告する(決定 2026-09-04 → manual/init-update.md「決めたこと」)。
 func TestUpdate_WarnsOnConfigChange(t *testing.T) {
 	hub := initHub(t)
 	cfg := filepath.Join(hub, "braindex.json")
@@ -245,7 +245,7 @@ func TestUpdate_MergedConfigLineSaysAdded(t *testing.T) {
 	}
 }
 
-// root を直しただけ(節も中のキーも揃っている)の hub は、update しても .new を置かず exit 0(決定 2026-09-05)。
+// root を直しただけ(節も中のキーも揃っている)の hub は、update しても .new を置かず exit 0(決定 2026-09-05 → manual/init-update.md「決めたこと」)。
 // -force でも root は消えない。
 func TestUpdate_EditedRootOnlyIsQuiet(t *testing.T) {
 	hub := filepath.Join(t.TempDir(), "hub")

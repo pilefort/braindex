@@ -156,7 +156,7 @@ func isRelativeLocal(p string) bool {
 // file と解釈するかはブラウザと OS 次第なので明示する。
 // opt.BaseDir があれば相対パスもそこからの絶対パスにする。HTML が md と別のディレクトリに書かれる以上、
 // 相対のままでは解決できない(2026-09-12 実測: `![図](./fig.svg)` が開けなかった)。BaseDir が空なら従来どおりそのまま。
-// Markdown 側で file:// と書いたものは、リンクと同じく落とす(決定 2026-09-03。パスで書けばよい)。
+// Markdown 側で file:// と書いたものは、リンクと同じく落とす(決定 2026-09-03。パスで書けばよい → manual/design.md「決めたこと」)。
 func localURL(p string, opt Options) string {
 	p = strings.TrimSpace(p)
 	if opt.BaseDir != "" && isRelativeLocal(p) {

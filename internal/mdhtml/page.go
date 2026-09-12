@@ -98,7 +98,7 @@ const js = `(function(){var t=document.getElementById('t');` +
 //     `<details open>` にも toggle を投げるので、toggle で記録すると読み込んだ瞬間に全エントリが
 //     「操作済み」になり、「新着」が一度も出なかった(2026-09-06 実測 → docs/notes/common/details-toggle-on-load.md)。
 //  2. 全部開く / 全部畳む のボタン。
-//  3. 自己リロード: 常駐サーバを置かない代わりに 12 秒ごとに自分を読み直す(決定 2026-09-05)。
+//  3. 自己リロード: 常駐サーバを置かない代わりに 12 秒ごとに自分を読み直す(決定 2026-09-05 → manual/tools.md「決めたこと」)。
 //     隠れているタブ・文字を選択中は止め、スクロール位置は復元する。ボタンで止められる。
 //     入力欄を持つ HTML(approvals)には入れない。
 const threadJS = `

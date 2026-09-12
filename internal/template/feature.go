@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Feature は hub に段階的に足せる機能の単位(決定 2026-09-05「init は段 0 だけ配り、機能は
+// Feature は hub に段階的に足せる機能の単位(決定 2026-09-05「init は段 0 だけ配り、機能は → manual/init-update.md「決めたこと」
 // init -add <機能> で 1 つずつ足す」)。core は常に入り、他は利用者が選んで足す。
 // 機能ごとに「配るファイル」「braindex.json に足す節」「依存する機能」を持つ。
 type Feature string

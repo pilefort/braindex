@@ -290,7 +290,7 @@ func (r *reader) line(line []byte) {
 			return // tool_result だけの行
 		}
 		// isMeta は Skill 起動時の文脈・画像の貼り付け・別セッションからのメッセージなど、人が打っていない行
-		// (2026-09-03 に実ログで確認。除外は同日の決定)
+		// (2026-09-03 に実ログで確認。除外は同日の決定 → manual/retro.md「決めたこと」)
 		if o.IsMeta || ExcludeReason(text) != "" {
 			return
 		}
@@ -397,7 +397,7 @@ func stripReminders(text string) string {
 //	command           — スラッシュコマンド(<command-name>)とその出力(<local-command-...>)
 //	continuation      — 文脈が尽きたときの継続要約
 //	interrupt         — ユーザーによる中断
-//	task-notification — サブエージェントの完了通知(2026-09-03 追加)
+//	task-notification — サブエージェントの完了通知(2026-09-03 追加 → manual/retro.md「決めたこと」)
 //
 // 行の属性による除外(isSidechain・isMeta・tool_result だけの行)は Sessions が行う。
 func ExcludeReason(text string) string {

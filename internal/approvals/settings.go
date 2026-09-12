@@ -21,7 +21,7 @@ const (
 // WithDefaults は空の項目を既定値で埋めた複製を返す。
 //
 // TimeoutSec をポインタにしないのは、0 が「無期限」で既定と同じ意味だから
-// (news.show_min_score は 0 が「全件表示」で既定 2 と違う意味なのでポインタにした・決定 2026-09-03)。
+// (news.show_min_score は 0 が「全件表示」で既定 2 と違う意味なのでポインタにした・決定 2026-09-03 → manual/news.md「決めたこと」)。
 func (s Settings) WithDefaults() Settings {
 	if s.File == "" {
 		s.File = DefaultFile
