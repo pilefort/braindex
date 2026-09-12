@@ -179,6 +179,40 @@ func TestCheckNote_UndefinedTerm(t *testing.T) {
 	}
 }
 
+// 語の途中で当たる誤検出を落とす。「超えたぶん」の「たぶん」(超え+た+ぶん)・「含まれる」の「まれ」
+// (含+ま+れる)は活用語尾に紛れた偶然の一致で、「たぶん正しい」「まれに失敗する」のような副詞としての
+// 本物の用法は今までどおり拾う(2026-09-12 決定: 見逃しより誤検出を避ける方に倒す)。
+func TestCheckNote_WordBoundary(t *testing.T) {
+	falsePositives := []struct {
+		name    string
+		content string
+	}{
+		{"「たぶん」は「超えたぶん」の活用語尾+「ぶん」では当たらない", "2026-08-12 予算を超えたぶんは来月に回す。"},
+		{"「まれ」は「含まれる」の活用語尾では当たらない", "2026-08-12 この設定には既定値が含まれる。"},
+	}
+	for _, c := range falsePositives {
+		t.Run(c.name, func(t *testing.T) {
+			ws := note(t, c.content)
+			if has(ws, KindBareHedge) || has(ws, KindVagueQuantifier) {
+				t.Errorf("語の途中なのに誤検出した: %v", ws)
+			}
+		})
+	}
+
+	t.Run("「たぶん」は助詞の後の副詞用法を拾う", func(t *testing.T) {
+		ws := note(t, "2026-08-12 この結果がたぶん正しい。")
+		if !tokens(ws, KindBareHedge)["たぶん"] {
+			t.Errorf("〔たぶん〕 が拾えていない: %v", kinds(ws))
+		}
+	})
+	t.Run("「まれ」は「まれに」の副詞用法を拾う", func(t *testing.T) {
+		ws := note(t, "2026-08-12 この処理はまれに失敗する。")
+		if !tokens(ws, KindVagueQuantifier)["まれ"] {
+			t.Errorf("〔まれ〕 が拾えていない: %v", kinds(ws))
+		}
+	})
+}
+
 // 指摘なしのノート(結論 → 理由 → 根拠・日付つき)。
 func TestCheckNote_Clean(t *testing.T) {
 	clean := `# 索引の生成は 1 秒で終わる
