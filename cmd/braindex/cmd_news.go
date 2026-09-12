@@ -99,7 +99,7 @@ type newsFetchOptions struct {
 
 // runNewsFetch は braindex news fetch を実行する。
 //
-// 終了コード: 0 成功 / 1 失敗(出力先が既にある・別の braindex news が動いている・全フィードの取得失敗を含む。何も書かない) /
+// 終了コード: 0 成功 / 1 失敗(出力先が既にある・-out と -stdout の同時指定・別の braindex news が動いている・全フィードの取得失敗を含む。何も書かない) /
 // 2 警告つきで完了(一部のフィードが取得できなかった・採点の出典(索引・セッションの置き場)が無かった・
 // 選別や統計を取り込めなかった・残留したロックを外した・別の日の未完了が残っている)。
 //
@@ -113,8 +113,8 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.date, "date", "", "今日として使う日付 YYYY-MM-DD(既定: 実行日)。出力ファイル名と既読の日付に使う")
 	fs.StringVar(&o.layer, "layer", news.LayerAll, "取得するフィードの層(feeds.json の layer)。all は全件")
 	fs.BoolVar(&o.replay, "replay", false, "既読を無視して全記事を出し、既読も更新しない(見出しの再生成用)")
-	fs.BoolVar(&o.stdout, "stdout", false, "Markdown をファイルに書かず標準出力に出す(進捗は stderr。既読は更新する。HTML は作らず開かない)")
-	fs.StringVar(&o.out, "out", "", "Markdown の出力先(既定: 設定 news.dir の digest_<日付>_<層>.md。既にあれば書かずに終了コード 1)。HTML は拡張子を .html にした同名")
+	fs.BoolVar(&o.stdout, "stdout", false, "Markdown をファイルに書かず標準出力に出す(進捗は stderr。既読は更新する。HTML は作らず開かない)。-out とは同時に指定できない")
+	fs.StringVar(&o.out, "out", "", "Markdown の出力先(既定: 設定 news.dir の digest_<日付>_<層>.md。既にあれば書かずに終了コード 1)。HTML は拡張子を .html にした同名。-stdout とは同時に指定できない")
 	fs.StringVar(&o.inbox, "inbox", "", "選別 JSON を探すディレクトリ(既定: ~/Downloads。<news.dir>/inbox はいつも見る)")
 	fs.BoolVar(&o.noOpen, "no-open", false, "HTML を既定ブラウザで開かない(定期実行やテスト用)")
 	fs.BoolVar(&o.noScore, "no-score", false, "関心プロファイルで採点しない(全件を主要表示・出典を読まない)")
@@ -133,7 +133,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "  結果は news/.llm_cache.json に覚えて同じ記事を 2 回聞かない。CLI が無い・失敗した分は語の点のまま(警告・終了コード 2)。")
 		fmt.Fprintln(stderr, "  途中で止まった回は news/.pending.json に記録が残り、同じ日をもう一度実行すると書き直して既読まで進める(完了した回は「既にある」で止まる)。")
 		fmt.Fprintln(stderr, "  並行起動は news/.lock.json で片方だけにする(1 時間より古い残留は外して進む)。")
-		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗(出力先が既にある・別の braindex news が動いている・全フィードの取得失敗。何も書かない) / 2 警告つきで完了(一部のフィードが取得できなかった・")
+		fmt.Fprintln(stderr, "  終了コード: 0 成功 / 1 失敗(出力先が既にある・-out と -stdout の同時指定・別の braindex news が動いている・全フィードの取得失敗。何も書かない) / 2 警告つきで完了(一部のフィードが取得できなかった・")
 		fmt.Fprintln(stderr, "  採点の出典(索引・セッションの置き場)が無かった・選別や統計を取り込めなかった・残留したロックを外した・別の日の未完了が残っている)")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "フラグ:")
@@ -153,6 +153,10 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	fail := func(err error) int {
 		fmt.Fprintln(stderr, "braindex news fetch:", err)
 		return 1
+	}
+	if o.stdout && o.out != "" {
+		// -stdout はファイルに書かないので -out は使われない。黙って無視せず、フラグの誤りとして拒否する
+		return fail(errors.New("-out と -stdout は同時に指定できない(-stdout はファイルに書かないので -out は使われない)"))
 	}
 
 	cfgPath := o.config

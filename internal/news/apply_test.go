@@ -108,6 +108,30 @@ func TestIngest_keepに載せるのはhttpのみ(t *testing.T) {
 	}
 }
 
+// appendKeeps は Keep.Link が空(または安全でない)の記事を黙って落とすので、「残す N 件」の
+// メッセージは実際に足した件数(fresh)を数えなければならない。sel.Keeps の件数をそのまま数えると
+// 落ちた分も含んでしまい、件数が食い違う。
+func TestIngest_appendKeepsの件数は実際に足した数(t *testing.T) {
+	newsDir := filepath.Join(t.TempDir(), "news")
+	inbox := filepath.Join(newsDir, "inbox")
+	os.MkdirAll(inbox, 0o755)
+	keeps := `{"id": "a", "title": "リンク無し", "link": "", "feed": "F1"},` +
+		`{"id": "b", "title": "危ない", "link": "javascript:alert(1)", "feed": "F1"},` +
+		`{"id": "c", "title": "普通", "link": "https://x/ok", "feed": "F1"}`
+	os.WriteFile(filepath.Join(inbox, "braindex-news-selection_2026-08-15_daily_1.json"),
+		[]byte(selectionJSON("2026-08-15", "daily", keeps, `"F1": {"shown": 3, "kept": 3}`)), 0o644)
+
+	msgs, err := Ingest(newsDir, []string{inbox}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// sel.Keeps は 3 件だが、リンクが無い・安全でないの 2 件を落とすので実際に足したのは 1 件
+	want := "取り込み: braindex-news-selection_2026-08-15_daily_1.json（残す 1 件）"
+	if len(msgs) != 1 || msgs[0] != want {
+		t.Errorf("msgs: %q want [%q]", msgs, want)
+	}
+}
+
 func TestIngest(t *testing.T) {
 	newsDir := filepath.Join(t.TempDir(), "news")
 	inbox := filepath.Join(newsDir, "inbox")
@@ -168,6 +192,35 @@ func TestIngest(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(empty, StatsFile)); err == nil {
 		t.Error("空でも統計ファイルを作った")
+	}
+}
+
+// 置き場をまたぐと、dirs の順(<news.dir>/inbox → -inbox)が名前順より先に効いてはいけない。
+// dirA(dirs の 1 番目)に基底名が後になるファイル(_9)、dirB(2 番目)に先になるファイル(_1)を置く。
+// 名前順(全体で並べ替え)なら _1 → _9 の順で処理され、後勝ちで _9 の統計が残る。
+// dirs の順のまま連結すると _9 → _1 の順になり、_1 が「後勝ち」で残ってしまう(バグ)。
+func TestIngest_置き場をまたいでも名前順(t *testing.T) {
+	newsDir := filepath.Join(t.TempDir(), "news")
+	dirA := filepath.Join(newsDir, "inbox")
+	dirB := t.TempDir()
+	os.MkdirAll(dirA, 0o755)
+
+	keeps := `{"id": "a", "title": "記事", "link": "https://x/a", "feed": "F1"}`
+	os.WriteFile(filepath.Join(dirA, "braindex-news-selection_2026-08-15_daily_9.json"),
+		[]byte(selectionJSON("2026-08-15", "daily", keeps, `"F1": {"shown": 9, "kept": 9}`)), 0o644)
+	os.WriteFile(filepath.Join(dirB, "braindex-news-selection_2026-08-15_daily_1.json"),
+		[]byte(selectionJSON("2026-08-15", "daily", keeps, `"F1": {"shown": 1, "kept": 1}`)), 0o644)
+
+	if _, err := Ingest(newsDir, []string{dirA, dirB}, nil); err != nil {
+		t.Fatal(err)
+	}
+	st, err := LoadStats(filepath.Join(newsDir, StatsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 名前順なら _1 が先・_9 が後に処理され、後勝ちで _9(kept=9) が残る
+	if got := st.Digests["2026-08-15_daily"]["F1"].Kept; got != 9 {
+		t.Errorf("kept=%d want 9(名前順でなく dirs の順で処理されている)", got)
 	}
 }
 

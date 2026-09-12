@@ -50,7 +50,10 @@ func Words(text string) []string {
 	for _, m := range latinRe.FindAllString(text, -1) {
 		m = strings.Trim(m, "_-")
 		lower := strings.ToLower(m)
-		if n := utf8.RuneCountInString(m); (n < minLatin && !shortLatin[lower]) || len(m) > maxLatin {
+		// 下限・上限とも文字数(utf8.RuneCountInString)に揃える。latinRe は ASCII しか拾わないので
+		// 文字数とバイト数は常に一致し、揃えても実際に拾う語は変わらない
+		// (TestWords_ラテン語のバイト数と文字数は一致する で確認済み)。
+		if n := utf8.RuneCountInString(m); (n < minLatin && !shortLatin[lower]) || n > maxLatin {
 			continue
 		}
 		add(lower)
@@ -94,7 +97,9 @@ func isKatakana(r rune) bool {
 	if r == '・' {
 		return false
 	}
-	return (r >= 0x30A0 && r <= 0x30FF) || r == 'ー'
+	// 長音(U+30FC)もこの範囲(0x30A0〜0x30FF)に入るので、別立ての判定は要らない
+	// (#42 と #73 で二度指摘された冗長な分岐。TestIsKatakana_長音は範囲判定だけでtrueになる で確認済み)。
+	return r >= 0x30A0 && r <= 0x30FF
 }
 
 var urlRe = regexp.MustCompile(`https?://\S+`)

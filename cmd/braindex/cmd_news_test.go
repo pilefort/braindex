@@ -116,11 +116,26 @@ func TestNewsFetch_Open(t *testing.T) {
 
 	// 開けない: 警告して 2
 	openInBrowser = func(string) error { return errors.New("ブラウザで開けない: なし") }
+	so.Reset()
 	se.Reset()
 	out3 := filepath.Join(hub, "news", "third.md")
 	code = dispatch([]string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-08-15", "-layer", "weekly", "-no-score", "-replay", "-out", out3}, &so, &se)
 	if code != 2 || !strings.Contains(se.String(), "警告: ブラウザで開けない") {
 		t.Errorf("開けない: exit=%d %s", code, se.String())
+	}
+}
+
+// -stdout はファイルに書かないので -out は使われない。黙って無視せず、フラグの誤り(終了コード 1)にする。
+func TestNewsFetch_OutとStdoutの同時指定は拒否(t *testing.T) {
+	hub, _ := newsHub(t)
+	out := filepath.Join(hub, "news", "mine.md")
+	code, so, se := newsFetch(t, hub, "-layer", "weekly", "-stdout", "-out", out)
+	if code != 1 {
+		t.Fatalf("exit=%d want 1\n%s%s", code, so, se)
+	}
+	mustContain(t, "stderr", se, "-out", "-stdout")
+	if _, err := os.Stat(out); err == nil {
+		t.Error("-out が無視されずファイルを書いてしまった")
 	}
 }
 

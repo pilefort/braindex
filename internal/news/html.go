@@ -205,9 +205,11 @@ func RenderHTML(results []Result, o DigestOptions) []byte {
 	return []byte(out)
 }
 
-func capped(es []feed.Entry, cap int) []feed.Entry {
-	if cap > 0 && len(es) > cap {
-		return es[:cap]
+// capped は es を limit 件までに切る(limit <= 0 なら切らない)。
+// 引数名は組み込みの cap を隠さないよう limit にする。
+func capped(es []feed.Entry, limit int) []feed.Entry {
+	if limit > 0 && len(es) > limit {
+		return es[:limit]
 	}
 	return es
 }
