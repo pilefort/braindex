@@ -381,13 +381,6 @@ func runRetroExtract(args []string, stdout, stderr io.Writer) int {
 		Loc:         localLoc,
 		Home:        env.home,
 	})
-	// 前回の出力を消してから書く(出力先が常に今回の窓だけになる。決定 2026-09-03 → manual/retro.md「決めたこと」)。消すのは自分が書く sessions/ と index.tsv だけ
-	if err := os.RemoveAll(filepath.Join(outDir, "sessions")); err != nil {
-		return fail(err)
-	}
-	if err := os.Remove(filepath.Join(outDir, "index.tsv")); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fail(err)
-	}
 	if err := writeExtractOutput(outDir, res); err != nil {
 		return fail(err)
 	}
@@ -399,16 +392,36 @@ func runRetroExtract(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// writeExtractOutput はダイジェストの各ファイルと index.tsv を outDir に書く(置き場が無ければ作る)。
-// 1 ファイルずつ書き切ってから置き換える(fsutil.WriteAtomic)ので、途中で失敗しても半端なファイルは残らない。
-// index.tsv を次に読むのはレトロスペクティブの手順(file 列を辿ってダイジェストを開く)で、
-// 半端な索引は黙って途中までしか辿れない(設計レビュー 2026-09-06 M14)。
-// 前回の出力を先に消す順序(消してから失敗すると「失敗なら何も書かない」にならない)はここでは扱わない。
-// 権限は本人だけに絞る(0o600/0o700)。ダイジェストには会話の本文が入るので、共有の /tmp を持つ環境で
-// 同じマシンの他のユーザに読まれないようにする(決定 2026-09-12「一時置き場に書くファイルは 0o600、置き場は 0o700」)。
-func writeExtractOutput(outDir string, res retro.Result) error {
-	for _, f := range res.Files {
-		p := filepath.Join(outDir, filepath.FromSlash(f.RelPath))
+// writeExtractOutput は全件を一時保存してから旧ファイルを退避し、今回分を配置する。
+// 配置に失敗したら旧ファイルを戻す。旧ファイルの削除は配置が全件成功した後だけ行う。
+// 一時ファイルも本人だけが読める権限にする。
+func writeExtractOutput(outDir string, res retro.Result) (retErr error) {
+	if err := os.MkdirAll(outDir, 0o700); err != nil {
+		return err
+	}
+	stage, err := os.MkdirTemp(outDir, ".retro-")
+	if err != nil {
+		return err
+	}
+	preserve := false
+	defer func() {
+		if !preserve {
+			retErr = errors.Join(retErr, os.RemoveAll(stage))
+		}
+	}()
+	files := append([]retro.DigestFile(nil), res.Files...)
+	files = append(files, retro.DigestFile{RelPath: "index.tsv", Content: res.Index})
+	seen := map[string]bool{}
+	for _, f := range files {
+		rel := filepath.Clean(filepath.FromSlash(f.RelPath))
+		if !filepath.IsLocal(rel) || (rel != "index.tsv" && !strings.HasPrefix(rel, "sessions"+string(filepath.Separator))) {
+			return fmt.Errorf("不正な出力パス: %s", f.RelPath)
+		}
+		if seen[rel] {
+			return fmt.Errorf("出力パスが重複: %s", f.RelPath)
+		}
+		seen[rel] = true
+		p := filepath.Join(stage, "new", rel)
 		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 			return err
 		}
@@ -416,10 +429,73 @@ func writeExtractOutput(outDir string, res retro.Result) error {
 			return err
 		}
 	}
-	if err := os.MkdirAll(outDir, 0o700); err != nil {
+	// 前回だけに存在したダイジェストも退避する。無関係な出力先のファイルには触れない。
+	var old []string
+	err = filepath.WalkDir(filepath.Join(outDir, "sessions"), func(p string, d os.DirEntry, err error) error {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			rel, err := filepath.Rel(outDir, p)
+			if err != nil {
+				return err
+			}
+			old = append(old, rel)
+		}
+		return nil
+	})
+	if err != nil {
 		return err
 	}
-	return fsutil.WriteAtomic(filepath.Join(outDir, "index.tsv"), res.Index, 0o600)
+	if info, err := os.Lstat(filepath.Join(outDir, "index.tsv")); err == nil {
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("index.tsv が通常ファイルではない")
+		}
+		old = append(old, "index.tsv")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	var backed, installed []string
+	rollback := func(cause error) error {
+		var restoreErr error
+		for i := len(installed) - 1; i >= 0; i-- {
+			restoreErr = errors.Join(restoreErr, os.Remove(filepath.Join(outDir, installed[i])))
+		}
+		for i := len(backed) - 1; i >= 0; i-- {
+			rel := backed[i]
+			restoreErr = errors.Join(restoreErr, os.Rename(filepath.Join(stage, "old", rel), filepath.Join(outDir, rel)))
+		}
+		if restoreErr != nil {
+			preserve = true
+			return errors.Join(cause, fmt.Errorf("旧ファイルの復元に失敗。退避先 %s: %w", stage, restoreErr))
+		}
+		return cause
+	}
+	for _, rel := range old {
+		backup := filepath.Join(stage, "old", rel)
+		if err := os.MkdirAll(filepath.Dir(backup), 0o700); err != nil {
+			return rollback(err)
+		}
+		if err := os.Rename(filepath.Join(outDir, rel), backup); err != nil {
+			return rollback(err)
+		}
+		backed = append(backed, rel)
+	}
+	for _, f := range files {
+		rel := filepath.FromSlash(f.RelPath)
+		p := filepath.Join(outDir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			return rollback(err)
+		}
+		if err := os.Rename(filepath.Join(stage, "new", rel), p); err != nil {
+			return rollback(err)
+		}
+		installed = append(installed, rel)
+	}
+	return nil
 }
 
 // retroWindow は -since / -window-days から窓と表示用の見出しを決める(-since > -window-days > 全期間)。

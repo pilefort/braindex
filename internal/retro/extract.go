@@ -2,6 +2,7 @@ package retro
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"regexp"
 	"sort"
@@ -147,7 +148,13 @@ func digest(s sessions.Session, in Input, loc *time.Location, label string) (Dig
 	if utf8.RuneCountInString(sid) > 8 {
 		sid = string([]rune(sid)[:8])
 	}
-	rel := "sessions/" + safeName(proj) + "/" + fmtTime(s.Start, loc, "20060102_1504") + "_" + sid + ".md"
+	// 日本語などの ASCII 以外の文字は safeName で _ に潰れ、別のプロジェクトと同じ名前になりうる。そのときだけ短いハッシュで区別する。
+	// ASCII だけのパス(/・~ などを _ にするだけ)は、利用者が辿る出力の形を変えないためにそのままにする
+	projectDir := safeName(proj)
+	if hasNonASCII(proj) {
+		projectDir += "-" + shortHash(s.Project)
+	}
+	rel := "sessions/" + projectDir + "/" + fmtTime(s.Start, loc, "20060102_1504") + "_" + sid + ".md"
 	return DigestFile{
 		RelPath:     rel,
 		Content:     append(head.Bytes(), body.Bytes()...),
@@ -209,6 +216,22 @@ func addTool(tools []sessions.ToolUse, name string, n int) []sessions.ToolUse {
 }
 
 var unsafeRe = regexp.MustCompile(`[^\w.-]+`)
+
+// hasNonASCII は s に ASCII 以外の文字があるかを返す。
+func hasNonASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return true
+		}
+	}
+	return false
+}
+
+// shortHash は整形や切り詰め前の名前を区別するための固定長ハッシュ。
+func shortHash(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return fmt.Sprintf("%x", sum[:4])
+}
 
 // safeName はプロジェクト名をディレクトリ名にする(英数字・_・.・- 以外の並びを _ に潰す)。空なら "_"。
 func safeName(s string) string {
