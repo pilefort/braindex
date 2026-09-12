@@ -50,7 +50,10 @@ func Words(text string) []string {
 	for _, m := range latinRe.FindAllString(text, -1) {
 		m = strings.Trim(m, "_-")
 		lower := strings.ToLower(m)
-		if n := utf8.RuneCountInString(m); (n < minLatin && !shortLatin[lower]) || len(m) > maxLatin {
+		// 下限・上限とも文字数(utf8.RuneCountInString)に揃える。latinRe は ASCII しか拾わないので
+		// 文字数とバイト数は常に一致し、揃えても実際に拾う語は変わらない
+		// (TestWords_ラテン語のバイト数と文字数は一致する で確認済み)。
+		if n := utf8.RuneCountInString(m); (n < minLatin && !shortLatin[lower]) || n > maxLatin {
 			continue
 		}
 		add(lower)
