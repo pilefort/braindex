@@ -93,7 +93,8 @@ func Install(dst string, kind Kind) (Result, error) {
 // InstallFeatures は hub に feats の配布物を足す。依存(review → conventions)と core は自動で足す。
 // braindex.json と .gitignore は既にあっても上書きせず、無い節・行だけ足して Merged に積む
 // (同じ機能を 2 回足しても安全・利用者の編集は残る)。足した機能は台帳の Features に記録する。
-func InstallFeatures(dst string, feats []Feature) (Result, error) {
+// enableNewsLLM を渡すと、news 節を新設する場合だけその結果で LLM を有効にする。
+func InstallFeatures(dst string, feats []Feature, enableNewsLLM ...func() bool) (Result, error) {
 	if err := checkFeatures(feats); err != nil {
 		return Result{}, err
 	}
@@ -102,10 +103,10 @@ func InstallFeatures(dst string, feats []Feature) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	return install(dst, KindHub, files, feats)
+	return install(dst, KindHub, files, feats, enableNewsLLM...)
 }
 
-func install(dst string, kind Kind, files []File, feats []Feature) (Result, error) {
+func install(dst string, kind Kind, files []File, feats []Feature, enableNewsLLM ...func() bool) (Result, error) {
 	led, _, err := LoadLedger(dst)
 	if err != nil {
 		return Result{}, err
@@ -134,7 +135,7 @@ func install(dst string, kind Kind, files []File, feats []Feature) (Result, erro
 		if err == nil {
 			// 既存。braindex.json と .gitignore だけは無い節・行を足す。台帳は「配った版のまま」だった
 			// ときだけ進める(利用者が編集した後に足した版を記録すると、update が編集を見分けられなくなる)
-			merged, changed, merr := mergeExisting(f.Path, cur, feats)
+			merged, changed, merr := mergeExisting(f.Path, cur, feats, enableNewsLLM...)
 			if merr != nil {
 				_ = SaveLedger(dst, led)
 				return res, merr // BuildConfig がパスを添える。ここで包むと "braindex.json: braindex.json: ..." になる
@@ -153,6 +154,12 @@ func install(dst string, kind Kind, files []File, feats []Feature) (Result, erro
 			}
 			continue
 		}
+		if f.Path == ConfigPath && kind == KindHub && len(enableNewsLLM) > 0 {
+			f.Content, _, err = BuildConfig(nil, feats, enableNewsLLM...)
+			if err != nil {
+				return res, err
+			}
+		}
 		if err := writeFile(target, f.Content); err != nil {
 			_ = SaveLedger(dst, led)
 			return res, err
@@ -168,13 +175,13 @@ func install(dst string, kind Kind, files []File, feats []Feature) (Result, erro
 
 // mergeExisting は既存ファイルに足すものがあるかを返す。braindex.json は feats の節、.gitignore は雛形の行。
 // それ以外のファイルは触らない(changed=false)。
-func mergeExisting(rel string, cur []byte, feats []Feature) ([]byte, bool, error) {
+func mergeExisting(rel string, cur []byte, feats []Feature, enableNewsLLM ...func() bool) ([]byte, bool, error) {
 	switch rel {
 	case ConfigPath:
 		if feats == nil {
 			return nil, false, nil
 		}
-		out, changed, err := BuildConfig(cur, feats)
+		out, changed, err := BuildConfig(cur, feats, enableNewsLLM...)
 		if err != nil {
 			return nil, false, err
 		}

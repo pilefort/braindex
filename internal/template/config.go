@@ -38,7 +38,8 @@ func configSections() (map[string]json.RawMessage, error) {
 // ときと「schedule 節を今回足した」ときだけで、既にある job は触らず、利用者が消した job を足し直すこともない
 // (入口の設計 2026-09-05「review は足したら加える」)。
 // feats は Resolve で core と依存を足してから使う(all もここで展開される)。
-func BuildConfig(existing []byte, feats []Feature) (out []byte, changed bool, err error) {
+// enableNewsLLM は init 用。news 節を新設するときだけ呼び、有効化するか決める。
+func BuildConfig(existing []byte, feats []Feature, enableNewsLLM ...func() bool) (out []byte, changed bool, err error) {
 	if err := checkFeatures(feats); err != nil {
 		return nil, false, err
 	}
@@ -68,6 +69,9 @@ func BuildConfig(existing []byte, feats []Feature) (out []byte, changed bool, er
 			}
 			if key == "schedule" {
 				v = []byte(`{"jobs": []}`) // job は下で、節のある機能の分だけ足す
+			}
+			if key == "news" && len(enableNewsLLM) > 0 && enableNewsLLM[0]() {
+				v = bytes.Replace(v, []byte(`"llm": "off"`), []byte(`"llm": "claude-cli"`), 1)
 			}
 			cur[key] = v
 			added[key] = true

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -48,7 +49,7 @@ func TestInit_Hub(t *testing.T) {
 	if code := dispatch([]string{"init", dir}, &so, &se); code != 0 {
 		t.Fatalf("2 回目 exit=%d want 0\nstderr=%s", code, se.String())
 	}
-	if !strings.Contains(so.String(), "保持(既存): README.md") || strings.Contains(so.String(), "作成: ") {
+	if !strings.Contains(so.String(), "保持(既存):") || strings.Contains(so.String(), "作成: ") {
 		t.Errorf("2 回目の出力が不正: %s", so.String())
 	}
 }
@@ -326,7 +327,7 @@ func TestInit_AddStepwise(t *testing.T) {
 		t.Fatalf("-add review exit=%d\n%s", code, se.String())
 	}
 	out := so.String()
-	for _, want := range []string{"依存として含めた機能: conventions", "追記(無い節・行を足した): braindex.json", "作成: docs/conventions.md", "作成: .claude/skills/braindex-review/SKILL.md", "保持(既存): README.md", "`braindex review`", "`braindex lint`"} {
+	for _, want := range []string{"依存として含めた機能: conventions", "追記(無い節・行を足した): braindex.json", "作成: docs/conventions.md", "作成: .claude/skills/braindex-review/SKILL.md", "保持(既存):", "`braindex review`", "`braindex lint`"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("-add review の stdout に %q が無い:\n%s", want, out)
 		}
@@ -450,4 +451,69 @@ func canonicalConfig(t *testing.T, b []byte) string {
 		t.Fatal(err)
 	}
 	return string(out)
+}
+
+// init を使う既存の fixture も実マシンの PATH に依存させない。
+func init() { initLookPath = func(string) (string, error) { return "", os.ErrNotExist } }
+
+func TestInitSummarizesSkipped(t *testing.T) {
+	dir := t.TempDir()
+	var out, errs bytes.Buffer
+	if runInit([]string{"-add", "news", dir}, &out, &errs) != 0 {
+		t.Fatal(errs.String())
+	}
+	count := strings.Count(out.String(), "作成:")
+	out.Reset()
+	if runInit([]string{"-add", "news", dir}, &out, &errs) != 0 {
+		t.Fatal(errs.String())
+	}
+	if strings.Count(out.String(), "保持(既存):") != 1 || !strings.Contains(out.String(), fmt.Sprintf("保持(既存): %d 件", count)) {
+		t.Fatal(out.String())
+	}
+}
+
+func TestInitNewsClaudeDetection(t *testing.T) {
+	old := initLookPath
+	defer func() { initLookPath = old }()
+	for _, available := range []bool{true, false} {
+		t.Run(fmt.Sprint(available), func(t *testing.T) {
+			initLookPath = func(name string) (string, error) {
+				if name != "claude" {
+					t.Fatal(name)
+				}
+				if available {
+					return "claude", nil
+				}
+				return "", os.ErrNotExist
+			}
+			dir := t.TempDir()
+			var out, errs bytes.Buffer
+			if runInit([]string{"-add", "news", dir}, &out, &errs) != 0 {
+				t.Fatal(errs.String())
+			}
+			path := filepath.Join(dir, "braindex.json")
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := `"llm": "off"`
+			if available {
+				want = `"llm": "claude-cli"`
+			}
+			if !bytes.Contains(before, []byte(want)) {
+				t.Fatal(string(before))
+			}
+			if !available && !strings.Contains(out.String(), "claude が見つからない") {
+				t.Fatal(out.String())
+			}
+			initLookPath = func(string) (string, error) { t.Fatal("existing news must not probe PATH"); return "", nil }
+			if runInit([]string{"-add", "news", dir}, &out, &errs) != 0 {
+				t.Fatal(errs.String())
+			}
+			after, _ := os.ReadFile(path)
+			if !bytes.Equal(before, after) {
+				t.Fatal("existing config changed")
+			}
+		})
+	}
 }
