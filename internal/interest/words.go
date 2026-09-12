@@ -94,7 +94,9 @@ func isKatakana(r rune) bool {
 	if r == '・' {
 		return false
 	}
-	return (r >= 0x30A0 && r <= 0x30FF) || r == 'ー'
+	// 長音(U+30FC)もこの範囲(0x30A0〜0x30FF)に入るので、別立ての判定は要らない
+	// (#42 と #73 で二度指摘された冗長な分岐。TestIsKatakana_長音は範囲判定だけでtrueになる で確認済み)。
+	return r >= 0x30A0 && r <= 0x30FF
 }
 
 var urlRe = regexp.MustCompile(`https?://\S+`)
