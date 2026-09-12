@@ -183,10 +183,19 @@ func TestApprovalsApply_DecisionsWriteFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, p.Reply, sampleReply)
-	if err := os.Chmod(dec, 0o444); err != nil { // 読めるが書けない
+	// decisions.md は一時ファイルを作ってから置き換えるので、書けなくする方法が OS で違う。
+	// Unix はファイルが読み取り専用でも置き換えが通るので、置き場のディレクトリを書き込み不可にする。
+	// Windows はディレクトリの権限では止まらず、読み取り専用のファイルへの置き換えが失敗する。両方掛ける
+	if err := os.Chmod(dec, 0o444); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(dec, 0o644) }) // 読み取り専用のままだと TempDir の掃除が失敗する
+	if err := os.Chmod(filepath.Dir(dec), 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { // 書き込み不可のままだと TempDir の掃除が失敗する
+		os.Chmod(filepath.Dir(dec), 0o755)
+		os.Chmod(dec, 0o644)
+	})
 
 	var so, se bytes.Buffer
 	if code := dispatch([]string{"approvals", "apply", "-file", ap, "-dir", tmp, "-date", "2026-03-04"}, &so, &se); code != 1 {
