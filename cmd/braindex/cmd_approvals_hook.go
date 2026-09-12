@@ -16,6 +16,7 @@ import (
 
 	"github.com/pilefort/braindex/internal/approvals"
 	"github.com/pilefort/braindex/internal/config"
+	"github.com/pilefort/braindex/internal/fsutil"
 )
 
 // approvalsHookDefaultTimeout は起動したフォームが回答を待つ既定の秒数。
@@ -229,7 +230,7 @@ func writeHookState(statePath string, st hookState) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(statePath, b, 0o644)
+	_ = fsutil.WriteAtomic(statePath, b, 0o644)
 }
 
 // spawnApprovalsForm は approvals serve -apply を切り離して起動し、PID を返す。

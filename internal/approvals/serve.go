@@ -96,7 +96,7 @@ func Serve(ctx context.Context, o ServeOptions) (Reply, error) {
 			fail(http.StatusMethodNotAllowed, "POST だけ")
 			return
 		}
-		if org := r.Header.Get("Origin"); org != "" && !self[org] {
+		if org := r.Header.Get("Origin"); !self[org] {
 			fail(http.StatusForbidden, "Origin が自分ではない")
 			return
 		}

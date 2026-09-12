@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,12 +18,12 @@ import (
 
 // runner は OS のスケジューラを起動する層。テストはここをモックに差し替え、schtasks や crontab を呼ばない。
 type runner interface {
-	Run(schedule.Command) (output string, err error)
+	Run(schedule.Command) (stdout, stderr string, err error)
 }
 
 type execRunner struct{}
 
-func (execRunner) Run(c schedule.Command) (string, error) {
+func (execRunner) Run(c schedule.Command) (string, string, error) {
 	cmd := exec.Command(c.Name, c.Args...)
 	if c.Stdin != "" {
 		cmd.Stdin = strings.NewReader(c.Stdin)
@@ -30,8 +31,10 @@ func (execRunner) Run(c schedule.Command) (string, error) {
 	if len(c.Env) > 0 {
 		cmd.Env = append(os.Environ(), c.Env...)
 	}
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	return stdout.String(), stderr.String(), err
 }
 
 // テストが差し替える口(既存の localLoc と同じ形)。
@@ -182,14 +185,14 @@ func jobNames(jobs []schedule.Job) []string {
 // それ以外の失敗(権限・一時的な失敗)まで空と畳むと、読みが失敗しつつ書きが通る状況で、
 // 書き戻し(crontab -)が利用者の crontab を全消しする。決定 2026-09-03(A') → manual/schedule.md「決めたこと」。
 func readCrontab() (string, error) {
-	out, err := scheduleRunner.Run(schedule.ReadCrontab())
+	out, diagnostic, err := scheduleRunner.Run(schedule.ReadCrontab())
 	if err == nil {
 		return out, nil
 	}
-	if schedule.IsNoCrontab(out) {
+	if out == "" && schedule.IsNoCrontab(diagnostic) {
 		return "", nil // crontab をまだ作っていない。空として続ける
 	}
-	detail := strings.TrimSpace(out)
+	detail := strings.TrimSpace(diagnostic + "\n" + out)
 	if detail == "" {
 		detail = err.Error()
 	}
@@ -202,10 +205,10 @@ func readCrontab() (string, error) {
 // 2 は使わない(リポの規約で 2 は「警告つき完了」。登録できていないのは失敗)。
 func runCommands(sub string, cmds []schedule.Command, stderr io.Writer) int {
 	for _, c := range cmds {
-		out, err := scheduleRunner.Run(c)
+		out, diagnostic, err := scheduleRunner.Run(c)
 		if err != nil {
 			fmt.Fprintf(stderr, "braindex schedule %s: 失敗した: %s\n%v\n", sub, c.Display(), err)
-			if s := strings.TrimSpace(out); s != "" {
+			if s := strings.TrimSpace(out + "\n" + diagnostic); s != "" {
 				fmt.Fprintln(stderr, s)
 			}
 			return 1
@@ -310,15 +313,22 @@ func runScheduleUninstall(args []string, stdout, stderr io.Writer) int {
 		printCommandList(cmds, stdout)
 		return 0
 	}
-	// Windows は登録が無いタスクの削除も失敗になる。1 本ずつ試し、失敗は「未登録」として続ける
+	// 削除前に照会し、登録済みタスクの削除失敗はエラーにする。
 	if schedule.IsWindows(scheduleGOOS) {
 		for i, c := range cmds {
-			if _, err := scheduleRunner.Run(c); err != nil {
+			if _, _, err := scheduleRunner.Run(schedule.QueryTask(env.hub, env.names[i])); err != nil {
 				fmt.Fprintf(stdout, "未登録: %s(消すものが無い)\n", env.names[i])
 				continue
 			}
+			if code := runCommands("uninstall", []schedule.Command{c}, stderr); code != 0 {
+				return code
+			}
 			fmt.Fprintf(stdout, "解除: %s → タスク %s\n", env.names[i], schedule.TaskName(env.hub, env.names[i]))
 		}
+		return 0
+	}
+	if len(cmds) == 0 {
+		fmt.Fprintln(stdout, "未登録: 消すものが無い")
 		return 0
 	}
 	if code := runCommands("uninstall", cmds, stderr); code != 0 {
@@ -376,9 +386,10 @@ func runScheduleList(args []string, stdout, stderr io.Writer) int {
 		return code
 	}
 	installed := map[string]bool{}
+	drift := map[string]bool{}
 	if schedule.IsWindows(scheduleGOOS) {
 		for _, j := range env.target {
-			if _, err := scheduleRunner.Run(schedule.QueryTask(env.hub, j.Name)); err == nil {
+			if _, _, err := scheduleRunner.Run(schedule.QueryTask(env.hub, j.Name)); err == nil {
 				installed[j.Name] = true
 			}
 		}
@@ -388,9 +399,19 @@ func runScheduleList(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "braindex schedule list:", rerr)
 			return 1
 		}
+		expected := map[string]string{}
+		for _, j := range env.target {
+			line, err := schedule.CronLine(env.hub, env.exe, j)
+			if err != nil {
+				fmt.Fprintln(stderr, "braindex schedule list:", err)
+				return 1
+			}
+			expected[j.Name] = line
+		}
 		for _, l := range schedule.BlockLines(existing, env.hub) {
 			if n := schedule.JobOfLine(l); n != "" {
 				installed[n] = true
+				drift[n] = drift[n] || l != expected[n]
 			}
 		}
 	}
@@ -406,8 +427,12 @@ func runScheduleList(args []string, stdout, stderr io.Writer) int {
 		if installed[j.Name] {
 			state = "登録済み"
 		}
-		fmt.Fprintf(stdout, "  %-*s  %-18s  %s  braindex %s\n",
-			width, j.Name, j.When, padDisplay(state, 8), strings.Join(j.Args, " "))
+		note := ""
+		if drift[j.Name] {
+			note = " (設定と異なる: braindex schedule install で登録し直すと揃う)"
+		}
+		fmt.Fprintf(stdout, "  %-*s  %-18s  %s  braindex %s%s\n",
+			width, j.Name, j.When, padDisplay(state, 8), strings.Join(j.Args, " "), note)
 	}
 	return 0
 }

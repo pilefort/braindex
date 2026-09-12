@@ -1,0 +1,5 @@
+{"type":"user","isSidechain":true,"isMeta":true,"uuid":"sx1","parentUuid":null,"timestamp":"2026-08-20T01:00:00Z","message":{"content":"<command-name>check</command-name>"}}
+{"type":"assistant","isSidechain":true,"uuid":"sx2","parentUuid":"sx1","timestamp":"2026-08-20T01:00:01Z","message":{"id":"sm1","usage":{"input_tokens":2,"output_tokens":3},"content":[{"type":"tool_use","id":"st1","name":"Bash","input":{"command":"go test ./..."}}]}}
+{"type":"user","isSidechain":true,"message":{"content":[{"type":"tool_result","tool_use_id":"st1","is_error":true}]}}
+{"type":"assistant","isSidechain":true,"uuid":"sx3","parentUuid":"sx2","timestamp":"2026-08-20T01:00:02Z","message":{"id":"sm2","content":"結果を調べます。"}}
+{broken

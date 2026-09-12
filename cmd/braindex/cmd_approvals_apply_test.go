@@ -7,11 +7,45 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pilefort/braindex/internal/approvals"
 )
 
 const sampleReply = `{"nonce":"n","received_at":"2026-03-04T10:00:00+09:00","items":[{"n":1,"title":"設定ファイルの形式","choice":"B","comment":"コメントが要る"}]}`
+
+func TestApprovalsApply_UnchangedNotWritten(t *testing.T) {
+	for _, hold := range []bool{false, true} {
+		dir := t.TempDir()
+		ap, rp := filepath.Join(dir, "APPROVALS.md"), filepath.Join(dir, "reply.json")
+		src, reply, want := sampleApprovals, `{"items":[{"n":99,"choice":"A"}]}`, 2
+		if hold {
+			src = string(approvals.Apply([]byte(src), nil, approvals.Reply{Items: []approvals.ReplyItem{{N: 1, Choice: "hold"}}}, "2026-03-04").Approvals)
+			reply, want = `{"items":[{"n":1,"choice":"hold"}]}`, 0
+		}
+		writeFile(t, ap, src)
+		writeFile(t, rp, reply)
+		past := time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
+		if err := os.Chtimes(ap, past, past); err != nil {
+			t.Fatal(err)
+		}
+		before, err := os.Stat(ap)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var so, se bytes.Buffer
+		if code := runApprovalsApply([]string{"-file", ap, "-reply", rp, "-date", "2026-03-04"}, &so, &se); code != want {
+			t.Fatalf("code=%d %s", code, &se)
+		}
+		after, err := os.Stat(ap)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !after.ModTime().Equal(before.ModTime()) || readFile(t, ap) != src {
+			t.Errorf("変更なしを書き直した: hold=%v", hold)
+		}
+	}
+}
 
 func TestApprovalsApply_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
@@ -149,10 +183,19 @@ func TestApprovalsApply_DecisionsWriteFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, p.Reply, sampleReply)
-	if err := os.Chmod(dec, 0o444); err != nil { // 読めるが書けない
+	// decisions.md は一時ファイルを作ってから置き換えるので、書けなくする方法が OS で違う。
+	// Unix はファイルが読み取り専用でも置き換えが通るので、置き場のディレクトリを書き込み不可にする。
+	// Windows はディレクトリの権限では止まらず、読み取り専用のファイルへの置き換えが失敗する。両方掛ける
+	if err := os.Chmod(dec, 0o444); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(dec, 0o644) }) // 読み取り専用のままだと TempDir の掃除が失敗する
+	if err := os.Chmod(filepath.Dir(dec), 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { // 書き込み不可のままだと TempDir の掃除が失敗する
+		os.Chmod(filepath.Dir(dec), 0o755)
+		os.Chmod(dec, 0o644)
+	})
 
 	var so, se bytes.Buffer
 	if code := dispatch([]string{"approvals", "apply", "-file", ap, "-dir", tmp, "-date", "2026-03-04"}, &so, &se); code != 1 {

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/pilefort/braindex/internal/fsutil"
 	"github.com/pilefort/braindex/internal/mdhtml"
 	"github.com/pilefort/braindex/internal/news"
 )
@@ -71,7 +72,7 @@ func runNewsOverview(args []string, stdout, stderr io.Writer) int {
 	// 保存の鍵は出力先のパスから作る。同じ概要を開き直すと前の仕分けが戻る
 	sum := sha256.Sum256([]byte(strings.ToLower(filepath.ToSlash(abs))))
 	page := news.RenderOverview(hex.EncodeToString(sum[:8]), mdhtml.ExtractTitle(md, filepath.Base(src)), intro, arts)
-	if err := os.WriteFile(abs, page, 0644); err != nil {
+	if err := fsutil.WriteAtomic(abs, page, 0644); err != nil {
 		return fail(err)
 	}
 	fmt.Fprintln(stdout, "概要の画面:", abs)
