@@ -59,6 +59,26 @@ func TestApprovalsStatus(t *testing.T) {
 	}
 }
 
+// 終了コードの判定は表示文字列(reply=... の (なし) 等)を比較せず、真偽値だけで行う。
+// 表示の文言を変えても判定が壊れないことを、文言を経由せず直接確かめる。
+func TestApprovalsStatusExitCode(t *testing.T) {
+	cases := []struct {
+		warned   int
+		hasReply bool
+		want     int
+	}{
+		{0, false, 0},
+		{1, false, 2},
+		{0, true, 2},
+		{1, true, 2},
+	}
+	for _, c := range cases {
+		if got := approvalsStatusExitCode(c.warned, c.hasReply); got != c.want {
+			t.Errorf("warned=%d hasReply=%v: got=%d want=%d", c.warned, c.hasReply, got, c.want)
+		}
+	}
+}
+
 func TestApprovalsServe_Apply(t *testing.T) {
 	dir := t.TempDir()
 	hub := filepath.Join(dir, "hub")
