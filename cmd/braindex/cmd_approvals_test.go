@@ -223,3 +223,100 @@ func TestStartAndReap(t *testing.T) {
 		t.Fatal("バックグラウンドで reap されなかった(Start() だけだとゾンビのまま残る)")
 	}
 }
+
+func TestApprovalsServe_ApplySummaryAndPath(t *testing.T) {
+	dir := t.TempDir()
+	ap := filepath.Join(dir, "hub", "work", "APPROVALS.md")
+	writeFile(t, ap, sampleApprovals)
+	tmp := filepath.Join(dir, "tmp")
+
+	ready := make(chan string, 1)
+	approvalsOnReady = func(u string) { ready <- u }
+	defer func() { approvalsOnReady = nil }()
+
+	var so syncBuffer
+	var se bytes.Buffer
+	done := make(chan int, 1)
+	go func() {
+		done <- dispatch([]string{"approvals", "serve", "-file", ap, "-no-open", "-dir", tmp, "-timeout", "10", "-apply"}, &so, &se)
+	}()
+	var url string
+	select {
+	case url = <-ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("待ち受けが始まらない")
+	}
+
+	// フォームに nonce が埋まっていて、それで POST すると受理される
+	res, err := http.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := io.ReadAll(res.Body)
+	res.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`"nonce":"([0-9a-f]{32})"`).FindStringSubmatch(string(page))
+	if m == nil {
+		t.Fatalf("フォームに nonce が無い:\n%s", page)
+	}
+	body := `{"nonce":"` + m[1] + `","items":[{"n":1,"title":"設定ファイルの形式","choice":"B","comment":"コメントが要る"}]}`
+	req, err := http.NewRequest("POST", url+"reply", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Origin", strings.TrimSuffix(url, "/"))
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("POST = %d", res.StatusCode)
+	}
+
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("code=%d\n%s", code, se.String())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("回答後に終わらない")
+	}
+	out := so.String()
+	mustContain(t, "stdout", out, "form: http://127.0.0.1:", "(1 件・id=hub-", "reply: ", "[1] 設定ファイルの形式 → B. TOML（コメントが要る）")
+
+	p, err := approvals.Resolve(ap, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out, "[1] 設定ファイルの形式 →") != 1 {
+		t.Errorf("要約が重複: %s", out)
+	}
+	if !strings.Contains(out, "reply: "+p.Applied+"\n") {
+		t.Errorf("実在パスがない: %s", out)
+	}
+	b, err := os.ReadFile(p.Applied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rep approvals.Reply
+	if err := json.Unmarshal(b, &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Nonce != m[1] || len(rep.Items) != 1 || rep.Items[0].Choice != "B" || rep.ReceivedAt == "" {
+		t.Errorf("reply.json = %+v", rep)
+	}
+
+}
+
+func TestApprovalsServe_DecisionsRequiresApply(t *testing.T) {
+	for _, v := range []string{"decisions.md", ""} {
+		var so, se bytes.Buffer
+		code := runApprovalsServe([]string{"-decisions", v, "-no-open", "-timeout", "0.1"}, &so, &se)
+		if code != 1 || !strings.Contains(se.String(), "-apply") || !strings.Contains(se.String(), "-decisions") {
+			t.Errorf("code=%d %s", code, &se)
+		}
+	}
+}
