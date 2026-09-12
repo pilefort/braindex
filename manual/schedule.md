@@ -16,6 +16,7 @@ braindex schedule uninstall  # この hub の登録を消す
 節を省略すると、週次レビューと訂正率の確認の 2 本になる。hub と braindex 自身の絶対パスを埋め込むので、
 定期実行の環境の PATH には依存しない（どちらかを移したら登録し直す）。
 自分で cron や schtasks に書きたいときは `braindex schedule print` の出力をそのまま使える。
+cron の行を手で登録する場合は、先に hub の `.braindex/` フォルダを作る。
 同じ日に 2 回動いても、既にある下書きは上書きしない。
 
 **macOS では hub を `~/Documents`・`~/Desktop`・`~/Downloads` の下に置かない。** ホーム直下の `~/<名前>/` などに置く。
@@ -26,9 +27,17 @@ macOS のプライバシー保護（TCC）により、cron から起動したプ
 ## 設定と登録の仕組み
 
 設定 `braindex.json` の `schedule` 節に書いたジョブを、この OS のスケジューラに登録する。
-Windows は `schtasks`（`/F` で上書きするので再実行しても二重にならない。タスク名は `braindex-<hub のフォルダ名>-<ジョブ名>`）、
+Windows は `schtasks`（`/F` で上書きするので再実行しても二重にならない。タスク名は `braindex-<hub のフォルダ名>-<パスのハッシュ8桁>-<ジョブ名>`）、
 macOS・Linux は `crontab`（`# BEGIN braindex <hub>` 〜 `# END braindex <hub>` で囲んだブロックだけを書き換え、
 ブロックの外の行と別 hub のブロックには触らない）。
+Windows のハッシュは、hub の絶対パスを小文字にし、区切り文字を `/` に揃えて `.`・`..` を整理した値から、SHA-256 の先頭 8 桁を取る。
+タスク名のフォルダ名も小文字になる。同じフォルダ名でも場所が違えば、別のタスク名になる。
+`install` は新しい名前で登録できた後、旧名 `braindex-<hub のフォルダ名>-<ジョブ名>` を照会し、存在すれば削除する。
+`uninstall` は新旧両方の名前を削除対象にする。`list` は旧名だけがある場合、`旧い名前で登録済み（install で移す）` と表示する。
+
+macOS・Linux では、cron で起動した braindex の標準出力と標準エラーを、hub の `.braindex/schedule.log` に追記する。
+`install` が `.braindex/` を作る。`print` と `install -dry-run` はフォルダを作らない。
+ログ出力のない旧形式の cron 行は、`list` で「設定と異なる」と表示される。`install` で登録し直すとログ出力が付く。
 **登録できるのは braindex 自身のサブコマンドだけ**で、設定ファイルを任意コード実行の口にしない。
 
 ```json
