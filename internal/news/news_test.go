@@ -167,6 +167,15 @@ func TestSeen(t *testing.T) {
 		t.Errorf("空: %q", Seen{}.Marshal())
 	}
 
+	// Forget はその日に初めて見た印だけを外す(中断した回の書き直し用)
+	f := Seen{"today1": "2026-08-15", "today2": "2026-08-15", "before": "2026-08-14"}
+	if n := f.Forget("2026-08-15"); n != 2 || len(f) != 1 || f["before"] != "2026-08-14" {
+		t.Errorf("Forget: n=%d %v", n, f)
+	}
+	if n := (Seen{"a": "2026-08-14"}).Forget("2026-08-15"); n != 0 {
+		t.Errorf("別の日の印を外した: %d", n)
+	}
+
 	pruned, err := (Seen{"old": "2026-01-01", "new": "2026-08-10", "edge": "2026-05-17"}).Prune("2026-08-15", 90)
 	if err != nil || len(pruned) != 2 || pruned["old"] != "" || pruned["new"] == "" || pruned["edge"] == "" {
 		t.Errorf("Prune: err=%v %v", err, pruned)

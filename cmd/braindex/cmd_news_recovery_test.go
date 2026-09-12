@@ -159,3 +159,37 @@ func TestNewsFetch_別の日の未完了は警告して残す(t *testing.T) {
 		t.Errorf("記録: 古い 1 件だけが残るはず:\n%s", got)
 	}
 }
+
+// 既読を書いた後・未完了の記録を消す前に止まると、既読だけ進んで記録が残る。
+// その状態で同じ日を再実行すると、新着が 0 件になって書けていたダイジェストを消してしまっていた
+// (外部レビュー 2026-09-12)。再実行は前と同じ中身を書き直して完了する。
+func TestNewsFetch_既読だけ進んで記録が残っても消さない(t *testing.T) {
+	hub, _ := newsHub(t)
+	newsDir := filepath.Join(hub, "news")
+	code, _, se := newsFetch(t, hub, "-layer", "weekly")
+	if code != 0 {
+		t.Fatalf("1 回目: exit=%d\n%s", code, se)
+	}
+	mdPath := filepath.Join(newsDir, "digest_2026-08-15_weekly.md")
+	htmlPath := filepath.Join(newsDir, "digest_2026-08-15_weekly.html")
+	want := readFile(t, mdPath)
+	mustContain(t, "1 回目の md", want, "[記事3](https://example.com/3)")
+
+	// 既読は進んだが記録を消せなかった状態を作る(消す前に落ちた・記録を書き直せなかった)
+	md, _ := json.Marshal(mdPath)
+	html, _ := json.Marshal(htmlPath)
+	writeFile(t, filepath.Join(newsDir, ".pending.json"),
+		`{"version": 1, "runs": [{"op": "fetch", "started": "2026-08-15T07:30:00+09:00", "date": "2026-08-15", "layer": "weekly", "outputs": [`+string(md)+`, `+string(html)+`]}]}`)
+
+	code, so, se := newsFetch(t, hub, "-layer", "weekly")
+	if code != 0 {
+		t.Fatalf("再実行: exit=%d\n%s%s", code, so, se)
+	}
+	if got := readFile(t, mdPath); got != want {
+		t.Errorf("再実行でダイジェストの中身が変わった:\nwant:\n%s\ngot:\n%s", want, got)
+	}
+	mustContain(t, "再実行の html", readFile(t, htmlPath), "記事3")
+	if _, err := os.Stat(filepath.Join(newsDir, ".pending.json")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("完了したのに記録が残っている: %v", err)
+	}
+}

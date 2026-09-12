@@ -244,6 +244,12 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 			return fail(serr)
 		}
 	}
+	// 書き直す回は、その日に付いた既読の印を外してから数え直す。既読を書いた後・記録を消す前に止まると
+	// 既読だけが進んで記録が残り、そのまま数えると新着 0 件になって、書けていたダイジェストを消してしまう
+	// (外部レビュー 2026-09-12)。外した印は下の Collect が付け直す。
+	if resuming && !o.replay && resume.Date != "" {
+		seen.Forget(resume.Date)
+	}
 	// 別の回の未完了は、この実行では完了させられない。伝えて、記録は残す
 	for _, r := range pending.Runs {
 		if resuming && r.Primary() == resume.Primary() {
