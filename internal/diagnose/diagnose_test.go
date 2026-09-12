@@ -24,6 +24,13 @@ func writeFile(t *testing.T, p, content string) {
 	}
 }
 
+func TestRender_RepoCountDepthNeutral(t *testing.T) {
+	got := string(Render(Report{}))
+	if strings.Contains(got, "root 直下") || !strings.Contains(got, "（0 リポのうち") {
+		t.Fatalf("段数に依存した表示: %s", got)
+	}
+}
+
 func writeNote(t *testing.T, p string) {
 	t.Helper()
 	writeFile(t, p, "# "+strings.TrimSuffix(filepath.Base(p), ".md")+"\n\n記録日: 2026-08-01\n\n本文\n")
@@ -104,7 +111,7 @@ func TestBuild_一致していれば問題なし(t *testing.T) {
 	text := string(Render(r))
 	for _, want := range []string{
 		"## まとめ\n- 問題なし",
-		"- 索引に載る: 3 件（root 直下 3 リポのうち 1 リポ）",
+		"- 索引に載る: 3 件（3 リポのうち 1 リポ）",
 		"  - alpha: 3 件（decisions 1・notes 1・notes/common 1）\n",
 		"  - beta: 0 件 — docs/decisions.md 無し・docs/notes 無し\n",
 		"- 状態: 生成 2026-09-01・3 件",
@@ -360,7 +367,7 @@ func TestBuild_空のroot(t *testing.T) {
 	if r.Scan.Entries != 0 || len(r.Scan.Repos) != 0 || len(r.Problems) != 2 || !strings.Contains(r.Problems[0], "1 件も無い") {
 		t.Errorf("%+v %q", r.Scan, r.Problems)
 	}
-	if !strings.Contains(string(Render(r)), "- リポ別: root 直下にディレクトリが無い") {
+	if !strings.Contains(string(Render(r)), "- リポ別: 設定された段数にリポのディレクトリが無い") {
 		t.Errorf("テキスト:\n%s", Render(r))
 	}
 }

@@ -53,7 +53,7 @@ func TestDiagnose_索引の有無(t *testing.T) {
 	for _, want := range []string{
 		"# braindex diagnose: 走査の診断（2026-09-06）\n",
 		"- 要確認 1 件:\n  - 保存済みの索引が無い（hub で braindex を実行して作る）\n",
-		"- 索引に載る: 3 件（root 直下 3 リポのうち 1 リポ）\n",
+		"- 索引に載る: 3 件（3 リポのうち 1 リポ）\n",
 		"  - beta: 0 件 — docs/decisions.md 無し・docs/notes 無し\n",
 		"  - hub: 0 件 — docs/decisions.md 無し・docs/notes 無し\n",
 		"- 状態: 無し（hub で braindex を実行して作る）\n",
@@ -234,7 +234,7 @@ func TestDiagnose_JSONとテキストが一致(t *testing.T) {
 	// テキスト側の数字と一致する
 	for _, want := range []string{
 		fmt.Sprintf("- 要確認 %d 件:\n", len(got.Problems)),
-		fmt.Sprintf("- 索引に載る: %d 件（root 直下 %d リポのうち", got.Scan.Entries, len(got.Scan.Repos)),
+		fmt.Sprintf("- 索引に載る: %d 件（%d リポのうち", got.Scan.Entries, len(got.Scan.Repos)),
 		fmt.Sprintf("- 警告: %d 件\n  - %s\n", len(got.Scan.Warnings), got.Scan.Warnings[0]),
 		fmt.Sprintf("- 状態: 生成 %s・%d 件\n", got.Saved.Generated, got.Saved.Entries),
 		"    - " + got.Saved.Diff.NotIndexed[0] + "\n",
