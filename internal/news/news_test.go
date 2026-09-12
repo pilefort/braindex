@@ -287,6 +287,28 @@ func TestDigest(t *testing.T) {
 	}
 }
 
+// md のダイジェストも HTML(itemHTML)や keep(appendKeeps)と同じく weblink.Safe を通す
+// (決定 2026-09-03「生成物のリンクは http(s) 以外を落とす」→ manual/design.md「決めたこと」)。
+// 安全でないリンクは HTML と同じ扱いにする: リンクを付けず題名だけを出す。
+func TestDigest_安全でないリンクは題名だけ(t *testing.T) {
+	res := []Result{{Source: Source{Name: "A"}, New: []feed.Entry{
+		{Title: "危ない", Link: "javascript:alert(1)"},
+		{Title: "普通", Link: "https://x/ok"},
+	}}}
+	want := "# ニュースダイジェスト 2026-08-15（daily 層）\n\n" +
+		"新着 2 件（フィード 1 本）・採点なし\n\n" +
+		"## A（新着 2 件）\n" +
+		"- 危ない\n" +
+		"- [普通](https://x/ok)\n\n"
+	got := string(Digest(res, DigestOptions{Layer: "daily", Today: "2026-08-15", Cap: 20}))
+	if got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+	if strings.Contains(got, "javascript:") {
+		t.Errorf("安全でないリンクをそのまま埋めている:\n%s", got)
+	}
+}
+
 // 採点あり: 主要(関心度 降順)と関心外の二段。当たった語を添える。各段に上限。
 func TestDigest_Ranked(t *testing.T) {
 	p := interest.Profile{Terms: []interest.Term{{Word: "ゴルーチン", Weight: 2}, {Word: "パース", Weight: 1}, {Word: "rust", Weight: 0.4}}}

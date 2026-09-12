@@ -11,6 +11,7 @@ import (
 
 	"github.com/pilefort/braindex/internal/feed"
 	"github.com/pilefort/braindex/internal/interest"
+	"github.com/pilefort/braindex/internal/weblink"
 )
 
 // Fetcher はフィードを取得する側。実体は feed.Fetcher。テストでは差し替える。
@@ -298,7 +299,14 @@ func writeTier(sb *strings.Builder, entries []feed.Entry, o DigestOptions, inden
 		if e.Published != "" {
 			fmt.Fprintf(sb, "%s ", e.Published)
 		}
-		fmt.Fprintf(sb, "[%s](%s)", escapeTitle(e.Title), e.Link)
+		// HTML(itemHTML)・keep(appendKeeps)と同じく安全でないリンクは載せない
+		// (決定 2026-09-03「生成物のリンクは http(s) 以外を落とす」→ manual/design.md「決めたこと」)。
+		// リンクを付けず題名だけを出す(HTML 側と同じ扱い)。
+		if weblink.Safe(e.Link) {
+			fmt.Fprintf(sb, "[%s](%s)", escapeTitle(e.Title), e.Link)
+		} else {
+			sb.WriteString(escapeTitle(e.Title))
+		}
 		if s, ok := o.Ranking[e.ID]; ok { // 無い＝未採点(★ を付けない)
 			fmt.Fprintf(sb, " ★%d", s.Value)
 			if len(s.Matched) > 0 {
