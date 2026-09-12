@@ -404,20 +404,22 @@ func runRetroExtract(args []string, stdout, stderr io.Writer) int {
 // index.tsv を次に読むのはレトロスペクティブの手順(file 列を辿ってダイジェストを開く)で、
 // 半端な索引は黙って途中までしか辿れない(設計レビュー 2026-09-06 M14)。
 // 前回の出力を先に消す順序(消してから失敗すると「失敗なら何も書かない」にならない)はここでは扱わない。
+// 権限は本人だけに絞る(0o600/0o700)。ダイジェストには会話の本文が入るので、共有の /tmp を持つ環境で
+// 同じマシンの他のユーザに読まれないようにする(決定 2026-09-12「一時置き場に書くファイルは 0o600、置き場は 0o700」)。
 func writeExtractOutput(outDir string, res retro.Result) error {
 	for _, f := range res.Files {
 		p := filepath.Join(outDir, filepath.FromSlash(f.RelPath))
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 			return err
 		}
-		if err := fsutil.WriteAtomic(p, f.Content, 0o644); err != nil {
+		if err := fsutil.WriteAtomic(p, f.Content, 0o600); err != nil {
 			return err
 		}
 	}
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
+	if err := os.MkdirAll(outDir, 0o700); err != nil {
 		return err
 	}
-	return fsutil.WriteAtomic(filepath.Join(outDir, "index.tsv"), res.Index, 0o644)
+	return fsutil.WriteAtomic(filepath.Join(outDir, "index.tsv"), res.Index, 0o600)
 }
 
 // retroWindow は -since / -window-days から窓と表示用の見出しを決める(-since > -window-days > 全期間)。

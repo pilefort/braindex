@@ -221,3 +221,33 @@ func blockReplace(t *testing.T, path string) {
 	}
 	t.Cleanup(func() { os.Chmod(dir, 0o755) })
 }
+
+// ダイジェストと index.tsv は本人だけが読める権限で書く(共有の /tmp を持つ環境で会話の本文を他のユーザに見せない)。
+// Windows は POSIX の権限ビットがほぼ効かないので見ない。
+func TestRetroExtract_権限は本人だけ(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows では POSIX の権限ビットがほぼ効かない")
+	}
+	fixUTC(t)
+	out := filepath.Join(t.TempDir(), "retro")
+	if code, so, se := execRetroExtract(t, "-sessions", retroTestdata, "-out", out); code != 2 {
+		t.Fatalf("exit=%d want 2\nstdout=%s\nstderr=%s", code, so, se)
+	}
+	for _, c := range []struct {
+		path string
+		want os.FileMode
+	}{
+		{out, 0o700},
+		{filepath.Join(out, "index.tsv"), 0o600},
+		{filepath.Join(out, "sessions", "_work_repo-a"), 0o700},
+		{filepath.Join(out, "sessions", "_work_repo-a", "20260820_0100_aaaa1111.md"), 0o600},
+	} {
+		fi, err := os.Stat(c.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fi.Mode().Perm(); got != c.want {
+			t.Errorf("%s: perm=%04o want %04o", c.path, got, c.want)
+		}
+	}
+}

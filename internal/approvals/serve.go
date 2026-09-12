@@ -172,15 +172,19 @@ func Serve(ctx context.Context, o ServeOptions) (Reply, error) {
 // WriteReply は回答を JSON で書く(置き場が無ければ作る)。Serve が応答を返す前に呼ぶ。
 // 書き切ってから置き換える(fsutil.WriteAtomic)ので、途中で失敗しても半端な JSON は残らない。
 // 次に読むのは apply(コマンド)で、半端な JSON は黙って取り込めないになる(設計レビュー 2026-09-06 M14)。
+//
+// 置き場は既定で OS の共有一時ディレクトリの下(DefaultDir)。同じマシンの他ユーザーが回答を読めないように、
+// ファイルは 0600・ディレクトリは 0700 に絞る(設計判断 2026-09-12)。Windows では POSIX の権限ビットが
+// ほぼ効かないので、実効するのは Unix 系だけ。
 func WriteReply(path string, rep Reply) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	b, err := json.MarshalIndent(rep, "", " ")
 	if err != nil {
 		return err
 	}
-	return fsutil.WriteAtomic(path, append(b, '\n'), 0o644)
+	return fsutil.WriteAtomic(path, append(b, '\n'), 0o600)
 }
 
 // NewNonce は起動ごとの照合値(16 バイトの乱数を 16 進 32 文字)を返す。
