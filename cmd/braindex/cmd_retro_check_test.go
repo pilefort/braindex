@@ -154,7 +154,7 @@ func writeSessionLog(t *testing.T, dir, id string, day time.Time, turns, hits in
 	writeFile(t, filepath.Join(dir, "-work-repo-x", id+".jsonl"), sb.String())
 }
 
-// 閾値を超えても、基準期間と同水準なら鳴らさない(決定 2026-09-06)。
+// 閾値を超えても、基準期間と同水準なら鳴らさない(決定 2026-09-06 → manual/retro.md「決めたこと」)。
 // 基準 8%・直近 9% は 2SE(≈5.4pt)の中なので「同水準」、直近 20% は外なので鳴らす。
 func TestRetroCheck_基準期間と比べて鳴らすか決める(t *testing.T) {
 	fixUTC(t)

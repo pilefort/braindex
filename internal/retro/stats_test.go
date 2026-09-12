@@ -222,7 +222,7 @@ func TestRecent(t *testing.T) {
 	}
 }
 
-// 閾値は床として残しつつ、基準期間から 2SE を超えて上振れたときだけ鳴らす(決定 2026-09-06)。
+// 閾値は床として残しつつ、基準期間から 2SE を超えて上振れたときだけ鳴らす(決定 2026-09-06 → manual/retro.md「決めたこと」)。
 // 閾値だけだと、その人の平常運転が閾値の上にある間は毎回鳴り続けて合図の意味が消える。
 func TestCompare(t *testing.T) {
 	c := func(n, hit int) Count { return Count{Utterances: n, Corrections: hit} }
