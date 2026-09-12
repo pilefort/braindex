@@ -174,8 +174,9 @@ var (
 	reNumUnit = regexp.MustCompile(`[+\-]?\d+(?:\.\d+)?\s*(?:%|％|倍|割|件|人|本|回|万|千|億|pt|ポイント|dB)`)
 	// 小数(前後に数字と . が続かないもの)。Go の正規表現に先読み・後読みが無いので前後 1 文字を取り込んで判定する
 	reDecimal = regexp.MustCompile(`(?:^|[^\d.])\d+\.\d+(?:[^\d.]|$)`)
-	// 理由を示す語
-	reReason = regexp.MustCompile(`理由|なぜ|ため|から|背景|根拠|ので|によって|狙い|目的`)
+	// 行頭の理由ラベル(太字・全角コロン可)と、名前が「理由」の見出し。
+	reReason        = regexp.MustCompile(`^(?:理由\s*[:：]|\*\*理由\s*[:：]\*\*|\*\*理由\*\*\s*[:：])`)
+	reReasonHeading = regexp.MustCompile(`^#{1,6}\s+理由(?:\s+#+)?\s*$`)
 	// 根拠行(行頭の「根拠:」。太字・全角コロン可)
 	reEvidenceLine = regexp.MustCompile(`(?m)^\s*(?:\*\*)?根拠(?:\*\*)?\s*[:：]`)
 	// 明示的な未検証フラグ
@@ -252,8 +253,8 @@ func CheckNote(path string, content []byte, o NoteOptions) []Warning {
 
 	// なぜ欠落・根拠欠落(candidate。決定ブロックだけ)
 	for _, b := range decisionBlocks(lines, path) {
-		if !reReason.MatchString(b.body) {
-			add(b.line, KindMissingWhy, SeverityCandidate, "## %s(理由/なぜ/背景が読み取れない)", b.head)
+		if !skip[b.line-1] && !hasReason(lines, skip, b.line-1) {
+			add(b.line, KindMissingWhy, SeverityCandidate, "## %s(理由: 行または理由の見出しが無い)", b.head)
 		}
 		if !reEvidenceLine.MatchString(b.body) {
 			add(b.line, KindMissingEvidence, SeverityCandidate, "## %s(根拠: 行が無い。notes/データ/URL/「会話 YYYY-MM-DD」のいずれかへ)", b.head)
@@ -331,6 +332,27 @@ type block struct {
 	line int    // 見出しの行番号(1 始まり)
 	head string // 見出しの文(## を除く)
 	body string
+}
+
+// hasReason は決定の先頭から次の ## までを調べる。
+// 次の ## 自体が「理由」なら理由の節として数える。決定ブロックの選別や根拠の検査は変えない。
+func hasReason(lines []string, skip []bool, start int) bool {
+	for i := start; i < len(lines); i++ {
+		if skip[i] {
+			continue
+		}
+		l := strings.TrimSpace(lines[i])
+		if reReasonHeading.MatchString(l) {
+			return true
+		}
+		if i > start && strings.HasPrefix(lines[i], "## ") {
+			return false
+		}
+		if reReason.MatchString(l) {
+			return true
+		}
+	}
+	return false
 }
 
 // decisionBlocks は ## 見出しでブロックに分け、決定らしいもの(decisions.md 内の全ブロック / 「記録日」「採用日」の語を持つブロック)を返す。

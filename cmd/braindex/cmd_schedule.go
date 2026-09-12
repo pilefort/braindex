@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/pilefort/braindex/internal/config"
+	"github.com/pilefort/braindex/internal/fsutil"
 	"github.com/pilefort/braindex/internal/schedule"
 )
 
@@ -261,8 +262,33 @@ func runScheduleInstall(args []string, stdout, stderr io.Writer) int {
 		printCommandList(cmds, stdout)
 		return 0
 	}
+	if !schedule.IsWindows(scheduleGOOS) {
+		if err := os.MkdirAll(filepath.Join(env.hub, ".braindex"), 0o755); err != nil {
+			fmt.Fprintln(stderr, "braindex schedule install: ログ用フォルダを作れない:", err)
+			return 1
+		}
+		// ログは hub の git に載せない。雛形の .gitignore を持たない既存の hub にも効くよう、置き場の中に置く(既にあれば触らない)
+		if ig := filepath.Join(env.hub, ".braindex", ".gitignore"); !fileExists(ig) {
+			if err := fsutil.WriteAtomic(ig, []byte("schedule.log\n"), 0o644); err != nil {
+				fmt.Fprintln(stderr, "braindex schedule install: ログの除外設定を書けない:", err)
+				return 1
+			}
+		}
+	}
 	if code := runCommands("install", cmds, stderr); code != 0 {
 		return code
+	}
+	if schedule.IsWindows(scheduleGOOS) {
+		for _, j := range env.target {
+			old := schedule.LegacyTaskName(env.hub, j.Name)
+			if _, _, err := scheduleRunner.Run(schedule.QueryNamedTask(old)); err != nil {
+				continue
+			}
+			c := schedule.Command{Name: "schtasks", Args: []string{"/Delete", "/F", "/TN", old}}
+			if code := runCommands("install", []schedule.Command{c}, stderr); code != 0 {
+				return code
+			}
+		}
 	}
 	for _, j := range env.target {
 		if schedule.IsWindows(scheduleGOOS) {
@@ -316,14 +342,15 @@ func runScheduleUninstall(args []string, stdout, stderr io.Writer) int {
 	// 削除前に照会し、登録済みタスクの削除失敗はエラーにする。
 	if schedule.IsWindows(scheduleGOOS) {
 		for i, c := range cmds {
-			if _, _, err := scheduleRunner.Run(schedule.QueryTask(env.hub, env.names[i])); err != nil {
-				fmt.Fprintf(stdout, "未登録: %s(消すものが無い)\n", env.names[i])
+			name, task := env.names[i/2], c.Args[3]
+			if _, _, err := scheduleRunner.Run(schedule.QueryNamedTask(task)); err != nil {
+				fmt.Fprintf(stdout, "未登録: %s(消すものが無い: %s)\n", name, task)
 				continue
 			}
 			if code := runCommands("uninstall", []schedule.Command{c}, stderr); code != 0 {
 				return code
 			}
-			fmt.Fprintf(stdout, "解除: %s → タスク %s\n", env.names[i], schedule.TaskName(env.hub, env.names[i]))
+			fmt.Fprintf(stdout, "解除: %s → タスク %s\n", name, task)
 		}
 		return 0
 	}
@@ -387,10 +414,13 @@ func runScheduleList(args []string, stdout, stderr io.Writer) int {
 	}
 	installed := map[string]bool{}
 	drift := map[string]bool{}
+	legacy := map[string]bool{}
 	if schedule.IsWindows(scheduleGOOS) {
 		for _, j := range env.target {
 			if _, _, err := scheduleRunner.Run(schedule.QueryTask(env.hub, j.Name)); err == nil {
 				installed[j.Name] = true
+			} else if _, _, err := scheduleRunner.Run(schedule.QueryNamedTask(schedule.LegacyTaskName(env.hub, j.Name))); err == nil {
+				legacy[j.Name] = true
 			}
 		}
 	} else {
@@ -426,6 +456,9 @@ func runScheduleList(args []string, stdout, stderr io.Writer) int {
 		state := "未登録"
 		if installed[j.Name] {
 			state = "登録済み"
+		}
+		if legacy[j.Name] {
+			state = "旧い名前で登録済み（install で移す）"
 		}
 		note := ""
 		if drift[j.Name] {

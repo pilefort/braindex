@@ -274,7 +274,14 @@ func Scan(cfg Config) (Result, error) {
 		}
 	}
 
-	return Result{Files: files, Gaps: SortGaps(c.gaps), Warnings: c.warnings}, nil
+	// 収集元にかかわらず、重なる extra の除外を優先する。
+	kept := files[:0]
+	for _, f := range files {
+		if Covers(cfg, f.Rel) {
+			kept = append(kept, f)
+		}
+	}
+	return Result{Files: kept, Gaps: SortGaps(c.gaps), Warnings: c.warnings}, nil
 }
 
 // collector は走査中の警告と読めなかった範囲を集める。
@@ -339,6 +346,9 @@ func Covers(cfg Config, rel string) bool {
 			return false
 		}
 	}
+	if excludedByExtra(cfg, repo, inRepo) {
+		return false
+	}
 	if inRepo == "docs/decisions.md" {
 		return true
 	}
@@ -351,16 +361,20 @@ func Covers(cfg Config, rel string) bool {
 		case nd == "":
 			continue
 		case nd == ".": // リポ直下を置き場にする指定。リポ内の全部が対象
-			return true
+			if !hasDotSeg(inRepo) {
+				return true
+			}
 		case strings.HasPrefix(inRepo, nd+"/"):
-			return true
+			if !hasDotSeg(strings.TrimPrefix(inRepo, nd+"/")) {
+				return true
+			}
 		}
 	}
 	for _, ex := range cfg.Extra {
 		if ex.Repo != repo {
 			continue
 		}
-		base := strings.Trim(filepath.ToSlash(ex.Path), "/")
+		base := path.Clean(filepath.ToSlash(ex.Path))
 		if base == "." {
 			base = ""
 		}
@@ -372,7 +386,7 @@ func Covers(cfg Config, rel string) bool {
 			fromBase = inRepo[len(base)+1:]
 		}
 		parts := strings.Split(fromBase, "/")
-		if !ex.Recursive && len(parts) != 1 {
+		if hasDotSeg(fromBase) || (!ex.Recursive && len(parts) != 1) {
 			continue
 		}
 		if excluded(parts[len(parts)-1], fromBase, ex.Exclude) {
@@ -455,7 +469,7 @@ func collectNotes(rootAbs, repo, notesDir, label string, c *collector) []File {
 			return nil
 		}
 		if d.IsDir() {
-			if d.Name() == "archive" {
+			if d.Name() == "archive" || (path != notesDir && strings.HasPrefix(d.Name(), ".")) {
 				return filepath.SkipDir // アーカイブは普段の検索から外す
 			}
 			return nil
@@ -482,6 +496,9 @@ func collectNotes(rootAbs, repo, notesDir, label string, c *collector) []File {
 func collectExtra(rootAbs string, ex ExtraRule, c *collector) []File {
 	base := filepath.Join(rootAbs, ex.Repo, filepath.FromSlash(ex.Path))
 	var out []File
+	if hasDotSeg(ex.Repo) {
+		return out
+	}
 	// 起点自体が archive セグメントの下なら、archive の除外規則で全件落ちる。設定の誤りなので無言にしない
 	if hasArchiveSeg(path.Join(ex.Repo, ex.Path)) {
 		c.warn("extra %s/%s: パスに archive を含むので全件除外(載せるなら archive の外に置く)", ex.Repo, ex.Path)
@@ -516,7 +533,7 @@ func collectExtra(rootAbs string, ex ExtraRule, c *collector) []File {
 				return nil
 			}
 			if d.IsDir() {
-				if d.Name() == "archive" {
+				if d.Name() == "archive" || (path != base && strings.HasPrefix(d.Name(), ".")) {
 					return filepath.SkipDir
 				}
 				// exclude はディレクトリにも掛け、当たったら枝ごと落とす(gitignore と同じ感覚)。
@@ -602,7 +619,44 @@ func relSlash(rootAbs, absPath string) string {
 }
 
 func isMarkdown(name string) bool {
-	return strings.HasSuffix(strings.ToLower(name), ".md")
+	return !strings.HasPrefix(filepath.Base(name), ".") && strings.HasSuffix(strings.ToLower(name), ".md")
+}
+
+// excludedByExtra は収集元に関係なく、各 extra 自身の走査範囲内でファイルと祖先を判定する。
+func excludedByExtra(cfg Config, repo, inRepo string) bool {
+	for _, ex := range cfg.Extra {
+		if ex.Repo != repo || len(ex.Exclude) == 0 {
+			continue
+		}
+		base := path.Clean(filepath.ToSlash(ex.Path))
+		rel := inRepo
+		if base != "." {
+			if !strings.HasPrefix(inRepo, base+"/") {
+				continue
+			}
+			rel = strings.TrimPrefix(inRepo, base+"/")
+		}
+		parts := strings.Split(rel, "/")
+		if hasDotSeg(rel) || (!ex.Recursive && len(parts) != 1) {
+			continue
+		}
+		for i, name := range parts {
+			if excluded(name, strings.Join(parts[:i+1], "/"), ex.Exclude) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasDotSeg は指定された相対パスにドットで始まる区間があるかを返す。
+func hasDotSeg(rel string) bool {
+	for _, seg := range strings.Split(filepath.ToSlash(rel), "/") {
+		if strings.HasPrefix(seg, ".") {
+			return true
+		}
+	}
+	return false
 }
 
 // excluded は exclude パターンに当たるかを判定する。パターンは path.Match のグロブ

@@ -126,7 +126,7 @@ func Check(path string, content []byte, o Options) []Warning {
 				add(0, "HEAD にあったチェック項目が消えた: %q", item)
 			}
 		}
-		if hasDate {
+		if hasDate && lastRaw != dateOnly(o.Today).Format("2006-01-02") {
 			if _, prevRaw := findLastUpdated(prev); prevRaw == lastRaw && !sameText(lines, prev) {
 				add(lastLine, "内容が変わったのに最終更新 %s が HEAD と同じ", lastRaw)
 			}

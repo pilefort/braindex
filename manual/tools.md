@@ -2,6 +2,67 @@
 
 [← README](../README.md) ／ [手引きの目次](README.md)
 
+## braindex verify session — 発話と実行記録の照合
+
+アシスタントが「テストが通りました」「コミットしました」などと書いた文について、
+同じセッション内の、その発話より前の Bash 呼び出しを照合する。本体とサブエージェントの
+発話・実行を含む。ノートや ISSUE は読まず、外部への通信もしない。
+
+```sh
+braindex verify session sample-session
+braindex verify session ./logs/sample-session.jsonl
+braindex verify -json session ./logs/sample-session.jsonl
+```
+
+ID は `sessions.DefaultDir` が返す既定の置き場（`~/.claude/projects`）の各プロジェクトから探す。
+同じ ID が複数あれば `ERROR`。パスは `.jsonl` ファイルを指定する。`-json` は `session` より前に置く。
+
+### 固定の辞書
+
+括弧内の助詞は省略できる。英語の発話は大文字・小文字を区別しない。
+コマンドは表の文字列が Bash の `command` に含まれるかで照合する。
+
+| 種 | 発話に含まれる表現 | 対応するコマンド |
+|---|---|---|
+| test | テスト（が／を／は）通・パス・成功、test/tests pass/passed | `go test`、`npm test`、`npm run test`、`pnpm test`、`yarn test`、`pytest`、`cargo test`、`make test` |
+| build | ビルド（が／は）通・成功、vet（が）通 | `go build`、`go vet`、`npm run build`、`cargo build` |
+| commit | コミットした／しました／済み | `git commit` |
+| push | pushした／しました／済み、プッシュした／しました | `git push`、`gh pr create` |
+
+本文を句点・終止符（`。！？.!?`）と改行で区切る。バッククォートまたはチルダのフェンス、
+4 空白またはタブで字下げしたコード行、`>` で始まる引用行は除く。
+同じ文に `ない`、`なかった`、`ません`、`未`、`ず`、`これから`、`予定`、`つもり`、
+英単語 `no/not/never/will/plan/planned` または `n't` があれば、その文は拾わない。
+同じ文で同じ種が繰り返されても 1 件とし、異なる種はそれぞれ出す。
+
+### 判定と終了コード
+
+出力は既存の `Kind Target Status Detail` のタブ区切り、または `-json` の JSON 配列。
+`Kind` は `session:test` など、`Target` は主張の文（改行・タブ等は空白）。
+対応する実行の詳細には、呼び出し時刻、`subagent=true/false`、空白を整えたコマンドの先頭 60 文字を出す。
+
+| 判定 | 意味 | 終了コード |
+|---|---|---|
+| FOUND | 発話より前の最後の対応する呼び出しが `IsError=false` | 0 |
+| FAILED | 最後の対応する呼び出しが `IsError=true` | 2 |
+| NOT FOUND | 発話より前に対応する呼び出しがない、または発話の時刻がない | 2 |
+| ERROR | セッションを読めない、対象ログに読み取り警告がある、ID が一意でない | 1 |
+
+混在時は `ERROR` を優先する。主張がなければ `session`・`FOUND`・「照合対象の主張がない」を
+1 行出して成功する（JSON でも結果 1 件）。同時刻の実行は「発話より前」に含めない。
+対応する呼び出し同士が同時刻なら、読み取り順の後を採用する（本体の後にサブエージェント）。
+
+### 限界
+
+- 辞書にない言い回しは拾わない。否定語の部分一致や単純な文区切りによって、見逃しも起こる。
+- 時刻のない行は照合できない。時刻のない呼び出しは候補から外し、時刻のない主張には理由を表示する。
+- コマンドの部分一致であり、シェルの構文や対象リポジトリは解析しない。コメントや `echo` 内の文字列も一致する。
+- `IsError` だけで判定する。`HasResult=false` でも `IsError=false` なら `FOUND` になるが、詳細に
+  「結果の記録がないため成否未確認」を添える。結果の受信時刻は読み取り API にないため、発話までに完了したかは判定できない。
+- 既存の `sessions.Dir` は人間の発話がないログを返さないため、そのログは `ERROR` になる。
+  単一ファイルを読む公開 API がないため、パス指定でも親の置き場を読み、対象だけを取り出す。
+  同じ置き場にログが多い場合は時間が掛かる。本文ブロックが束ねられた発話には、既存 API の発話時刻を使う。
+
 ## braindex approvals — 判断待ちのフォーム
 
 `work/APPROVALS.md` の判断待ち（1 項目 1 判断・5 欄「決めたいこと／なぜ今決めるか／選択肢／私の案／決めないとどうなるか」）を
@@ -235,6 +296,7 @@ braindex verify -json github pilefort/braindex   # フラグは種別より前�
 
 ```sh
 braindex scope -topic 長さ         # タイトル・要旨・パスに語を含む行(大小無視)
+braindex scope -topic 長さ -repo alpha # 両方の条件を満たす行だけ
 braindex scope -repo alpha         # その見出し(リポ名)の行だけ
 braindex scope -full -size 20      # 全件を 20 件ずつの chunk に分ける
 braindex scope -dir docs/notes     # 索引を使わず、ディレクトリ配下の *.md を列挙する
@@ -243,7 +305,9 @@ braindex scope -dir docs/notes     # 索引を使わず、ディレクトリ配�
 出力のパスは、どちらのモードでもそのまま開ける形で出る——索引を使うときは索引の行と同じ `root` 相対、
 `-dir` のときは渡したディレクトリと結合した形。`-dir` の列挙は `archive` セグメントと `.` で始まるディレクトリの
 配下を対象にしない（起点として直接渡したときだけは中を見る）。`archive` の扱いは索引と同じで、
-`.` で始まるディレクトリは索引より広く除く（索引が `.` を見るのはリポ名の各段だけ）。
+`.` で始まるディレクトリも索引と同じく置き場の中まで除く。
+`-topic` と `-repo` は併用でき、結果の `mode` は `topic:<語>+repo:<名>` になる。
+`-dir` と `-full` はそれぞれ単独で指定する。他の絞り込みとの併用は終了コード 1。
 フラグ: `-topic` `-repo` `-dir` `-full` `-size N`（既定 12）`-json`（`mode`・`n_entries`・`chunks`）`-catalog` `-config`。
 終了コード: 0 ／1 失敗／2 対象が 2 件未満（突き合わせる相手がいない）。
 

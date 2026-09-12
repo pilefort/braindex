@@ -59,6 +59,46 @@ func note(t *testing.T, content string) []Warning {
 	return CheckNote("docs/notes/x.md", []byte(content), NoteOptions{})
 }
 
+func TestCheckNote_MissingWhyExplicitReason(t *testing.T) {
+	cases := []struct {
+		name, body string
+		missing    bool
+	}{
+		{"理由行", "理由: 安全性を優先する。", false},
+		{"全角と空白", "  理由 ： 安全性を優先する。  ", false},
+		{"ためだけ", "安全性を優先するため。", true},
+		{"根拠だけ", "根拠: 会話 2026-09-02", true},
+		{"本文途中", "選定理由: 安全性を優先する。", true},
+		{"太字コロン内", "**理由:** 安全性を優先する。", false},
+		{"太字コロン外", "**理由**： 安全性を優先する。", false},
+		{"理由見出し", "## 理由\n安全性を優先する。", false},
+		{"下位の理由見出し", "### 理由\n安全性を優先する。", false},
+		{"別の見出し", "### 理由の候補\n検討中。", true},
+		{"フェンスの理由行", "```text\n理由: 安全性を優先する。\n```", true},
+		{"フェンスの見出し", "```md\n## 理由\n```", true},
+		{"次の決定の理由", "## 次の決定\n記録日: 2026-09-02\n理由: 安全性を優先する。", true},
+	}
+	for _, path := range []string{"docs/notes/x.md", "docs/decisions.md"} {
+		for _, c := range cases {
+			t.Run(path+"/"+c.name, func(t *testing.T) {
+				ws := CheckNote(path, []byte("## 決定\n記録日: 2026-09-02\n"+c.body+"\n"), NoteOptions{})
+				missing := false
+				for _, w := range ws {
+					if w.Kind == KindMissingWhy && w.Line == 1 {
+						missing = true
+						if w.Severity != SeverityCandidate {
+							t.Errorf("重大度が変わった: %+v", w)
+						}
+					}
+				}
+				if missing != c.missing {
+					t.Errorf("missing_why = %v, want %v: %v", missing, c.missing, ws)
+				}
+			})
+		}
+	}
+}
+
 // 判定表: 1 行の本文に対してどの種別が出るか(原型 record-lint の test_lint.py を写した)。
 func TestCheckNote_Table(t *testing.T) {
 	cases := []struct {

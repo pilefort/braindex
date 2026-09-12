@@ -4,11 +4,87 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/pilefort/braindex/internal/verify"
 )
+
+func TestVerify_Session(t *testing.T) {
+	for _, tc := range []struct {
+		name, text, command string
+		failed              bool
+		code                int
+		status              string
+	}{
+		{"found", "テストが通りました。", "go test", false, 0, verify.Found},
+		{"failed", "テストが通りました。", "go test", true, 2, verify.Failed},
+		{"missing", "コミットしました。", "go test", false, 2, verify.NotFound},
+		{"no_claims", "これからテストが通る予定です。", "go test", false, 0, verify.Found},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "project")
+			if err := os.Mkdir(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "sample.jsonl")
+			var log bytes.Buffer
+			enc := json.NewEncoder(&log)
+			rows := []any{
+				map[string]any{"type": "user", "message": map[string]any{"content": "検査してください。"}},
+				map[string]any{"type": "assistant", "timestamp": "2026-01-01T00:00:01Z", "message": map[string]any{"content": []any{map[string]any{"type": "tool_use", "id": "call", "name": "Bash", "input": map[string]any{"command": tc.command}}}}},
+				map[string]any{"type": "user", "timestamp": "2026-01-01T00:00:02Z", "message": map[string]any{"content": []any{map[string]any{"type": "tool_result", "tool_use_id": "call", "is_error": tc.failed}}}},
+				map[string]any{"type": "assistant", "timestamp": "2026-01-01T00:00:03Z", "message": map[string]any{"content": tc.text}},
+			}
+			for _, row := range rows {
+				if err := enc.Encode(row); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(path, log.Bytes(), 0600); err != nil {
+				t.Fatal(err)
+			}
+			for _, asJSON := range []bool{false, true} {
+				args := []string{"verify"}
+				if asJSON {
+					args = append(args, "-json")
+				}
+				args = append(args, "session", path)
+				var so, se bytes.Buffer
+				if code := dispatch(args, &so, &se); code != tc.code {
+					t.Fatalf("exit=%d out=%s err=%s", code, &so, &se)
+				}
+				if asJSON {
+					var got []verify.Result
+					if err := json.Unmarshal(so.Bytes(), &got); err != nil {
+						t.Fatal(err)
+					}
+					if len(got) != 1 || got[0].Status != tc.status {
+						t.Fatal(got)
+					}
+				} else if strings.Count(so.String(), "\n") != 1 || !strings.Contains(so.String(), "\t"+tc.status+"\t") {
+					t.Fatal(so.String())
+				}
+			}
+		})
+	}
+}
+
+func TestVerify_SessionErrors(t *testing.T) {
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"verify", "-json", "session", filepath.Join(t.TempDir(), "missing.jsonl")}, &so, &se); code != 1 {
+		t.Fatalf("exit=%d", code)
+	}
+	var got []verify.Result
+	if err := json.Unmarshal(so.Bytes(), &got); err != nil || len(got) != 1 || got[0].Status != verify.Error {
+		t.Fatalf("%s: %v", &so, err)
+	}
+	if code := dispatch([]string{"verify", "session", "a", "b"}, &so, &se); code != 1 {
+		t.Fatalf("exit=%d", code)
+	}
+}
 
 type fakeFetcher map[string]*verify.Response
 

@@ -33,13 +33,13 @@ type Entry struct {
 
 // Result は Build の結果。
 type Result struct {
-	Mode    string    `json:"mode"` // full / topic:<語> / repo:<名> / dir:<パス>
+	Mode    string    `json:"mode"` // full / topic:<語> / repo:<名> / topic:<語>+repo:<名> / dir:<パス>
 	Entries int       `json:"n_entries"`
 	NChunks int       `json:"n_chunks"`
 	Chunks  [][]Entry `json:"chunks"`
 }
 
-// Options は絞り込みの指定。Topic・Repo・Dir はいずれか 1 つ(全部空なら全件)。
+// Options は絞り込みの指定。Topic と Repo は併用可。Dir は単独指定(全部空なら全件)。
 type Options struct {
 	Topic string // タイトル・要旨・パスの部分一致(大小無視)
 	Repo  string // H2 見出し(リポ名)の完全一致
@@ -69,8 +69,7 @@ func fromRender(r render.Entry) Entry {
 //
 // 走査規則: archive セグメントとドットで始まるディレクトリは降りない(退避したノートと .git 配下を対象にしない)。
 // ただし起点の dir 自身には掛けない。掛けると archive やドットディレクトリを直接渡したときに全件消えるため。
-// archive の除外は索引(scan.collectNotes)と同じ。ドットの除外はそれより広い——索引がドットを見るのは
-// root 直下のリポ選びだけなので、docs/notes/.drafts/ のような置き場の中の隠しディレクトリは索引には載る(2026-09-04 実測)。
+// 索引も置き場の中の archive・ドットで始まるディレクトリを除外する。
 func EnumerateDir(dir string) ([]Entry, error) {
 	fi, err := os.Stat(dir)
 	if err != nil {
@@ -169,6 +168,9 @@ func Build(catalog []byte, o Options) (Result, error) {
 	}
 	if o.Topic != "" {
 		mode = "topic:" + o.Topic
+		if o.Repo != "" {
+			mode += "+repo:" + o.Repo
+		}
 	}
 	entries = Filter(entries, o.Topic, o.Repo)
 	chunks := Chunk(entries, o.Size)

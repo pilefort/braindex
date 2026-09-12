@@ -44,6 +44,16 @@
 
 未知のキーはエラーにする（`notes_dir` のような打ち間違いを無言で無視しない）。
 
+走査では、`notes_dirs` の置き場や `extra` の起点より下にある、ドットで始まるファイル・ディレクトリを除外する。
+明示した起点そのものに含まれるドットの区間は許す。たとえば `extra` に `path: ".github/docs"` と `recursive: true` を指定すると、
+`.github/docs/a.md` は載り、`.github/docs/.drafts/b.md` と `.github/docs/.memo.md` は載らない。
+`root` 自身の名前にはこの除外を掛けない。リポを列挙する段では、ドットで始まるディレクトリを引き続き除外する。
+`extra` の `exclude` は、その規則自身が拾う範囲で、`notes_dirs` や別の `extra` が拾うファイルにも効く。
+範囲は `recursive: true` なら起点以下すべて、`recursive: false` なら起点直下のファイルだけになる。起点より下のドット名は走査対象外なので、この範囲にも含まない。
+たとえば `path: "."`、`recursive: false`、`exclude: ["README.md"]` なら、リポ直下の `README.md` は載らないが、別の規則が拾う `research/x/README.md` は載る。
+また、`{"repo":"alpha","path":"docs/notes","recursive":true,"exclude":["drafts"]}` なら、
+`alpha/docs/notes/drafts/p.md` は載らず、同じ置き場の他のノートは載る。対象判定（`Covers`）も同じ規則に従う。
+
 例（`alpha` リポの `research/` を種別 `research` で載せ、README と下書きを除く）:
 
 ```json

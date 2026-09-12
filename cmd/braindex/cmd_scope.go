@@ -21,7 +21,7 @@ func init() {
 	})
 }
 
-// runScope は braindex scope (-topic 語 | -repo 名 | -dir パス | -full) [-size N] [-json] を実行する。
+// runScope は braindex scope (-topic 語 [-repo 名] | -repo 名 | -dir パス | -full) [-size N] [-json] を実行する。
 // 索引(既定: 設定ファイルと同じディレクトリの index/catalog.md。-catalog で上書き)を読み、走査対象を chunk に分けて出す。
 // 終了コード: 0 / 1 失敗(フラグ・索引の誤り) / 2 対象が 2 件未満(突き合わせられない)。
 func runScope(args []string, stdout, stderr io.Writer) int {
@@ -40,7 +40,8 @@ func runScope(args []string, stdout, stderr io.Writer) int {
 	fs.IntVar(&size, "size", scope.DefaultChunkSize, "chunk あたりの件数")
 	fs.BoolVar(&asJSON, "json", false, "JSON で出す(mode・n_entries・chunks)")
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "使い方: braindex scope (-topic <語> | -repo <名> | -dir <パス> | -full) [-size N] [-json]")
+		fmt.Fprintln(stderr, "使い方: braindex scope (-topic <語> [-repo <名>] | -repo <名> | -dir <パス> | -full) [-size N] [-json]")
+		fmt.Fprintln(stderr, "  -topic と -repo は併用可。両方の条件を満たす行だけを出す。-dir と -full は単独指定。")
 		fmt.Fprintln(stderr, "  索引から矛盾検査の走査対象を列挙・絞り込み・chunk 分割して出す。矛盾の判定はしない(実ファイルを読むのは人かエージェント)。")
 		fmt.Fprintln(stderr, "  終了コード: 0 / 1 失敗 / 2 対象が 2 件未満")
 		fmt.Fprintln(stderr)
@@ -58,13 +59,13 @@ func runScope(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	modes := 0
-	for _, on := range []bool{topic != "", repo != "", dir != "", full} {
+	for _, on := range []bool{topic != "" || repo != "", dir != "", full} {
 		if on {
 			modes++
 		}
 	}
 	if modes != 1 {
-		fmt.Fprintln(stderr, "braindex scope: -topic / -repo / -dir / -full のいずれか 1 つを指定する")
+		fmt.Fprintln(stderr, "braindex scope: -topic / -repo / -dir / -full を指定する（併用できるのは -topic と -repo のみ）")
 		return 1
 	}
 	if size <= 0 {
