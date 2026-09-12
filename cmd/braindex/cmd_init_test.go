@@ -125,6 +125,42 @@ func TestInit_BadArgs(t *testing.T) {
 	}
 }
 
+// braindex init -repo ../x -add retro のように -repo の直後にパスを書くと、-repo は値を取らない真偽フラグなので
+// そのパスがディレクトリの位置引数になり、それより後ろの -add retro はフラグとして認識されず位置引数に混ざる
+// (go の flag は最初の非フラグ引数でフラグの解釈を止める)。「ディレクトリは 1 つまで」という的外れなメッセージでなく、
+// 何が起きたかと正しい書き方を示す。
+func TestInit_RepoFlagFollowedByPathGivesHelpfulError(t *testing.T) {
+	var so, se bytes.Buffer
+	code := dispatch([]string{"init", "-repo", "../x", "-add", "retro"}, &so, &se)
+	if code != 1 {
+		t.Fatalf("exit=%d want 1: stderr=%s", code, se.String())
+	}
+	got := se.String()
+	if !strings.Contains(got, "-repo") || !strings.Contains(got, "真偽フラグ") {
+		t.Errorf("-repo が値を取らないことの説明が無い: %s", got)
+	}
+	if !strings.Contains(got, "フラグより前") && !strings.Contains(got, "フラグはすべてディレクトリより前") {
+		t.Errorf("正しい書き方(フラグを先に書く)の案内が無い: %s", got)
+	}
+}
+
+// -repo の後ろに単にディレクトリを 2 つ渡しただけ(フラグを混同していない)なら、
+// 「-repo は真偽フラグ」の案内は出さず、従来どおり「ディレクトリは 1 つまで」で止める。
+func TestInit_RepoWithTwoPlainDirsKeepsGenericError(t *testing.T) {
+	var so, se bytes.Buffer
+	code := dispatch([]string{"init", "-repo", "../x", "../y"}, &so, &se)
+	if code != 1 {
+		t.Fatalf("exit=%d want 1: stderr=%s", code, se.String())
+	}
+	got := se.String()
+	if !strings.Contains(got, "1 つまで") {
+		t.Errorf("従来のメッセージが出ていない: %s", got)
+	}
+	if strings.Contains(got, "真偽フラグ") {
+		t.Errorf("フラグの混同案内が誤って出た(フラグを混同していない場合): %s", got)
+	}
+}
+
 // braindex init -repo <dir> は各プロジェクトのリポ側の骨格だけを置く(hub 用の README や braindex.json は作らない)。
 func TestInit_Repo(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "repo-a")
