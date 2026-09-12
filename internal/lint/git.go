@@ -1,8 +1,9 @@
 package lint
 
 import (
-	"os/exec"
 	"path/filepath"
+
+	"github.com/pilefort/braindex/internal/gitutil"
 )
 
 // HeadContent は path の git HEAD 版の内容を返す。
@@ -15,9 +16,9 @@ func HeadContent(path string) (content []byte, ok bool) {
 		return nil, false
 	}
 	// HEAD:./<name> は -C で指定したディレクトリからの相対パス(リポのルートからではない)
-	out, err := exec.Command("git", "-C", filepath.Dir(abs), "show", "HEAD:./"+filepath.Base(abs)).Output()
+	out, err := gitutil.Run("git", filepath.Dir(abs), "show", "HEAD:./"+filepath.Base(abs))
 	if err != nil {
 		return nil, false
 	}
-	return out, true
+	return []byte(out), true
 }

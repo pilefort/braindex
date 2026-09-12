@@ -1,14 +1,13 @@
 package review
 
 import (
-	"bytes"
-	"errors"
-	"fmt"
 	"os/exec"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/pilefort/braindex/internal/gitutil"
 )
 
 // Git は git コマンドの薄い包み。git はあれば使うだけで braindex の依存にはしない
@@ -64,16 +63,7 @@ func (g Git) detectSinceAsFilter() bool {
 // 索引のパスと突き合わせられず表示も読めないため(二重引用符・バックスラッシュ・制御文字は false でも
 // エスケープされる)。
 func (g Git) run(dir string, args ...string) (string, error) {
-	cmd := exec.Command(g.path, append([]string{"-c", "core.quotePath=false", "-C", dir}, args...)...)
-	out, err := cmd.Output()
-	if err != nil {
-		var ee *exec.ExitError
-		if errors.As(err, &ee) && len(ee.Stderr) > 0 {
-			return "", fmt.Errorf("git %s: %s", args[0], strings.TrimSpace(string(ee.Stderr)))
-		}
-		return "", fmt.Errorf("git %s: %w", args[0], err)
-	}
-	return string(bytes.ReplaceAll(out, []byte("\r\n"), []byte("\n"))), nil
+	return gitutil.Run(g.path, dir, args...)
 }
 
 // InRepo は dir が git の作業ツリーの中かを返す(サブディレクトリでもよい)。

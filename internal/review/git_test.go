@@ -18,6 +18,20 @@ type testRepo struct {
 	date   string // 次のコミットに使う日時(GIT_AUTHOR_DATE / GIT_COMMITTER_DATE)
 }
 
+func TestGitRunJapaneseCRLF(t *testing.T) {
+	r := newTestRepo(t)
+	r.write("日本語.md", "見出し\r\n本文\r\n")
+	r.run("add", "--", "日本語.md")
+	out, err := r.git.run(r.dir, "ls-files")
+	if err != nil || out != "日本語.md\n" {
+		t.Fatalf("ls-files = %q, %v", out, err)
+	}
+	out, err = r.git.run(r.dir, "show", ":日本語.md")
+	if err != nil || out != "見出し\n本文\n" {
+		t.Fatalf("show = %q, %v", out, err)
+	}
+}
+
 func newTestRepo(t *testing.T) *testRepo {
 	t.Helper()
 	return newTestRepoAt(t, t.TempDir())
