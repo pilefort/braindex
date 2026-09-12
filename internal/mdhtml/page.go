@@ -188,13 +188,16 @@ func linkText(s string) string {
 
 // Page は Markdown を自己完結の HTML 文書にする(CSS・JS 埋め込み・外部読み込み無し)。
 // チェックボックスは表示専用(disabled)でなくクリック可能にし、消し込みを JS が localStorage に残す。
-func Page(md, title string) string {
-	return shell(title, renderBody(md), "")
+func Page(md, title string) string { return PageWith(md, title, Options{}) }
+
+// PageWith は Page に変換の設定を渡す形。相対パスの基準(Options.BaseDir)を指定できる。
+func PageWith(md, title string, opt Options) string {
+	return shell(title, renderBody(md, opt), "")
 }
 
 // renderBody は Markdown を本文の HTML にする(裸の URL のリンク化と、チェックボックスの有効化まで)。
-func renderBody(md string) string {
-	body := Linkify(Body(md))
+func renderBody(md string, opt Options) string {
+	body := Linkify(BodyWith(md, opt))
 	body = strings.ReplaceAll(body, `<input type="checkbox" disabled checked>`, `<input type="checkbox" checked>`)
 	return strings.ReplaceAll(body, `<input type="checkbox" disabled>`, `<input type="checkbox">`)
 }

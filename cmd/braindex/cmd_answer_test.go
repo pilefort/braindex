@@ -180,3 +180,28 @@ func TestAnswer_Help(t *testing.T) {
 		t.Errorf("使い方が出ていない: %q", se.String())
 	}
 }
+
+// md に書いた相対パスの画像は、md の置き場所からの絶対パスにして出す。
+// HTML は一時置き場に書かれるので、相対のままでは開けない(2026-09-12 の不具合)。
+func TestAnswer_RelativePathResolvedFromMarkdownDir(t *testing.T) {
+	dir, _ := stubAnswer(t)
+	srcDir := t.TempDir()
+	src := filepath.Join(srcDir, "memo.md")
+	writeFile(t, src, "# 題名\n\n![図](./fig.svg)\n")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"answer", "-no-open", src}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d want 0\nstderr=%s", code, se.String())
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "memo.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	abs, err := filepath.Abs(filepath.Join(srcDir, "fig.svg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `<img src="file:///` + strings.TrimPrefix(filepath.ToSlash(abs), "/") + `"`
+	if !strings.Contains(string(got), want) {
+		t.Errorf("出力に %s が無い", want)
+	}
+}
