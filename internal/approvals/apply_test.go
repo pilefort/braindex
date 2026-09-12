@@ -5,6 +5,30 @@ import (
 	"testing"
 )
 
+func TestApply_HoldIdempotent(t *testing.T) {
+	for _, comment := range []string{"", "待つ", "一行目\n二行目"} {
+		src := []byte("# 承認待ち\n\n## 1. 題\n本文\n")
+		rep := Reply{Items: []ReplyItem{{N: 1, Choice: "hold", Comment: comment}}}
+		a := Apply(src, nil, rep, "2026-03-04")
+		b := Apply(a.Approvals, nil, rep, "2026-03-04")
+		if string(a.Approvals) != string(b.Approvals) {
+			t.Errorf("再反映で変化: %s", b.Approvals)
+		}
+		c := Apply(a.Approvals, nil, rep, "2026-03-05")
+		if !strings.Contains(string(c.Approvals), "保留（2026-03-05）") {
+			t.Error("別日の保留が消えた")
+		}
+	}
+}
+
+func TestApply_AllWarningsPreservesInput(t *testing.T) {
+	src := []byte("# 承認待ち\r\n\r\n## 8. 題\r\n本文\r\n\r\n")
+	res := Apply(src, nil, Reply{Items: []ReplyItem{{N: 99, Choice: "A"}}}, "2026-03-04")
+	if string(src) != string(res.Approvals) {
+		t.Errorf("未反映で変化: %s", res.Approvals)
+	}
+}
+
 // 見出しが同じ項目が並んでいても、答えた項目だけを消す(消し込みを題で引くと、答えていない同題の項目まで消える)。
 func TestApply_DuplicateTitles(t *testing.T) {
 	src := []byte("# 承認待ち\n\n" +

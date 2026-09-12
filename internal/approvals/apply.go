@@ -149,6 +149,12 @@ func Apply(approvalsMD, decisionsMD []byte, rep Reply, today string) ApplyResult
 		res.Decided++
 	}
 
+	// 全件未反映なら番号や改行も含めて入力を保つ。
+	if res.Decided == 0 && res.Held == 0 {
+		res.Approvals, res.Decisions = approvalsMD, decisionsMD
+		return res
+	}
+
 	// APPROVALS.md を組み立て直す
 	var remaining []string
 	for i, it := range d.Items {
@@ -159,7 +165,9 @@ func Apply(approvalsMD, decisionsMD []byte, rep Reply, today string) ApplyResult
 		if note, ok := holds[i]; ok {
 			// コメント無しのときに行末へ空白を残さない(Markdown の行末空白は強制改行になり、diff にも出る)
 			hold := strings.TrimRight("**保留（"+today+"）:** "+note, " ")
-			raw = strings.TrimRight(raw, "\n") + "\n" + hold + "\n"
+			if !strings.Contains("\n"+raw, "\n"+hold+"\n") {
+				raw = strings.TrimRight(raw, "\n") + "\n" + hold + "\n"
+			}
 		}
 		remaining = append(remaining, raw)
 	}
