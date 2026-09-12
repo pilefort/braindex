@@ -151,7 +151,7 @@ func KeepMarkdown(keeps []Keep, date, layer string) string {
 		if title == "" {
 			title = "(無題)"
 		}
-		fmt.Fprintf(&sb, "- [%s](%s) — %s", escapeTitle(title), k.Link, k.Feed)
+		fmt.Fprintf(&sb, "- [%s](%s) — %s", escapeTitle(title), markdownDestination(k.Link), k.Feed)
 		if k.Rescued {
 			sb.WriteString("（関心外から救済）")
 		}
@@ -342,12 +342,16 @@ func appendKeeps(path, month string, keeps []Keep, date, layer string) (int, err
 		perm = fi.Mode().Perm()
 	}
 	var fresh []Keep
+	seen := make(map[string]bool, len(keeps))
 	for _, k := range keeps {
 		// keep は git 管理の蓄積側なので、載せるリンクは http(s) だけにする(決定 2026-09-03 → manual/design.md「決めたこと」)。
 		// 落とす扱いはリンクの無い記事と同じ: 記録しない(題名だけ書くと、次回の重複判定に引っかからず毎回増える)。
-		if k.Link == "" || !weblink.Safe(k.Link) || bytes.Contains(existing, []byte("]("+k.Link+")")) {
+		if k.Link == "" || !weblink.Safe(k.Link) || seen[k.Link] ||
+			bytes.Contains(existing, []byte("]("+k.Link+")")) ||
+			bytes.Contains(existing, []byte("](<"+k.Link+">)")) {
 			continue
 		}
+		seen[k.Link] = true
 		fresh = append(fresh, k)
 	}
 	if len(fresh) == 0 {

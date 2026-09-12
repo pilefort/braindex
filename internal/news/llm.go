@@ -26,9 +26,6 @@ import (
 // LLMCacheFile は Dir の下。LLM の注釈のキャッシュ。git 管理外。
 const LLMCacheFile = ".llm_cache.json"
 
-// LLMMark は LLM が付けた点であることを示す印(Score.Matched に 1 つだけ入れる)。
-const LLMMark = "LLM"
-
 // Annotation は 1 記事の注釈。Title / Summary は日本語訳(日本語の記事は空)。Score が nil なら未採点。
 // NoTitle は「日本語の記事でないのに訳が返らず、聞き直しても空だった」印。これが無いと、
 // 訳が落ちた記事を毎回聞き直して費用だけが増える。
@@ -400,7 +397,7 @@ func normScore(raw json.RawMessage) *int {
 	return &n
 }
 
-// ApplyAnnotations は語の一致の Ranking に LLM の関心度を重ねる(LLM が採点した記事はその点で上書きし、Matched は LLMMark だけ)。
+// ApplyAnnotations は語の一致の Ranking に LLM の関心度を重ねる。LLM を true にし、一致語はコピーして残す。
 // LLM 未採点の記事は rk の点を保つ。rk が nil(プロファイルが空)のときは、注釈に採点が 1 件でもあれば新しい Ranking を作り、
 // 未採点の記事は載せない(Ranking に無い＝未採点。Split は主要表示に入れ、描画はバッジを付けない。関心度を捏造しない)。
 // 採点が 1 件も無ければ rk をそのまま返す。
@@ -420,7 +417,8 @@ func ApplyAnnotations(rk Ranking, results []Result, ann Annotations) Ranking {
 	for _, r := range results {
 		for _, e := range r.New {
 			if a, ok := ann[e.ID]; ok && a.Score != nil {
-				out[e.ID] = interest.Score{Value: *a.Score, Matched: []string{LLMMark}}
+				matched := append([]string(nil), rk[e.ID].Matched...)
+				out[e.ID] = interest.Score{Value: *a.Score, LLM: true, Matched: matched}
 				continue
 			}
 			if v, ok := rk[e.ID]; ok {
@@ -439,12 +437,12 @@ func (a Annotations) translation(id string) string {
 	return a[id].Title
 }
 
-// LLMScored は LLM の点が実際に適用された新着の件数(Matched が LLMMark だけの記事)。脚注の表記に使う。
+// LLMScored は LLM の点が実際に適用された新着の件数。脚注の表記に使う。
 func LLMScored(results []Result, rk Ranking) int {
 	n := 0
 	for _, r := range results {
 		for _, e := range r.New {
-			if s, ok := rk[e.ID]; ok && len(s.Matched) == 1 && s.Matched[0] == LLMMark {
+			if s, ok := rk[e.ID]; ok && s.LLM {
 				n++
 			}
 		}

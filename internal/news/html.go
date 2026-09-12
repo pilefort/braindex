@@ -246,9 +246,15 @@ func itemHTML(e feed.Entry, r Result, o DigestOptions, low bool) string {
 	score, reason := "", ""
 	if s, ok := o.Ranking[e.ID]; ok {
 		score = fmt.Sprint(s.Value)
+		if s.LLM {
+			reason = "LLM 採点"
+		}
 		if len(s.Matched) > 0 {
-			reason = "関心に合った語: " + strings.Join(s.Matched, "・")
-		} else {
+			if reason != "" {
+				reason += "・"
+			}
+			reason += "関心に合った語: " + strings.Join(s.Matched, "・")
+		} else if !s.LLM {
 			reason = "関心度: " + score
 		}
 		if s.Value >= o.MinScore {

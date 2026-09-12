@@ -14,6 +14,14 @@ import (
 	"github.com/pilefort/braindex/internal/weblink"
 )
 
+// markdownDestination は括弧や空白を含むリンク先だけを山括弧で囲む。
+func markdownDestination(link string) string {
+	if strings.ContainsAny(link, "() \t\r\n") {
+		return "<" + link + ">"
+	}
+	return link
+}
+
 // Fetcher はフィードを取得する側。実体は feed.Fetcher。テストでは差し替える。
 type Fetcher interface {
 	Fetch(ctx context.Context, url string) (feed.Document, error)
@@ -305,14 +313,18 @@ func writeTier(sb *strings.Builder, entries []feed.Entry, o DigestOptions, inden
 		// (決定 2026-09-03「生成物のリンクは http(s) 以外を落とす」→ manual/design.md「決めたこと」)。
 		// リンクを付けず題名だけを出す(HTML 側と同じ扱い)。
 		if weblink.Safe(e.Link) {
-			fmt.Fprintf(sb, "[%s](%s)", escapeTitle(e.Title), e.Link)
+			fmt.Fprintf(sb, "[%s](%s)", escapeTitle(e.Title), markdownDestination(e.Link))
 		} else {
 			sb.WriteString(escapeTitle(e.Title))
 		}
 		if s, ok := o.Ranking[e.ID]; ok { // 無い＝未採点(★ を付けない)
 			fmt.Fprintf(sb, " ★%d", s.Value)
-			if len(s.Matched) > 0 {
-				fmt.Fprintf(sb, "（%s）", strings.Join(s.Matched, "・"))
+			words := s.Matched
+			if s.LLM {
+				words = append([]string{"LLM"}, words...)
+			}
+			if len(words) > 0 {
+				fmt.Fprintf(sb, "（%s）", strings.Join(words, "・"))
 			}
 		}
 		if tr := o.Annotations.translation(e.ID); tr != "" {

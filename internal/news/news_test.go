@@ -417,9 +417,9 @@ func TestRank_下げた取材先は上限が下がる(t *testing.T) {
 		t.Error("当たった語まで消した")
 	}
 	// 点を上書きした後(LLM の採点)でも、もう一度かければ上限まで戻る
-	rk["b"] = interest.Score{Value: interest.MaxScore, Matched: []string{LLMMark}}
+	rk["b"] = interest.Score{Value: interest.MaxScore, LLM: true, Matched: []string{"LLM"}}
 	rk = CapDemoted(rk, res, map[string]bool{"不要ばかり": true})
-	if rk["b"].Value != DemotedMaxScore || len(rk["b"].Matched) != 1 {
+	if rk["b"].Value != DemotedMaxScore || !rk["b"].LLM || len(rk["b"].Matched) != 1 || rk["b"].Matched[0] != "LLM" {
 		t.Errorf("上書きの後の CapDemoted: %+v", rk["b"])
 	}
 	if rk["a"].Value != base["a"].Value {

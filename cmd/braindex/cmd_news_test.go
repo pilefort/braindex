@@ -13,6 +13,14 @@ import (
 	"github.com/pilefort/braindex/internal/feed"
 )
 
+func TestNewsFetch_HelpPartialWrite(t *testing.T) {
+	var so, se bytes.Buffer
+	code := runNewsFetch([]string{"-help"}, &so, &se)
+	if code != 0 || strings.Contains(se.String(), "何も書かない") || !strings.Contains(se.String(), "既読の保存に失敗した場合も、ダイジェストは書き込み済み") {
+		t.Fatalf("exit=%d help=%s", code, se.String())
+	}
+}
+
 // newsHub は hub と、httptest で配る 2 本のフィード(a: 記事 2 件・b: 記事 1 件)と、壊れた 1 本(c: 404)の feeds.json を作る。
 // ホームを一時ディレクトリに差し替える: news fetch / apply は -inbox 未指定なら ~/Downloads の選別 JSON を
 // 取り込んで .ingested へ「移す」ので、差し替えないとテストが実ユーザーの Downloads からファイルを持ち去る。
