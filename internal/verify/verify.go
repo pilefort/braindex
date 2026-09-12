@@ -27,9 +27,10 @@ const (
 
 // Response は GET の結果。Fetcher が返す。
 type Response struct {
-	Status   int
-	FinalURL string
-	Body     string
+	Status    int
+	FinalURL  string
+	Body      string
+	Truncated bool // Body が maxBody で打ち切られていれば true。打ち切り以降は取得していない。
 }
 
 // Fetcher は GET だけを行う取得器。テストでは固定レスポンスに差し替える。
@@ -112,14 +113,19 @@ func StripHTML(page string) string {
 	return collapseSpace(t)
 }
 
-// CheckQuoteText は引用が出典 HTML の本文に逐語で存在するかを返す。許すのは空白の揺れだけで、
-// 言い換えを弾くのが目的なので曖昧一致にしない。MinQuoteLen 未満は照合拒否(Error)。
-func CheckQuoteText(page, quote string) (status, detail string) {
+// CheckQuoteText は引用が「あらかじめ StripHTML で平文化した本文」に逐語で存在するかを返す。
+// 許すのは空白の揺れだけで、言い換えを弾くのが目的なので曖昧一致にしない。MinQuoteLen 未満は照合拒否(Error)。
+//
+// 以前は HTML の生ページを受け取り、呼び出しのたびに内部で StripHTML していた。1 ページに引用が
+// 複数あると、同じページに対して正規表現 4 本のなめ直しが引用の数だけ重複して走ってしまう(8 MiB の
+// ページ×引用 10 件で 10 回)。ページの平文化はここでなく呼び出し側(Quotes)で 1 回だけ行い、その
+// 結果を使い回す形に変えた(2026-09-12)。
+func CheckQuoteText(plainText, quote string) (status, detail string) {
 	q := collapseSpace(quote)
 	if utf8.RuneCountInString(q) < MinQuoteLen {
 		return Error, fmt.Sprintf("%d 字未満の引用は照合しない", MinQuoteLen)
 	}
-	if strings.Contains(StripHTML(page), q) {
+	if strings.Contains(plainText, q) {
 		return Found, "逐語一致"
 	}
 	return NotFound, "本文に逐語では無い(言い換え・誤引用の疑い)"
@@ -188,10 +194,22 @@ func URL(f Fetcher, u string) Result {
 	return r
 }
 
-// Quotes は出典ページを 1 回取得し、各引用が逐語で実在するかを照合する。
+// Quotes は出典ページを 1 回取得し、平文化も 1 回だけ行ってから、各引用が逐語で実在するかを照合する
+// (StripHTML を引用ごとに回さない。理由は CheckQuoteText のコメントを参照)。
+//
+// 本文が maxBody で打ち切られていた場合、打ち切りの先に引用があっても「無い」と確定はできない。
+// そのページで見つからなかった引用は NOT FOUND でなく Error にし、打ち切りが理由だと detail に書く。
 func Quotes(f Fetcher, u string, quotes []string) []Result {
 	out := make([]Result, 0, len(quotes))
 	res, err := f.Get(u)
+
+	var plainText string
+	var truncated bool
+	if err == nil && res.Status == 200 {
+		plainText = StripHTML(res.Body)
+		truncated = res.Truncated
+	}
+
 	for _, q := range quotes {
 		r := Result{Kind: "quote", Target: q}
 		switch {
@@ -200,7 +218,11 @@ func Quotes(f Fetcher, u string, quotes []string) []Result {
 		case res.Status != 200:
 			r.Status, r.Detail = Error, fmt.Sprintf("HTTP %d %s", res.Status, u)
 		default:
-			r.Status, r.Detail = CheckQuoteText(res.Body, q)
+			r.Status, r.Detail = CheckQuoteText(plainText, q)
+			if r.Status == NotFound && truncated {
+				r.Status = Error
+				r.Detail = fmt.Sprintf("本文を %d MiB で打ち切って取得したため、この先に引用があっても確認できない(打ち切り以降に実在する可能性がある)", maxBody/(1<<20))
+			}
 		}
 		out = append(out, r)
 	}

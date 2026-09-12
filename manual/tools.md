@@ -224,6 +224,8 @@ braindex verify -json github pilefort/braindex   # フラグは種別より前�
 出力は 1 件 1 行（種別・対象・判定・実測のタブ区切り。判定は `FOUND`／`NOT FOUND`／`ERROR`。`-json` で配列）。
 `github` は実在・スター数・作成日、`arxiv` は ID の実在（実測の列にタイトル）、`url` は HTTP 200 か、`quote` は本文（タグ除去・空白正規化）に引用が実在するか。
 `quote` は空白の揺れだけ許し、24 字未満の引用は ERROR になる。`GITHUB_TOKEN` があれば GitHub API の認証に使う（任意・レート制限対策）。
+`quote` の出典ページは本文 8 MiB で打ち切って取得する。打ち切りが起きたページで見つからなかった引用は、
+`NOT FOUND`（無いと確定）ではなく `ERROR`（打ち切りの先は見ていないので判定できない）で返る。
 終了コード: 0 全件 FOUND／2 NOT FOUND あり／1 失敗（ERROR あり・引数の誤り）。
 
 ## braindex scope — 矛盾検査の走査対象
