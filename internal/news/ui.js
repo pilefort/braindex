@@ -10,7 +10,7 @@ for(const id of Object.keys(state)){if(state[id]!=="keep"&&state[id]!=="drop")de
 draft.reading=draft.reading&&typeof draft.reading==="object"&&!Array.isArray(draft.reading)?draft.reading:{};
 draft.inputs=draft.inputs&&typeof draft.inputs==="object"&&!Array.isArray(draft.inputs)?draft.inputs:{};
 draft.reading=Object.assign(Object.create(null),draft.reading);draft.inputs=Object.assign(Object.create(null),draft.inputs);
-for(const id of Object.keys(draft.reading)){const d=draft.reading[id];if(!d||typeof d!=="object"){delete draft.reading[id];continue;}if(!["later","done","hold","try"].includes(d.status))d.status="later";d.questions=Array.isArray(d.questions)?d.questions.filter(q=>q&&typeof q.id==="string"&&["overview","stuck","relate","try"].includes(q.mode)&&typeof q.text==="string"):[];}
+for(const id of Object.keys(draft.reading)){const d=draft.reading[id];if(!d||typeof d!=="object"){delete draft.reading[id];continue;}if(!["later","done","hold","try","deep","none"].includes(d.status))d.status="later";d.questions=Array.isArray(d.questions)?d.questions.filter(q=>q&&typeof q.id==="string"&&["overview","stuck","relate","try"].includes(q.mode)&&typeof q.text==="string"):[];}
 const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k)?o[k]:undefined;
 function selected(li){return own(records,li.dataset.id)?"keep":own(state,li.dataset.id)||null;}
 function reading(li){const id=li.dataset.id,a=own(records,id),d=own(draft.reading,id);const newer=d?.status_changed&&(!a?.updated||Date.parse(d.status_updated)>=Date.parse(a.updated));return {id,status:newer?d.status:a?.status||d?.status||"later",status_changed:!!d?.status_changed,status_updated:d?.status_updated||"",questions:questions(li)};}

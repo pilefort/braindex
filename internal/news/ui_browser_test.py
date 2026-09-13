@@ -124,6 +124,10 @@ with sync_playwright() as p:
     page.locator('[data-id="article-3"] .reading-status').select_option("deep")
     expect(page.locator("#visibleCount")).to_contain_text("まだ仕分けていない 0 件")
     expect(page.locator("#nDeep")).to_have_text("1")
+    # digest の下書きでも「詳しく知りたい」は再読み込み後に残る。
+    page.reload()
+    expect(page.locator("#nDeep")).to_have_text("1")
+    expect(page.locator('[data-id="article-3"] .reading-status')).to_have_value("deep")
     page.locator("#deepExplain").click()
     deep = page.locator("#requestText").input_value()
     assert "1 件ずつ詳しく解説してください" in deep, deep
@@ -132,6 +136,12 @@ with sync_playwright() as p:
     assert "article-1" not in deep, deep
     page.keyboard.press("Escape")
     print("batch overview and deep checks passed", flush=True)
+    # 「興味なし」も再読み込みで「あとで読む」に戻らない。
+    page.locator('[data-view="keep"]').click()
+    first.locator(".reading-status").select_option("none")
+    page.reload()
+    expect(first.locator(".reading-status")).to_have_value("none")
+    expect(page.locator("#nDeep")).to_have_text("1")
     page.set_viewport_size({"width": 390, "height": 844})
     page.screenshot(path=str(root / "mobile.png"), full_page=True)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
