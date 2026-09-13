@@ -5,7 +5,29 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pilefort/braindex/internal/learn"
 )
+
+func TestLoad_LearnSection(t *testing.T) {
+	cfg, found, err := Load(write(t, `{"learn":{"min_sessions":5,"max_session_ratio":0.25,"min_corrections":4,"boilerplate_sessions":6}}`))
+	if err != nil || !found {
+		t.Fatalf("found=%v err=%v", found, err)
+	}
+	want := learn.Settings{MinSessions: 5, MaxSessionRatio: 0.25, MinCorrections: 4, BoilerplateSessions: 6}
+	if cfg.Learn != want {
+		t.Fatalf("learn 節: got=%+v want=%+v", cfg.Learn, want)
+	}
+	for _, raw := range []string{`{}`, `{"learn":{}}`, `{"learn":{"min_sessions":0,"max_session_ratio":0,"min_corrections":0,"boilerplate_sessions":0}}`} {
+		cfg, _, err := Load(write(t, raw))
+		if err != nil || cfg.Learn.WithDefaults() != (learn.Settings{}).WithDefaults() {
+			t.Errorf("省略・0: %s cfg=%+v err=%v", raw, cfg.Learn, err)
+		}
+	}
+	if _, _, err := Load(write(t, `{"learn":{"min_session":5}}`)); err == nil || !strings.Contains(err.Error(), "min_session") {
+		t.Errorf("learn 節の未知キー: %v", err)
+	}
+}
 
 func write(t *testing.T, content string) string {
 	t.Helper()

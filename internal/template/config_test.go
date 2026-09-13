@@ -70,9 +70,9 @@ func TestBuildConfig_Sections(t *testing.T) {
 		{[]Feature{FeatureReview}, "root,notes_dirs,extra,review,approvals", ""},
 		{[]Feature{FeatureSchedule}, "root,notes_dirs,extra,schedule", ""},
 		{[]Feature{FeatureSchedule, FeatureRetro}, "root,notes_dirs,extra,retro,schedule", "retro"},
-		{[]Feature{FeatureSchedule, FeatureNews}, "root,notes_dirs,extra,news,schedule", "news"},
+		{[]Feature{FeatureSchedule, FeatureNews}, "root,notes_dirs,extra,news,learn,schedule", "news"},
 		{[]Feature{FeatureSchedule, FeatureReview}, "root,notes_dirs,extra,review,approvals,schedule", "review"},
-		{[]Feature{FeatureAll}, "root,notes_dirs,extra,review,retro,approvals,news,schedule", "review,retro,news"},
+		{[]Feature{FeatureAll}, "root,notes_dirs,extra,review,retro,approvals,news,learn,schedule", "review,retro,news"},
 	}
 	dir := t.TempDir()
 	for i, c := range cases {

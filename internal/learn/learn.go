@@ -32,16 +32,16 @@ type Options struct {
 
 func (o Options) withDefaults() Options {
 	if o.MinSessions <= 0 {
-		o.MinSessions = 3
+		o.MinSessions = DefaultMinSessions
 	}
 	if o.MaxSessionRatio <= 0 {
-		o.MaxSessionRatio = 0.1
+		o.MaxSessionRatio = DefaultMaxSessionRatio
 	}
 	if o.MinCorrections <= 0 {
-		o.MinCorrections = 2
+		o.MinCorrections = DefaultMinCorrections
 	}
 	if o.BoilerplateSessions <= 0 {
-		o.BoilerplateSessions = 3
+		o.BoilerplateSessions = DefaultBoilerplateSessions
 	}
 	if o.Top < 0 {
 		o.Top = 0
@@ -146,9 +146,13 @@ func Build(in Input) Report {
 		corrections int
 		sessions    map[string]bool
 	}
-	// 定型(機械が流し込んだ指示)の印を付ける。判定は読み取り層と共有する——別々に持つと、
-	// 同じログから retro と learn で違う数が出る(設計レビュー 2026-09-06 M11)。
-	// 印は冪等なので、読み取り時に付いていても付け直してよい
+	// 定型(機械が流し込んだ指示)の判定処理は読み取り層と共有し、閾値は learn の設定を使う。
+	// 読み取り時の既定の印を消し、今回の閾値で判定し直す。
+	for i := range in.Sessions {
+		for j := range in.Sessions[i].Turns {
+			in.Sessions[i].Turns[j].Boilerplate = false
+		}
+	}
 	sessions.MarkBoilerplate(in.Sessions, o.BoilerplateSessions)
 	// 1 パス目: 窓の中の訂正発話が当てた語を全部 exclude に集める。
 	// 数えながら足すと、後のセッションで足された語が前のセッションでは効かず、

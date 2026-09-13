@@ -187,6 +187,10 @@ func resolveLearnHub(o learnOptions) (learnHubInfo, error) {
 
 // buildLearn は材料を読んで候補を全件(Top 0)出す。件数は呼び出し側が回答で伏せてから切る。
 func buildLearn(h learnHubInfo, o learnOptions) (learn.Report, []string, error) {
+	if err := h.fc.Learn.Validate(); err != nil {
+		return learn.Report{}, nil, err
+	}
+	s := h.fc.Learn.WithDefaults()
 	in, warnings, err := loadProfileInput(h.fc, h.hubDir, h.today, o.days, o.sessions, o.allProjects)
 	if err != nil {
 		return learn.Report{}, nil, err
@@ -211,7 +215,13 @@ func buildLearn(h learnHubInfo, o learnOptions) (learn.Report, []string, error) 
 		Sessions: in.Sessions,
 		Window:   retro.Window{Since: in.Since, Until: in.Until},
 		Dicts:    dicts,
-		Options:  learn.Options{Top: 0},
+		Options: learn.Options{
+			MinSessions:         s.MinSessions,
+			MaxSessionRatio:     s.MaxSessionRatio,
+			MinCorrections:      s.MinCorrections,
+			BoilerplateSessions: s.BoilerplateSessions,
+			Top:                 0,
+		},
 	})
 	return r, warnings, nil
 }

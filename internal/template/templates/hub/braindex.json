@@ -38,6 +38,12 @@
     "llm_timeout_sec": 120,
     "llm_budget_sec": 600
   },
+  "learn": {
+    "min_sessions": 3,
+    "max_session_ratio": 0.1,
+    "min_corrections": 2,
+    "boilerplate_sessions": 3
+  },
   "schedule": {
     "jobs": [
       {
