@@ -35,6 +35,7 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.root, "root", "", "走査のルート(設定ファイルの root より優先)")
 	fs.StringVar(&q.Repo, "repo", "", "このリポ(root 直下のディレクトリ名)だけを読む")
 	fs.StringVar(&q.Kind, "kind", "", "この種別だけを読む(完全一致か「種別/」で始まるもの。notes は notes/common も含む)")
+	fs.StringVar(&q.Type, "type", "", "内容の種別 失敗|手順|観測|未記入（failure|howto|observation|none も可）。ノート先頭 10 行の「種別:」行で絞る")
 	fs.BoolVar(&q.Any, "any", false, "どれか 1 語を含む行を当たりにする(既定: 全部の語を含む行だけ)")
 	fs.BoolVar(&q.MatchCase, "case", false, "大小を区別する(既定: 無視。かな・漢字には関係ない)")
 	fs.BoolVar(&q.WholeWord, "w", false, "ラテン文字の語は前後が英数字・_・- でないときだけ当てる(go が google に当たらない)。かな・漢字の語には効かない")
@@ -106,8 +107,11 @@ func renderSearch(r textsearch.Result) []byte {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# braindex search: %s（%s）\n", strings.Join(r.Query.Terms, " "), describeQuery(r.Query))
 	scope := ""
-	if r.Query.Repo != "" || r.Query.Kind != "" {
+	if r.Query.Repo != "" || r.Query.Kind != "" || r.Query.Type != "" {
 		var parts []string
+		if r.Query.Type != "" {
+			parts = append(parts, "内容の種別 "+r.Query.Type)
+		}
 		if r.Query.Repo != "" {
 			parts = append(parts, "リポ "+r.Query.Repo)
 		}
@@ -167,6 +171,7 @@ func describeQuery(q textsearch.Query) string {
 
 // searchOut は -json の形。走査の Gap は小文字のキーに揃えて出す(scan.Gap には JSON タグが無い)。
 type searchOut struct {
+	Type      string      `json:"type"`
 	Terms     []string    `json:"terms"`
 	Any       bool        `json:"any"`
 	MatchCase bool        `json:"match_case"`
@@ -182,6 +187,7 @@ type searchOut struct {
 }
 
 type searchHit struct {
+	Type  string   `json:"type"`
 	Repo  string   `json:"repo"`
 	Kind  string   `json:"kind"`
 	Path  string   `json:"path"`
@@ -199,12 +205,13 @@ type searchGap struct {
 
 func searchJSON(r textsearch.Result) searchOut {
 	out := searchOut{
+		Type:  r.Query.Type,
 		Terms: r.Query.Terms, Any: r.Query.Any, MatchCase: r.Query.MatchCase, WholeWord: r.Query.WholeWord,
 		Repo: r.Query.Repo, Kind: r.Query.Kind,
 		Files: r.Files, Total: r.Total, Hits: []searchHit{}, Gaps: []searchGap{}, Complete: r.Complete(), Warnings: r.Warnings,
 	}
 	for _, h := range r.Hits {
-		out.Hits = append(out.Hits, searchHit{Repo: h.Repo, Kind: h.Kind, Path: h.Path, Line: h.Line, Col: h.Col, Text: h.Text, Terms: h.Terms})
+		out.Hits = append(out.Hits, searchHit{Type: h.Type, Repo: h.Repo, Kind: h.Kind, Path: h.Path, Line: h.Line, Col: h.Col, Text: h.Text, Terms: h.Terms})
 	}
 	for _, g := range r.Gaps {
 		out.Gaps = append(out.Gaps, searchGap{Rel: g.Rel, Dir: g.Dir, Reason: g.Reason})

@@ -11,6 +11,7 @@ package textsearch
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -20,11 +21,13 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/pilefort/braindex/internal/notetype"
 	"github.com/pilefort/braindex/internal/scan"
 )
 
 // Query は検索条件。
 type Query struct {
+	Type      string   // 内容の種別。未記入は none でも指定できる
 	Terms     []string // 検索語(1 つ以上。空文字は誤り)。正規表現ではなく、そのままの文字列で照合する
 	Any       bool     // true: どれか 1 語を含む行が当たり。false(既定): 全部の語を含む行だけ
 	MatchCase bool     // true: 大小を区別する。既定は無視(ラテン文字だけに効く。かな・漢字は影響しない)
@@ -36,6 +39,7 @@ type Query struct {
 
 // Hit は一致した 1 行。同じ行に複数の語があっても 1 件。
 type Hit struct {
+	Type  string   // 本文の内容の種別
 	Repo  string   // リポ名
 	Kind  string   // 種別(索引と同じラベル)
 	Path  string   // root 相対・スラッシュ区切り(索引のパスと同じ形)
@@ -72,6 +76,9 @@ func (r Result) ByTerm() map[string][]Hit {
 
 // Validate は条件の誤りを返す。語が無い・空の語・Limit が負は誤り。
 func (q Query) Validate() error {
+	if _, err := notetype.Normalize(q.Type); err != nil {
+		return err
+	}
 	if len(q.Terms) == 0 {
 		return errors.New("検索語が無い")
 	}
@@ -104,6 +111,7 @@ func Search(sc scan.Result, q Query) (Result, error) {
 	if err := q.Validate(); err != nil {
 		return Result{}, err
 	}
+	q.Type, _ = notetype.Normalize(q.Type)
 	m := newMatcher(q)
 	res := Result{Query: q, Warnings: append([]string(nil), sc.Warnings...)}
 	gaps := append([]scan.Gap(nil), sc.Gaps...)
@@ -111,7 +119,10 @@ func Search(sc scan.Result, q Query) (Result, error) {
 		if !m.wants(f) {
 			continue
 		}
-		hits, err := searchFile(f, m)
+		hits, included, warning, err := searchTypedFile(f, m)
+		if warning != "" {
+			res.Warnings = append(res.Warnings, f.Rel+": "+warning)
+		}
 		res.Hits = append(res.Hits, hits...)
 		if err != nil {
 			reason := scan.DescribeErr(err)
@@ -119,7 +130,9 @@ func Search(sc scan.Result, q Query) (Result, error) {
 			res.Warnings = append(res.Warnings, f.Rel+": "+reason)
 			continue
 		}
-		res.Files++
+		if included {
+			res.Files++
+		}
 	}
 	// リポで絞ったときは、他のリポの確認できなかった範囲はこの検索に関係ない
 	if q.Repo != "" {
@@ -257,14 +270,41 @@ func isLatinWord(r rune) bool {
 
 // searchFile は f を行ごとに読んで検索する。開けない・途中で読めなくなったときは、それまでの一致と error を返す。
 // bufio.Scanner は 1 行の長さに上限があるので使わず、ReadBytes で 1 行ずつ読む(1 行が数 MB でも落ちない。
-// 使うメモリは一番長い 1 行の分だけ)。
+// 先頭 10 行は種別の照合のために保持し、その後は 1 行ずつ読む)。
 func searchFile(f scan.File, m *matcher) ([]Hit, error) {
+	hits, _, _, err := searchTypedFile(f, m)
+	return hits, err
+}
+
+func searchTypedFile(f scan.File, m *matcher) ([]Hit, bool, string, error) {
 	fh, err := os.Open(f.Abs)
 	if err != nil {
-		return nil, err
+		return nil, false, "", err
 	}
 	defer fh.Close()
 	br := bufio.NewReaderSize(fh, 1<<20)
+	// 先頭だけ先読みして絞り、検索時に同じバイトを再利用する。
+	var header bytes.Buffer
+	for i := 0; i < 10; i++ {
+		raw, e := br.ReadBytes('\n')
+		header.Write(raw)
+		if e != nil {
+			if e != io.EOF {
+				return nil, false, "", e
+			}
+			break
+		}
+	}
+	value, _, parseErr := notetype.Parse(header.Bytes())
+	warning := ""
+	if parseErr != nil {
+		warning = parseErr.Error()
+		value = ""
+	}
+	if !notetype.Matches(m.q.Type, value) {
+		return nil, false, warning, nil
+	}
+	br = bufio.NewReaderSize(io.MultiReader(bytes.NewReader(header.Bytes()), br), 1<<20)
 	var hits []Hit
 	lineNo := 0
 	for {
@@ -277,6 +317,7 @@ func searchFile(f scan.File, m *matcher) ([]Hit, error) {
 			line := strings.TrimSuffix(strings.TrimSuffix(string(raw), "\n"), "\r")
 			if col, terms, ok := m.match(line); ok {
 				hits = append(hits, Hit{
+					Type:  value,
 					Repo:  f.Repo,
 					Kind:  f.Kind,
 					Path:  f.Rel,
@@ -289,9 +330,9 @@ func searchFile(f scan.File, m *matcher) ([]Hit, error) {
 		}
 		if rerr != nil {
 			if rerr == io.EOF {
-				return hits, nil
+				return hits, true, warning, nil
 			}
-			return hits, fmt.Errorf("途中までしか読めなかった(%d 行目まで): %w", lineNo, rerr)
+			return hits, false, warning, fmt.Errorf("途中までしか読めなかった(%d 行目まで): %w", lineNo, rerr)
 		}
 	}
 }
