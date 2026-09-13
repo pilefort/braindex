@@ -44,6 +44,7 @@ func RenderForm(d Doc, m Meta) []byte {
 	b.WriteString("</main>\n")
 	if len(d.Items) > 0 {
 		b.WriteString("<div class=\"bar\"><button id=\"send\">決定を送信</button><span id=\"st\" class=\"st\"></span>" +
+			"<button id=\"fbcopy\" type=\"button\" class=\"copy\" hidden>JSON をコピー</button>" +
 			"<textarea id=\"fb\" hidden></textarea></div>\n")
 		// 送信が通ったときはフォームを畳んでこれだけを出す(JS が body に .sent を付ける)。
 		// 件数と保存先は空のまま置き、応答を受けてから埋める。
@@ -200,6 +201,7 @@ a{color:var(--accent)}
 .bar button{font:inherit;font-weight:700;background:var(--accent);color:#fff;border:none;border-radius:9px;padding:9px 18px;cursor:pointer}
 .bar button:disabled{opacity:.6;cursor:default}
 .st{font-size:13.5px;color:var(--sub)}.st.ok{color:#2b8a3e;font-weight:700}.st.err{color:#c92a2a}
+.bar button.copy{background:var(--bg);color:var(--ink);border:1px solid var(--line);font-weight:400}
 #fb{width:100%;min-height:90px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
 .done{display:none}
 body.sent{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
@@ -223,8 +225,21 @@ const formJS = `
       return {n:+s.dataset.n, title:s.dataset.title, choice:r?r.value:'', comment:c};
     }).filter(function(x){return x.choice;});
   }
-  var btn=document.getElementById('send'), st=document.getElementById('st'), fb=document.getElementById('fb');
+  var btn=document.getElementById('send'), st=document.getElementById('st'), fb=document.getElementById('fb'), fbc=document.getElementById('fbcopy');
   if(!btn)return;
+  // 送信に失敗したときの JSON は、選択なしで 1 クリックでクリップボードへ入れる。
+  // clipboard API が使えない(file:// など)ときは textarea を選択して execCommand に落とす。
+  function selectCopy(){try{fb.focus(); fb.select(); return document.execCommand('copy');}catch(e){return false;}}
+  function copyFallback(){
+    var done=function(){st.textContent='JSON をコピーしました。チャットに貼ってください。'; st.className='st ok';};
+    var fail=function(){fb.focus(); fb.select(); st.textContent='コピーできませんでした。選択した JSON を Ctrl+C（⌘C）で写してください。'; st.className='st err';};
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(fb.value).then(done,function(){ if(selectCopy())done(); else fail(); });
+      return;
+    }
+    if(selectCopy())done(); else fail();
+  }
+  fbc.addEventListener('click',copyFallback);
   btn.addEventListener('click',function(){
     var items=collect();
     var bad=items.filter(function(x){return x.choice==='other'&&!x.comment;});
@@ -246,8 +261,8 @@ const formJS = `
       })
       .catch(function(e){
         btn.disabled=false;
-        st.textContent='送信できませんでした（'+e.message+'）。下の JSON をコピーしてチャットに貼ってください。'; st.className='st err';
-        fb.hidden=false; fb.value=JSON.stringify({items:items},null,1);
+        st.textContent='送信できませんでした（'+e.message+'）。「JSON をコピー」を押してチャットに貼ってください。'; st.className='st err';
+        fb.value=JSON.stringify({items:items},null,1); fb.hidden=false; fbc.hidden=false;
       });
   });
 })();
