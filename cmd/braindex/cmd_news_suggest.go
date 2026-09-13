@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -111,7 +112,7 @@ func runNewsSuggest(args []string, stdout, stderr io.Writer) int {
 			return fail(err)
 		}
 	} else {
-		out = r.Marshal()
+		out = bytes.Replace(r.Marshal(), []byte("を足す。"), []byte("を足すか、`news fetch` の選別画面で「追加する」を選ぶ。"), 1)
 	}
 	if _, err := stdout.Write(out); err != nil {
 		return fail(err)

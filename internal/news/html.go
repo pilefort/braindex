@@ -132,6 +132,17 @@ func RenderHTML(results []Result, o DigestOptions) []byte {
 		}
 		parts.WriteString("</ul>\n</section>\n</section>\n")
 	}
+	if !o.Library && (len(o.Suggestions) > 0 || len(o.QueryCandidates) > 0) {
+		fmt.Fprintf(&parts, `<section class="category suggest"><details class="suggest"><summary>関心に合う取材先の候補 %d 件・検索語の候補 %d 件（見送っても次回また出ます）</summary><ul class="suggest-list">`, len(o.Suggestions), len(o.QueryCandidates))
+		for _, s := range o.Suggestions {
+			fmt.Fprintf(&parts, `<li class="suggest-item" data-url="%s" data-name="%s"><span class="tag">%s</span><strong>%s</strong><small>当たった語: %s</small><a href="%s" target="_blank" rel="noopener">%s</a><button class="ba">＋ 追加する</button></li>`, esc(s.URL), esc(s.Name), esc(s.Genre), esc(s.Name), esc(strings.Join(s.Matched, ", ")), esc(s.URL), esc(s.URL))
+		}
+		for _, q := range o.QueryCandidates {
+			u := SearchFeedURL(q)
+			fmt.Fprintf(&parts, `<li class="suggest-item query" data-url="%s" data-query="%s"><span class="tag">検索</span><strong>「%s」で検索フィードを作る</strong><small>この語だけを Google News に送ります</small><a href="%s" target="_blank" rel="noopener">%s</a><button class="ba">＋ 追加する</button></li>`, esc(u), esc(q), esc(q), esc(u), esc(u))
+		}
+		parts.WriteString("</ul></details></section>\n")
+	}
 	items := parts.String()
 	if items == "" {
 		items = "<p>新着はありません。</p>\n"

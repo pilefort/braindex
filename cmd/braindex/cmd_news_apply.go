@@ -28,12 +28,12 @@ func selectionDirs(newsDir, inbox string) ([]string, error) {
 
 // ingestSelections は選別 JSON を取り込み、結果を stdout に書く(news apply と news fetch の冒頭が共有)。
 // known は feeds.json の取材先の名前。選別 JSON の feed_stats をこの名前で照合する(nil なら照合しない)。
-func ingestSelections(newsDir string, known map[string]bool, inbox string, stdout io.Writer) error {
+func ingestSelections(newsDir string, known map[string]bool, inbox string, stdout io.Writer, feedsPath string, catalog []news.CatalogEntry) error {
 	dirs, err := selectionDirs(newsDir, inbox)
 	if err != nil {
 		return err
 	}
-	msgs, err := news.Ingest(newsDir, dirs, known)
+	msgs, err := news.Ingest(newsDir, dirs, known, feedsPath, catalog)
 	for _, m := range msgs {
 		fmt.Fprintln(stdout, "news:", m)
 	}
@@ -53,7 +53,7 @@ func runNewsApply(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "  から取り込む。「残す」は news/keep/YYYY-MM.md に追記(同じリンクは 1 回)、フィード別の数は news/.stats.json に")
 		fmt.Fprintln(stderr, "  ダイジェスト単位で上書き保存(同じ日の再書き出しは二重に数えない)。取り込んだ JSON は news/.ingested/ へ移す。")
 		fmt.Fprintln(stderr, "  news fetch の冒頭でも同じ取り込みが動くので、通常は別に実行しなくてよい。")
-		fmt.Fprintln(stderr, "  1 つの JSON ごとに keep → 統計 → 取り込み済みへ移す、の順に書くので、途中で止まっても再実行で揃う(keep は同じリンクを 2 回足さない)。")
+		fmt.Fprintln(stderr, "  1 つの JSON ごとに keep → 統計 → 取材先の登録 → 読書 → 取り込み済みへ移す、の順に書くので、途中で止まっても再実行で揃う(keep は同じリンクを 2 回足さない)。")
 		fmt.Fprintln(stderr, "  fetch と同じロック(news/.lock.json)を取る。")
 		fmt.Fprintln(stderr, "  終了コード: 0 成功(取り込むものが無くても 0) / 1 失敗(別の braindex news が動いている、を含む)")
 		fmt.Fprintln(stderr)
@@ -99,12 +99,13 @@ func runNewsApply(args []string, stdout, stderr io.Writer) int {
 	}
 	// feed_stats の照合に取材先の名前が要る。読めなくても取り込みは続ける(名前の照合だけ落ちる)。
 	var known map[string]bool
-	if srcs, ferr := news.LoadFeeds(filepath.Join(hubDir, filepath.FromSlash(s.Feeds))); ferr != nil {
+	feedsPath := filepath.Join(hubDir, filepath.FromSlash(s.Feeds))
+	if srcs, ferr := news.LoadFeeds(feedsPath); ferr != nil {
 		fmt.Fprintf(stderr, "braindex news apply: 警告: %v(feed_stats の取材先名は照合しない)\n", ferr)
 	} else {
 		known = news.FeedNames(srcs)
 	}
-	if err := ingestSelections(newsDir, known, inbox, stdout); err != nil {
+	if err := ingestSelections(newsDir, known, inbox, stdout, feedsPath, news.Catalog()); err != nil {
 		return fail(err)
 	}
 	fmt.Fprintln(stdout, "news apply 完了")

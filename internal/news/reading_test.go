@@ -21,7 +21,7 @@ func TestReadingRoundTrip(t *testing.T) {
 		}
 	}
 	put("1", sel)
-	if _, err := Ingest(dir, []string{inbox}, nil); err != nil {
+	if _, err := Ingest(dir, []string{inbox}, nil, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	lib, err := LoadReading(dir)
@@ -39,7 +39,7 @@ func TestReadingRoundTrip(t *testing.T) {
 	}
 	// ブラウザが持つ古い回答なしの質問でも、保存済みの回答は消さない。
 	put("2", sel)
-	if _, err := Ingest(dir, []string{inbox}, nil); err != nil {
+	if _, err := Ingest(dir, []string{inbox}, nil, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	lib, err = LoadReading(dir)
@@ -61,13 +61,13 @@ func TestReadingRoundTrip(t *testing.T) {
 	sel.ExportedAt = "2026-01-03T12:00:00Z"
 	sel.Reading[0].Status = "done"
 	put("3", sel)
-	if _, err := Ingest(dir, []string{inbox}, nil); err != nil {
+	if _, err := Ingest(dir, []string{inbox}, nil, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	sel.ExportedAt = "2026-01-02T12:00:00Z"
 	sel.Reading[0].Status = "later"
 	put("4", sel)
-	if _, err := Ingest(dir, []string{inbox}, nil); err != nil {
+	if _, err := Ingest(dir, []string{inbox}, nil, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	lib, _ = LoadReading(dir)
@@ -79,7 +79,7 @@ func TestReadingRoundTrip(t *testing.T) {
 	sel.Reading[0].StatusChanged = &unchanged
 	sel.ExportedAt = "2026-01-04T12:00:00Z"
 	put("5", sel)
-	if _, err := Ingest(dir, []string{inbox}, nil); err != nil {
+	if _, err := Ingest(dir, []string{inbox}, nil, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	lib, _ = LoadReading(dir)
@@ -90,7 +90,7 @@ func TestReadingRoundTrip(t *testing.T) {
 	sel.Reading[0].StatusChanged = &changed
 	sel.Reading[0].StatusUpdated = "2026-01-02T12:00:00Z"
 	put("6", sel)
-	if _, err := Ingest(dir, []string{inbox}, nil); err != nil {
+	if _, err := Ingest(dir, []string{inbox}, nil, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	lib, _ = LoadReading(dir)

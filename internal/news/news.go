@@ -67,7 +67,10 @@ const (
 )
 
 // DefaultCapPerLayer は cap_per_layer を省略したときの層別上限。
-var DefaultCapPerLayer = map[string]int{"daily": 15, "weekly": 25}
+var DefaultCapPerLayer = map[string]int{"daily": 15, "weekly": 25, LayerGeneralNews: 5}
+
+// LayerGeneralNews は候補から登録した一般ニュースの層。
+const LayerGeneralNews = "general"
 
 // WithDefaults は空・0 の項目を既定値で埋めた複製を返す。
 func (s Settings) WithDefaults() Settings {

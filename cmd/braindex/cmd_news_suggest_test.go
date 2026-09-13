@@ -80,3 +80,11 @@ func TestNewsSuggest_Deterministic(t *testing.T) {
 		t.Errorf("出力が違う:\n%s\n---\n%s", a, b)
 	}
 }
+
+func TestNewsSuggestRegistrationGuide(t *testing.T) {
+	hub := profileHub(t)
+	_, out, _ := newsSuggest(t, hub)
+	if !strings.Contains(out, "を足すか、`news fetch` の選別画面で「追加する」を選ぶ。") {
+		t.Fatalf("guide missing: %s", out)
+	}
+}

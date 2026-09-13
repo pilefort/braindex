@@ -104,3 +104,27 @@ func TestSuggestReport_Marshal(t *testing.T) {
 		t.Errorf("0 件の文言が無い:\n%s", empty.Marshal())
 	}
 }
+func TestCatalogMetadata(t *testing.T) {
+	cat := Catalog()
+	counts := map[string]int{}
+	general := 0
+	for _, e := range cat {
+		counts[e.Lang()]++
+		if e.IsGeneralNews() {
+			general++
+		}
+		got, ok := LookupCatalog(cat, e.URL+"/")
+		if !ok || got.Name != e.Name {
+			t.Fatalf("lookup %s: %+v %v", e.URL, got, ok)
+		}
+	}
+	if counts["ja"] != 20 || counts["en"] != 78 || general != 13 {
+		t.Fatalf("lang=%v general=%d", counts, general)
+	}
+	if len(CatalogKeywords(cat)) != 328 {
+		t.Fatalf("keywords=%d", len(CatalogKeywords(cat)))
+	}
+	if _, ok := LookupCatalog(cat, "https://example.com/missing"); ok {
+		t.Fatal("unknown URL matched")
+	}
+}

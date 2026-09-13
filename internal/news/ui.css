@@ -8,3 +8,5 @@ dialog{width:min(700px,calc(100% - 28px));max-height:90vh;overflow:auto;border:1
 
 /* 関心外から日替わりで拾い上げた記事の枠とラベル */
 .serendipity>h2{color:var(--accent)}.tag.lucky{background:var(--accent);color:var(--onaccent)}.item.lucky{border-color:var(--accent)}
+
+.suggest{margin-top:24px}.suggest>summary{cursor:pointer;color:var(--muted)}.suggest-list{margin-top:12px}.suggest-item{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:20px;margin-bottom:12px;border:1px solid var(--line);border-radius:7px;background:var(--paper);overflow-wrap:anywhere;min-width:0}.suggest-item a{max-width:100%;font-size:12px}.ba{background:var(--accent);color:var(--onaccent);border-color:var(--accent)}.ba:hover{color:var(--ink)}.ba[aria-pressed=true]{background:var(--tint);color:var(--green);border-color:var(--green)}

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"github.com/pilefort/braindex/internal/news"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -103,4 +104,20 @@ func TestNewsFetch_DefaultInbox(t *testing.T) {
 		t.Errorf("取り込んだのに Downloads に残っている: %v", err)
 	}
 	mustContain(t, "keep", readFile(t, filepath.Join(hub, "news", "keep", "2026-08.md")), "- [よその見出し](https://elsewhere/1) — Z")
+}
+func TestNewsApplyAddFeeds(t *testing.T) {
+	hub, _ := newsHub(t)
+	e := news.Catalog()[0]
+	q := "compiler"
+	writeFile(t, filepath.Join(hub, "news", "inbox", news.SelectionPrefix+"feeds.json"), `{"type":"braindex-news-selection","date":"2026-09-13","layer":"daily","exported_at":"2026-09-13T10:00:00Z","keeps":[],"feed_stats":{},"reading":[],"library":false,"add_feeds":[{"url":"`+e.URL+`"},{"url":"`+news.SearchFeedURL(q)+`","query":"`+q+`"}]}`)
+	var so, se bytes.Buffer
+	code := dispatch([]string{"news", "apply", "-config", filepath.Join(hub, "braindex.json")}, &so, &se)
+	if code != 0 {
+		t.Fatalf("exit=%d %s", code, se.String())
+	}
+	ss, err := news.LoadFeeds(filepath.Join(hub, "news", "feeds.json"))
+	if err != nil || len(ss) != 5 {
+		t.Fatalf("feeds=%v %v", ss, err)
+	}
+	mustContain(t, "stdout", so.String(), "取材先 2 本を feeds.json に足した", "残す 0 件・取材先 2 本を追加")
 }

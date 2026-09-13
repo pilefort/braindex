@@ -511,3 +511,41 @@ func TestSettingsLLMBudget(t *testing.T) {
 		t.Fatal("negative accepted")
 	}
 }
+func TestGeneralNewsCap(t *testing.T) {
+	s := Settings{}.WithDefaults()
+	if s.Cap(LayerGeneralNews) != 5 {
+		t.Fatalf("cap=%d", s.Cap(LayerGeneralNews))
+	}
+	s.CapPerLayer[LayerGeneralNews] = 1
+	if (Settings{}).WithDefaults().Cap(LayerGeneralNews) != 5 {
+		t.Fatal("default map mutated")
+	}
+	s = Settings{CapPerLayer: map[string]int{"daily": 2}}.WithDefaults()
+	if s.Cap(LayerGeneralNews) != DefaultCap {
+		t.Fatal("explicit table not authoritative")
+	}
+	s = Settings{CapPerLayer: map[string]int{LayerGeneralNews: 7}}.WithDefaults()
+	if s.Cap(LayerGeneralNews) != 7 {
+		t.Fatal("explicit general cap ignored")
+	}
+}
+
+func TestDigestSuggestions(t *testing.T) {
+	o := DigestOptions{Suggestions: []Suggestion{{CatalogEntry: CatalogEntry{Name: "Example", Genre: "開発", URL: "https://example.com/rss"}, Matched: []string{"compiler"}}}, QueryCandidates: []string{"science"}}
+	results := []Result{{Source: Source{Name: "Failed"}, Err: errors.New("failed")}}
+	md := string(Digest(results, o))
+	for _, want := range []string{"## 関心に合う取材先の候補", "1. **Example** — 開発 — 当たった語: compiler — https://example.com/rss", "- 検索語の候補: 「science」 — " + SearchFeedURL("science")} {
+		if !strings.Contains(md, want) {
+			t.Errorf("missing %s", want)
+		}
+	}
+	if strings.Index(md, "## 関心に合う取材先の候補") > strings.Index(md, "## 取得失敗") {
+		t.Fatal("suggestions after failures")
+	}
+	if md != string(Digest(results, o)) {
+		t.Fatal("md not deterministic")
+	}
+	if strings.Contains(string(Digest(nil, DigestOptions{})), "## 関心に合う取材先の候補") {
+		t.Fatal("empty section")
+	}
+}

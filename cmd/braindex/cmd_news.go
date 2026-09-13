@@ -269,7 +269,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	// 取り込めなくても今日の新着は出す。ここで止めると、壊れた JSON が 1 つ残っているだけで
 	// ダイジェストが出なくなる(リポの規約: 完了できるものは警告つき完了の 2)。
 	ingestWarning := 0 // 取り込みの警告(選別 JSON・統計)。ダイジェストは書くので終了コード 2 に数える
-	if err := ingestSelections(newsDir, news.FeedNames(all), o.inbox, progress); err != nil {
+	if err := ingestSelections(newsDir, news.FeedNames(all), o.inbox, progress, filepath.Join(hubDir, filepath.FromSlash(s.Feeds)), news.Catalog()); err != nil {
 		fmt.Fprintf(stderr, "braindex news fetch: 警告: 選別を取り込めない(keep と統計は前回のまま): %v\n", err)
 		ingestWarning++
 	}
@@ -295,6 +295,8 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 	// 採点(関心プロファイル)。出典が無い警告は fetch の警告として数える
 	var ranking news.Ranking
 	var profileTerms []string
+	var suggestions []news.Suggestion
+	var queries []string
 	var demoted map[string]bool // 上限を下げる取材先。LLM の点を重ねた後にもう一度効かせる
 	profileWarnings := 0
 	if !o.noScore {
@@ -309,6 +311,10 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		// 不要ばかり付く取材先は点の上限を下げて主要表示から下ろす(決定 2026-09-06 → manual/news.md「決めたこと」)
 		demoted = news.DemotedFeeds(stats.Totals())
 		ranking = news.Rank(results, p, demoted)
+		if ranking != nil {
+			suggestions = news.Suggest(news.Catalog(), p, all, news.SuggestInDigest)
+			queries = news.QueryCandidates(news.Catalog(), p, all, news.SuggestInDigest)
+		}
 		if ranking == nil {
 			fmt.Fprintln(stdout, "関心プロファイルが空なので採点なし(全件を主要表示)")
 		} else if len(demoted) > 0 {
@@ -339,7 +345,7 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 			ranking = news.CapDemoted(news.ApplyAnnotations(ranking, results, ann), results, demoted)
 		}
 	}
-	do := news.DigestOptions{Layer: o.layer, Today: today, Cap: s.Cap(o.layer), Ranking: ranking, MinScore: s.MinScore(), Totals: stats.Totals(), Annotations: annotations}
+	do := news.DigestOptions{Suggestions: suggestions, QueryCandidates: queries, Layer: o.layer, Today: today, Cap: s.Cap(o.layer), Ranking: ranking, MinScore: s.MinScore(), Totals: stats.Totals(), Annotations: annotations}
 	// 関心外と判定した記事から日替わりで数件を拾い上げる(意図しない発見のため)。同じ日なら何度作り直しても同じ記事。
 	do.Serendipity = news.PickSerendipity(results, ranking, s.MinScore(), s.SerendipityCount(), today)
 	reading, readingErr := news.LoadReading(newsDir)

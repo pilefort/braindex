@@ -207,3 +207,24 @@ func TestMetadataSummaryDisplayAndPrompt(t *testing.T) {
 		}
 	}
 }
+func TestRenderHTMLSuggestions(t *testing.T) {
+	o := DigestOptions{Suggestions: []Suggestion{{CatalogEntry: CatalogEntry{Name: `A"<&`, URL: `https://example.com/rss?a="<&`, Genre: `G<&`}, Matched: []string{`word<&`}}}, QueryCandidates: []string{`語"<&`}}
+	h := string(RenderHTML(nil, o))
+	for _, want := range []string{`<section class="category suggest"><details class="suggest">`, "取材先の候補 1 件・検索語の候補 1 件", `data-url="` + esc(o.Suggestions[0].URL) + `"`, `data-name="` + esc(o.Suggestions[0].Name) + `"`, `data-query="` + esc(o.QueryCandidates[0]) + `"`, "この語だけを Google News に送ります"} {
+		if !strings.Contains(h, want) {
+			t.Errorf("missing %s", want)
+		}
+	}
+	if strings.Contains(h, `<details class="suggest" open`) {
+		t.Fatal("suggestions opened")
+	}
+	if h != string(RenderHTML(nil, o)) {
+		t.Fatal("HTML not deterministic")
+	}
+	o.Library = true
+	for _, opts := range []DigestOptions{o, {}} {
+		if strings.Contains(string(RenderHTML(nil, opts)), `<section class="category suggest">`) {
+			t.Fatal("unexpected suggestions")
+		}
+	}
+}
