@@ -26,6 +26,7 @@
     "feeds": "news/feeds.json",
     "seen_days": 90,
     "profile_days": 14,
+    "keep_months": 3,
     "cap_per_layer": {
       "daily": 15,
       "weekly": 25,

@@ -28,6 +28,28 @@ func TestSettings_Defaults(t *testing.T) {
 	}
 }
 
+func TestSettings_KeepMonths(t *testing.T) {
+	if DefaultKeepMonths != 3 {
+		t.Fatalf("既定の月数: got=%d want=3", DefaultKeepMonths)
+	}
+	for _, months := range []int{0, 1, 6} {
+		s := Settings{KeepMonths: months}
+		if err := s.Validate(); err != nil {
+			t.Fatalf("keep_months=%d: %v", months, err)
+		}
+		want := months
+		if want == 0 {
+			want = DefaultKeepMonths
+		}
+		if got := s.WithDefaults().KeepMonths; got != want {
+			t.Errorf("keep_months=%d: got=%d want=%d", months, got, want)
+		}
+	}
+	if err := (Settings{KeepMonths: -1}).Validate(); err == nil || !strings.Contains(err.Error(), "news.keep_months") {
+		t.Errorf("keep_months=-1 はキー名を含むエラーにする: %v", err)
+	}
+}
+
 // show_min_score は 0(全件を主要表示)を設定できる。他のキーのように 0 を未設定とみなすと、
 // 「全部見たい」を恒久設定にできない(決定 2026-09-03 → manual/news.md「決めたこと」)。
 func TestSettings_ShowMinScore(t *testing.T) {

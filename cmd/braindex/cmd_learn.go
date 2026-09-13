@@ -13,6 +13,7 @@ import (
 	"github.com/pilefort/braindex/internal/config"
 	"github.com/pilefort/braindex/internal/interest"
 	"github.com/pilefort/braindex/internal/learn"
+	"github.com/pilefort/braindex/internal/news"
 	"github.com/pilefort/braindex/internal/retro"
 )
 
@@ -32,7 +33,7 @@ const learnAnswersPath = "work/learn/answers.json"
 type learnOptions struct {
 	config      string // -config。hub の位置を兼ねるので必須
 	date        string // -date。今日の固定(既定: 実行日)
-	days        int    // -days。直近の日数(既定: 設定 news.profile_days → 14)
+	days        int    // -days。直近の日数(既定: 設定 news.profile_days → news.DefaultProfileDays)
 	sessions    string // -sessions。セッションログの置き場(既定: news.sessions_dir → retro.sessions_dir → ~/.claude/projects)
 	allProjects bool   // -all-projects。root の外のセッションも数える
 	top         int    // -top。各節の件数(既定 10。0 で全件)
@@ -43,7 +44,7 @@ type learnOptions struct {
 func addLearnInputFlags(fs *flag.FlagSet, o *learnOptions) {
 	fs.StringVar(&o.config, "config", "", "設定ファイルのパス(既定: カレントの braindex.json。そのディレクトリを hub とみなす)")
 	fs.StringVar(&o.date, "date", "", "今日として使う日付 YYYY-MM-DD(既定: 実行日)。窓の基準")
-	fs.IntVar(&o.days, "days", 0, "直近何日の索引とセッションを見るか(既定: 設定 news.profile_days → 14)")
+	fs.IntVar(&o.days, "days", 0, fmt.Sprintf("直近何日の索引とセッションを見るか(既定: 設定 news.profile_days → %d)", news.DefaultProfileDays))
 	fs.StringVar(&o.sessions, "sessions", "", "セッションログの置き場(既定: 設定 news.sessions_dir → retro.sessions_dir → ~/.claude/projects)")
 	fs.BoolVar(&o.allProjects, "all-projects", false, "root の外で交わしたセッションも数える(既定: root 配下だけ。設定 retro.all_projects と同じ)")
 }
@@ -245,7 +246,7 @@ func runLearnAnswer(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	addLearnInputFlags(fs, &o.learnOptions)
 	fs.StringVar(&o.section, "section", "", "節を限る(unsettled / stumbles / read_not_written。既定: 語が候補に出ている全部の節)")
-	fs.StringVar(&o.until, "until", "", "later の再提示日 YYYY-MM-DD(既定: 今日から窓の日数(-days・既定 14)後)")
+	fs.StringVar(&o.until, "until", "", fmt.Sprintf("later の再提示日 YYYY-MM-DD(既定: 今日から窓の日数(-days・既定 %d)後)", news.DefaultProfileDays))
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方: braindex learn answer <known|unwanted|later|clear> [-config braindex.json] [-section 節] [-until YYYY-MM-DD] <語> [<語>...]")
 		fmt.Fprintln(stderr, "  候補に回答を記録し、次回の braindex learn から伏せる。回答は work/learn/answers.json に節と語の組で持つ(本文は書かない)。")

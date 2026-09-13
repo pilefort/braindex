@@ -32,6 +32,7 @@ type Settings struct {
 	Feeds        string         `json:"feeds"`          // フィード一覧の JSON(hub 相対)。既定 news/feeds.json
 	SeenDays     int            `json:"seen_days"`      // 既読を覚えておく日数。既定 90
 	CapPerLayer  map[string]int `json:"cap_per_layer"`  // 層ごとの 1 フィードあたり表示上限。無い層は DefaultCap
+	KeepMonths   int            `json:"keep_months"`    // keep 履歴を遡る月数。既定 3
 	ProfileDays  int            `json:"profile_days"`   // 関心プロファイルが見る直近の日数(索引・セッション)。既定 14
 	SessionsDir  string         `json:"sessions_dir"`   // セッションログの置き場。空なら retro.sessions_dir → ~/.claude/projects
 	ShowMinScore *int           `json:"show_min_score"` // この関心度(0〜interest.MaxScore)以上を主要表示。未満は「関心外と判定」に折りたたむ。
@@ -57,6 +58,7 @@ const (
 	DefaultFeeds        = "news/feeds.json"
 	DefaultSeenDays     = 90
 	DefaultProfileDays  = 14
+	DefaultKeepMonths   = 3
 	DefaultShowMinScore = 2              // 原型と同じ(2026-08-15〜の運用値)
 	DefaultSerendipity  = 2              // 関心外から日替わりで拾い上げる件数
 	MaxSerendipity      = 10             // これ以上は「たまに」でなくなる
@@ -90,6 +92,9 @@ func (s Settings) WithDefaults() Settings {
 			m[k] = v
 		}
 		s.CapPerLayer = m
+	}
+	if s.KeepMonths <= 0 {
+		s.KeepMonths = DefaultKeepMonths
 	}
 	if s.ProfileDays <= 0 {
 		s.ProfileDays = DefaultProfileDays
@@ -144,6 +149,9 @@ func (s Settings) Validate() error {
 	}
 	if s.SeenDays < 0 {
 		return fmt.Errorf("設定 news.seen_days: 0 以上(0 は既定 %d): %d", DefaultSeenDays, s.SeenDays)
+	}
+	if s.KeepMonths < 0 {
+		return fmt.Errorf("設定 news.keep_months: 0 以上(0 は既定 %d): %d", DefaultKeepMonths, s.KeepMonths)
 	}
 	if s.ProfileDays < 0 {
 		return fmt.Errorf("設定 news.profile_days: 0 以上(0 は既定 %d): %d", DefaultProfileDays, s.ProfileDays)
