@@ -6,6 +6,26 @@
 
 hub リポ（引数なし）か各プロジェクトのリポ（`-repo <dir>`）に骨格を展開する。既存ファイルは上書きしない。
 
+対応先は `-agent claude,codex` で選ぶ。省略時は `claude` だけ。カンマ区切りで指定し、重複と空要素は無視する。
+未知の名前は候補を示してエラーにする。`-repo` と `-agent` は併用できない。
+
+```sh
+braindex init -agent codex -add conventions   # Codex 向けに索引・規約・記録の点検スキルを配る
+braindex init -agent claude,codex             # 両方に配る
+```
+
+Codex には `~/.codex/AGENTS.md` の hub ごとの管理範囲と、`~/.agents/skills/<名前>/SKILL.md` を配る。
+指示は `CODEX_HOME` があればその下の `AGENTS.md` に入る。スキルの置き場は `CODEX_HOME` の影響を受けない。
+`AGENTS.md` は管理範囲だけを書き足し・差し替え、外側の利用者の文章は改行も含めて保持する。複数の hub は別々の範囲を使う。
+指示の合計には `project_doc_max_bytes`（既定 32 KiB）の上限があるため、利用者の `AGENTS.md` が大きいと指示が途中で切れる。
+読み込み場所と上限は [公式 AGENTS.md 仕様](https://learn.chatgpt.com/docs/agent-configuration/agents-md)、スキルの置き場は
+[公式 Skills 仕様](https://learn.chatgpt.com/docs/build-skills) に従う（2026-09-13 確認）。
+
+Codex のセッションログは未対応。`braindex retro`・`news`（関心）・`learn` は Claude Code のログ（`~/.claude/projects`）だけを読む。
+そのため Codex に `retro` スキルは配らない。`conventions` の 3 本と `review` の `braindex-review` は、選んだ機能の分だけ配る。
+`codex` だけなら hub に `CLAUDE.md`・`.claude/skills/` は作らない。README・設定と、選んだ機能の docs/・work/・news/ は共通で配る。
+以下の配布物の表は既定の Claude Code 向けのもの。
+
 news の設定を新しく書くときは、PATH に `claude` があれば LLM 補助（訳と採点）を有効にする。
 見つからなければ無効で作り、導入後に `news.llm` を `claude-cli` にする案内を出す。既存の news 節は変更しない。
 保持した既存ファイルは `保持(既存): N 件` の 1 行にまとめ、新しく作成・追記したファイルはそれぞれ 1 行で表示する。
@@ -46,6 +66,8 @@ hub の判断を埋めるスキルは機能ごとに入る（`.claude/skills/` �
 
 ## エージェントに横断検索させる
 
+Codex は `-agent codex` で `~/.codex/AGENTS.md`（`CODEX_HOME` 指定時はその下）に指示が入るので、以下の 3 行を手で足す必要はない。
+
 hub の `CLAUDE.md` には「索引を grep → 実ファイルを読む」の手順が入るが、hub の外のリポで作業している
 セッションからも引かせるには、利用者のグローバル `CLAUDE.md`（Claude Code なら `~/.claude/CLAUDE.md`）に次の 3 行を足す（`<hub>` は hub の場所）:
 
@@ -64,6 +86,13 @@ hub（引数なし）か各プロジェクトのリポ（`-repo <dir>`）の雛�
 
 判定は台帳 `.braindex/template.json`（`init` が書く「配った版のハッシュ」）で行う。
 
+対応先は台帳の `agents` に記録する。後から `init -agent codex` などで足せるが、既存の対応先は消さない。
+`agents` キーの無い旧版の台帳は `claude` だけと推定し、その旨を表示して記録する。
+Codex のスキルは台帳の `home` にホーム配布用キー（`agents/skills/<名前>/SKILL.md`）とハッシュを記録する。
+実際の置き場は `~/.agents/skills/` で、更新の判定は下表と同じ。作成・更新・保持はホーム分を分けて表示する。
+`AGENTS.md` の管理範囲はハッシュを記録せず、`-force` に関係なく毎回現在の版に差し替える。
+`-dry-run` ではホームのファイル・`.new`・台帳も書き込まない。
+
 | 現物の状態 | update の動き |
 |---|---|
 | 無い | 作る |
@@ -72,7 +101,7 @@ hub（引数なし）か各プロジェクトのリポ（`-repo <dir>`）の雛�
 | 利用者が編集した | **現物を残し、隣に `<名前>.new` を置く** |
 | 利用者が編集した `braindex.json`・`.gitignore` | 無い節・行だけ足す（「追記」）。`-force` でも上書きせず、`root` や利用者の行は消えない。`braindex.json` は、足したあとも雛形の節の中にしか無いキーが残るときだけ `.new` を置き、そのキーを出力に添える。揃っていれば「そのまま」（終了コード 2 にしない）。`.gitignore` は `.new` を置かない |
 
-ファイルの種類で見ると、`braindex.json` と `.gitignore` だけが例外になる（決定 2026-09-05 → 下の「決めたこと」。`root` や利用者が足した行を消さないため）:
+hub のファイルでは、`braindex.json` と `.gitignore` が例外になる（決定 2026-09-05 → 下の「決めたこと」。`root` や利用者が足した行を消さないため）:
 
 | ファイル | `init` | `update` | `update -force` |
 |---|---|---|---|
@@ -104,6 +133,36 @@ braindex update                                               # 2. 雛形の追�
 先にすべてのマシンの braindex を更新する（この場合 `update` は警告を出す）。
 
 ## 決めたこと
+
+### Codex 対応は導入・索引・規約・スキルまでとし、Codex のログは未対応と案内する
+
+記録日: 2026-09-13
+理由: 索引と規約は共通で使えるが、セッションログを読む機能は Claude Code の形式に依存する。未対応の範囲を導入時にも明示する。
+根拠: 同日の実装 SPEC §1・§3b・判断済み 1（ユーザー提示）。
+
+### Codex 向けの指示ファイル `AGENTS.md` は `braindex init` が配る
+
+記録日: 2026-09-13
+理由: 利用者が指示を手で転記せずに導入できる。本文は同梱の `CLAUDE.md` と同じ元から作り、管理範囲だけを更新する。
+根拠: 同日の実装 SPEC §3a・判断済み 2（ユーザー提示）。
+
+### `init` は配る先（Claude／Codex）を選ばせ、既定は Claude だけにする
+
+記録日: 2026-09-13
+理由: 従来の導入方法を保ち、Codex の共通設定への配布は選んだときだけにする。
+根拠: 同日の実装 SPEC §1（ユーザー提示）。
+
+### Codex 向けの指示は `~/.codex/AGENTS.md` に書く
+
+記録日: 2026-09-13
+理由: hub 以外のリポジトリで作業する Codex にも索引を引く指示を読ませる。`CODEX_HOME` を指定した場合はその場所に従う。
+根拠: 同日の実装 SPEC §3a と [公式 AGENTS.md 仕様](https://learn.chatgpt.com/docs/agent-configuration/agents-md)（同日確認）。
+
+### Codex 向けのスキルは `~/.agents/skills/<名前>/SKILL.md` に置く
+
+記録日: 2026-09-13
+理由: Codex が個人スキルを読む場所に合わせる。以前の `~/.codex/skills` への配布の決定を覆す。
+根拠: 同日の実装 SPEC §3b・§3c と [公式 Skills 仕様](https://learn.chatgpt.com/docs/build-skills)（同日確認）。
 
 記録日・理由・根拠は `docs/decisions.md` にあった当時の記録のまま。
 

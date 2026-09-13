@@ -27,6 +27,8 @@ const (
 // hub では空でも "features": [] と書く。キーごと無い(nil)のは機能の記録を持たない旧版の台帳で、
 // update はそのとき存在するファイルから機能を推定する(段 0 の hub の [] とは区別する)。
 type Ledger struct {
+	Agents   []string          `json:"agents,omitzero"`
+	Home     map[string]string `json:"home,omitzero"`
 	Version  int               `json:"version"`
 	Kind     string            `json:"kind"`
 	Features []string          `json:"features,omitzero"`
@@ -68,6 +70,9 @@ func SaveLedger(dst string, l Ledger) error {
 	}
 	if l.Kind == string(KindHub) && l.Features == nil {
 		l.Features = []string{} // omitzero で消えないよう空配列にする(nil は「記録なし」の意味)
+	}
+	if l.Kind == string(KindHub) && l.Agents == nil {
+		l.Agents = []string{}
 	}
 	l.Version = LedgerVersion
 	b, err := json.MarshalIndent(l, "", "  ")

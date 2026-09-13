@@ -14,6 +14,84 @@ import (
 	"github.com/pilefort/braindex/internal/template"
 )
 
+func initCodexTestHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	old := template.HomeDir
+	t.Cleanup(func() { template.HomeDir = old })
+	template.HomeDir = func() (string, error) { return home, nil }
+	t.Setenv("CODEX_HOME", "")
+	return home
+}
+
+func TestInit_Agents(t *testing.T) {
+	for _, agent := range []string{"", "codex", "claude,codex", "codex,,codex"} {
+		t.Run(agent, func(t *testing.T) {
+			home := initCodexTestHome(t)
+			hub := t.TempDir()
+			args := []string{"init", "-add", "conventions"}
+			if agent != "" {
+				args = append(args, "-agent", agent)
+			}
+			args = append(args, hub)
+			var so, se bytes.Buffer
+			if code := dispatch(args, &so, &se); code != 0 {
+				t.Fatalf("%d %s", code, &se)
+			}
+			wantsCodex := strings.Contains(agent, "codex")
+			wantsClaude := agent == "" || strings.Contains(agent, "claude")
+			for p, want := range map[string]bool{
+				filepath.Join(hub, "CLAUDE.md"):                            wantsClaude,
+				filepath.Join(hub, ".claude"):                              wantsClaude,
+				filepath.Join(hub, "README.md"):                            true,
+				filepath.Join(hub, "braindex.json"):                        true,
+				filepath.Join(home, ".codex/AGENTS.md"):                    wantsCodex,
+				filepath.Join(home, ".agents/skills/record-lint/SKILL.md"): wantsCodex,
+			} {
+				_, err := os.Stat(p)
+				if want && err != nil || !want && !os.IsNotExist(err) {
+					t.Fatalf("%s: %v want exists=%v", p, err, want)
+				}
+			}
+			led, _, err := template.LoadLedger(hub)
+			if err != nil || template.HasAgent(led.Agents, "claude") != wantsClaude || template.HasAgent(led.Agents, "codex") != wantsCodex {
+				t.Fatalf("%+v %v", led, err)
+			}
+			if agent == "" && (len(led.Agents) != 1 || led.Agents[0] != "claude") {
+				t.Fatal(led.Agents)
+			}
+			if wantsCodex {
+				for _, text := range []string{"作成(ホーム): ~/.agents/skills/record-lint/SKILL.md", "Codex のセッションログは未対応", "~/.claude/projects"} {
+					if !strings.Contains(so.String(), text) {
+						t.Fatalf("missing %s: %s", text, &so)
+					}
+				}
+				so.Reset()
+				se.Reset()
+				if code := dispatch(args, &so, &se); code != 0 || !strings.Contains(so.String(), "Codex のセッションログは未対応") || strings.Contains(so.String(), "作成(ホーム):") {
+					t.Fatalf("second init %d %s %s", code, &so, &se)
+				}
+			}
+		})
+	}
+}
+
+func TestInit_AgentValidationAndList(t *testing.T) {
+	for _, args := range [][]string{{"-agent", "foo"}, {"-repo", "-agent", "codex"}, {"-repo", "-agent", ""}} {
+		var so, se bytes.Buffer
+		if code := runInit(args, &so, &se); code != 1 {
+			t.Fatalf("%v: %d", args, code)
+		}
+		if !strings.Contains(se.String(), "claude, codex") && !strings.Contains(se.String(), "併用できない") {
+			t.Fatal(&se)
+		}
+	}
+	var so, se bytes.Buffer
+	if code := runInit([]string{"-list"}, &so, &se); code != 0 || !strings.Contains(so.String(), "対応先: -agent claude,codex。既定は claude。") {
+		t.Fatalf("%d %s %s", code, &so, &se)
+	}
+}
+
 // braindex init -add all <dir> は hub の雛形を全部展開し、作成したファイルを stdout に列挙する。
 func TestInit_Hub(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "hub")

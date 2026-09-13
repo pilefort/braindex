@@ -71,9 +71,13 @@ func Files(kind Kind) ([]File, error) {
 
 // Result は Install の結果。パスは展開先からの相対・"/" 区切り・昇順。
 type Result struct {
-	Created []string // 新しく作ったファイル
-	Merged  []string // 既にあったので、無い節・行だけ足したファイル(braindex.json・.gitignore)
-	Skipped []string // 既に存在したので触らなかったファイル
+	Agents      []string // 台帳と今回の指定を合わせた対応先
+	HomeCreated []string
+	HomeMerged  []string
+	HomeSkipped []string
+	Created     []string // 新しく作ったファイル
+	Merged      []string // 既にあったので、無い節・行だけ足したファイル(braindex.json・.gitignore)
+	Skipped     []string // 既に存在したので触らなかったファイル
 }
 
 // Install は dst に雛形を展開する。dst が無ければ作る。既存ファイルは残して Skipped に積む。
@@ -87,7 +91,7 @@ func Install(dst string, kind Kind) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	return install(dst, kind, files, nil)
+	return install(dst, kind, files, nil, nil)
 }
 
 // InstallFeatures は hub に feats の配布物を足す。依存(review → conventions)と core は自動で足す。
@@ -95,24 +99,55 @@ func Install(dst string, kind Kind) (Result, error) {
 // (同じ機能を 2 回足しても安全・利用者の編集は残る)。足した機能は台帳の Features に記録する。
 // enableNewsLLM を渡すと、news 節を新設する場合だけその結果で LLM を有効にする。
 func InstallFeatures(dst string, feats []Feature, enableNewsLLM ...func() bool) (Result, error) {
+	return InstallAgents(dst, feats, []string{"claude"}, enableNewsLLM...)
+}
+
+// InstallAgents は選んだ対応先に機能を配る。既存の対応先と機能は消さない。
+func InstallAgents(dst string, feats []Feature, agents []string, enableNewsLLM ...func() bool) (Result, error) {
 	if err := checkFeatures(feats); err != nil {
 		return Result{}, err
 	}
 	feats, _ = Resolve(feats)
-	files, err := FeatureFiles(feats)
+	agents, err := ParseAgents(strings.Join(agents, ","))
 	if err != nil {
 		return Result{}, err
 	}
-	return install(dst, KindHub, files, feats, enableNewsLLM...)
+	led, found, err := LoadLedger(dst)
+	if err != nil {
+		return Result{}, err
+	}
+	if found && led.Agents == nil {
+		led.Agents = []string{"claude"}
+	}
+	if led.Features == nil {
+		inferred, err := InferFeatures(dst)
+		if err != nil {
+			return Result{}, err
+		}
+		led.Features = FeatureNames(inferred)
+	}
+	agents = mergeNames(led.Agents, agents)
+	for _, name := range led.Features {
+		if _, ok := features[Feature(name)]; ok {
+			feats = append(feats, Feature(name))
+		}
+	}
+	feats, _ = Resolve(feats)
+	files, err := FeatureFiles(feats, agents)
+	if err != nil {
+		return Result{}, err
+	}
+	return install(dst, KindHub, files, feats, agents, enableNewsLLM...)
 }
 
-func install(dst string, kind Kind, files []File, feats []Feature, enableNewsLLM ...func() bool) (Result, error) {
+func install(dst string, kind Kind, files []File, feats []Feature, agents []string, enableNewsLLM ...func() bool) (Result, error) {
 	led, _, err := LoadLedger(dst)
 	if err != nil {
 		return Result{}, err
 	}
 	led.Kind = string(kind)
 	if kind == KindHub {
+		led.Agents = agents
 		if led.Features == nil {
 			// 機能の記録を持たない旧版の台帳(または台帳なし)。既にある機能を推定して落とさない
 			inferred, err := InferFeatures(dst)
@@ -124,7 +159,7 @@ func install(dst string, kind Kind, files []File, feats []Feature, enableNewsLLM
 		led.Features = mergeNames(led.Features, FeatureNames(feats))
 	}
 
-	var res Result
+	res := Result{Agents: agents}
 	for _, f := range files {
 		target := filepath.Join(dst, filepath.FromSlash(f.Path))
 		cur, err := os.ReadFile(target)
@@ -166,6 +201,15 @@ func install(dst string, kind Kind, files []File, feats []Feature, enableNewsLLM
 		}
 		res.Created = append(res.Created, f.Path)
 		led.Files[f.Path] = Hash(f.Content)
+	}
+	if HasAgent(agents, "codex") {
+		// ホームへの書き込みが失敗しても、hub に配った分の記録は残す。
+		if err := SaveLedger(dst, led); err != nil {
+			return res, err
+		}
+		if err := installCodex(dst, feats, &led, &res); err != nil {
+			return res, err
+		}
 	}
 	if err := SaveLedger(dst, led); err != nil {
 		return res, err

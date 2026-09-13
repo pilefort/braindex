@@ -33,9 +33,10 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	repo := fs.Bool("repo", false, "hub でなく各プロジェクトのリポ側の骨格(docs/notes/{common,project}・docs/decisions.md・work/)を置く")
 	add := fs.String("add", "", "足す機能(カンマ区切り)。conventions / review / retro / news / schedule / all。省略時は core・retro・news・schedule。依存は自動で足す")
+	agent := fs.String("agent", "claude", "対応先(カンマ区切り): claude, codex。既定は claude")
 	list := fs.Bool("list", false, "機能と配布物の一覧を出して終わる")
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "使い方: braindex init [-add 機能,...] [-list] [-repo] [dir]")
+		fmt.Fprintln(stderr, "使い方: braindex init [-agent claude,codex] [-add 機能,...] [-list] [-repo] [dir]")
 		fmt.Fprintln(stderr, "  dir(既定: カレントディレクトリ)に hub の骨格を展開する。既定は、利用者の置き場を変えない機能:")
 		fmt.Fprintln(stderr, "  索引(README・CLAUDE.md・.gitattributes・braindex.json)と retro・news・schedule の設定・skill。")
 		fmt.Fprintln(stderr, "  規約(docs/・work/)と週次レビューは -add conventions / -add review で足す。-add all で全部。")
@@ -68,6 +69,21 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "braindex init: -repo と -add は併用できない(機能は hub にだけ足す)")
 		return 1
 	}
+	agentSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "agent" {
+			agentSet = true
+		}
+	})
+	if *repo && agentSet {
+		fmt.Fprintln(stderr, "braindex init: -repo と -agent は併用できない(各リポの骨格は対応先に依らない)")
+		return 1
+	}
+	agents, agentErr := template.ParseAgents(*agent)
+	if agentErr != nil {
+		fmt.Fprintln(stderr, "braindex init:", agentErr)
+		return 1
+	}
 	if *list {
 		printFeatureList(stdout)
 		return 0
@@ -92,7 +108,7 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		}
 		feats, added = template.Resolve(req)
 		missingClaude := false
-		res, err = template.InstallFeatures(dir, feats, func() bool {
+		res, err = template.InstallAgents(dir, feats, agents, func() bool {
 			_, lookupErr := initLookPath("claude")
 			missingClaude = lookupErr != nil
 			return !missingClaude
@@ -111,24 +127,37 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	if len(res.Skipped) > 0 {
 		fmt.Fprintf(stdout, "保持(既存): %d 件\n", len(res.Skipped))
 	}
+	for _, p := range res.HomeCreated {
+		fmt.Fprintln(stdout, "作成(ホーム):", template.HomeDisplayPath(p))
+	}
+	for _, p := range res.HomeMerged {
+		fmt.Fprintln(stdout, "追記(ホーム):", template.HomeDisplayPath(p))
+	}
+	for _, p := range res.HomeSkipped {
+		fmt.Fprintln(stdout, "保持(ホーム・既存):", template.HomeDisplayPath(p))
+	}
 	if err != nil {
 		fmt.Fprintln(stderr, "braindex init:", err)
 		return 1
 	}
+	agents = res.Agents
 	// 「足した」でなく「含めた」: 依存の配布物が既にある hub(再実行・先に conventions を入れた hub)では何も足さない
 	if len(added) > 0 {
 		fmt.Fprintf(stdout, "依存として含めた機能: %s\n", joinFeatures(added))
 	}
 	fmt.Fprintf(stdout, "braindex init: 作成 %d・追記 %d・保持 %d(%s)\n", len(res.Created), len(res.Merged), len(res.Skipped), dir)
-	if *repo || len(res.Created)+len(res.Merged) == 0 {
+	if !*repo && template.HasAgent(agents, "codex") {
+		fmt.Fprintln(stdout, "Codex のセッションログは未対応。braindex retro・news（関心）・learn は Claude Code のログ（~/.claude/projects）だけを読む")
+	}
+	if *repo || len(res.Created)+len(res.Merged)+len(res.HomeCreated)+len(res.HomeMerged) == 0 {
 		return 0
 	}
-	printNextSteps(stdout, feats)
+	printNextSteps(stdout, feats, agents)
 	return 0
 }
 
 // printNextSteps は展開した機能に応じた「次」の案内を出す。
-func printNextSteps(w io.Writer, feats []template.Feature) {
+func printNextSteps(w io.Writer, feats []template.Feature, agents ...[]string) {
 	has := map[template.Feature]bool{}
 	for _, f := range feats {
 		has[f] = true
@@ -150,7 +179,11 @@ func printNextSteps(w io.Writer, feats []template.Feature) {
 		fmt.Fprintln(w, "  定期実行は `braindex schedule print` で中身を見てから `braindex schedule install`")
 	}
 	if has[template.FeatureConventions] || has[template.FeatureReview] || has[template.FeatureRetro] {
-		fmt.Fprintln(w, "  日本語の推敲スキルは同梱しない。要れば自分の .claude/skills/ に置く")
+		if len(agents) > 0 && !template.HasAgent(agents[0], "claude") {
+			fmt.Fprintln(w, "  日本語の推敲スキルは同梱しない。要れば自分の ~/.agents/skills/ に置く")
+		} else {
+			fmt.Fprintln(w, "  日本語の推敲スキルは同梱しない。要れば自分の .claude/skills/ に置く")
+		}
 	}
 	if !has[template.FeatureConventions] {
 		fmt.Fprintln(w, "  ノートの規約(docs/・work/)と週次レビューを使うなら `braindex init -add conventions` / `-add review`(一覧は `braindex init -list`)")
@@ -178,6 +211,9 @@ func printFeatureList(w io.Writer) {
 		}
 	}
 	fmt.Fprintf(w, "\n%s: 上の全部(従来の braindex init と同じ配布物)\n", template.FeatureAll)
+	fmt.Fprintln(w, "対応先: -agent claude,codex。既定は claude。")
+	fmt.Fprintln(w, "codex は ~/.codex/AGENTS.md（CODEX_HOME で変更可）と ~/.agents/skills/ に配る。")
+	fmt.Fprintln(w, "Codex のセッションログは未対応（retro・news の関心・learn は Claude Code のログだけを読む）。")
 }
 
 // anyLooksLikeFlag は、位置引数として飲み込まれた余りの中に "-" で始まるもの(本来はフラグのつもりだった

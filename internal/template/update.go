@@ -30,14 +30,20 @@ type Conflict struct {
 
 // UpdateResult は Update の結果。パスは展開先からの相対・"/" 区切り・雛形の順(昇順)。
 type UpdateResult struct {
-	Created   []string   // 無かったので作った
-	Updated   []string   // 配った版のままだったので今の版にした
-	Merged    []string   // 編集されていたが、無い節・行だけ足した(braindex.json・.gitignore)
-	Unchanged []string   // 既に今の版と同じだった
-	Conflicts []Conflict // 編集されていたので .new を置いた
-	Features  []Feature  // 追従の対象にした機能(core を含む・段の順)
-	Inferred  bool       // 台帳に機能の記録が無く、存在するファイルから推定した
-	Unknown   []string   // 台帳にあるが今の版が知らない機能名(新しい版の braindex が記録したもの。追従していない)
+	HomeCreated    []string
+	HomeUpdated    []string
+	HomeMerged     []string
+	HomeSkipped    []string
+	HomeConflicts  []Conflict
+	AgentsInferred bool
+	Created        []string   // 無かったので作った
+	Updated        []string   // 配った版のままだったので今の版にした
+	Merged         []string   // 編集されていたが、無い節・行だけ足した(braindex.json・.gitignore)
+	Unchanged      []string   // 既に今の版と同じだった
+	Conflicts      []Conflict // 編集されていたので .new を置いた
+	Features       []Feature  // 追従の対象にした機能(core を含む・段の順)
+	Inferred       bool       // 台帳に機能の記録が無く、存在するファイルから推定した
+	Unknown        []string   // 台帳にあるが今の版が知らない機能名(新しい版の braindex が記録したもの。追従していない)
 }
 
 // Update は dst の雛形由来ファイルを今の版に追いつかせる。Install が「無いものを足す」のに対し、
@@ -63,6 +69,10 @@ func Update(dst string, kind Kind, opt UpdateOptions) (UpdateResult, error) {
 	var res UpdateResult
 	var files []File
 	if kind == KindHub {
+		if led.Agents == nil {
+			led.Agents = []string{"claude"}
+			res.AgentsInferred = true
+		}
 		feats, inferred, err := hubFeatures(dst, led)
 		if err != nil {
 			return UpdateResult{}, err
@@ -72,7 +82,7 @@ func Update(dst string, kind Kind, opt UpdateOptions) (UpdateResult, error) {
 		// 記録したもの)は追従の対象にならないが、記録を落とすと新しい版に戻したときに消えたままになる
 		res.Unknown = unknownFeatureNames(led.Features)
 		led.Features = mergeNames(led.Features, FeatureNames(feats))
-		if files, err = FeatureFiles(feats); err != nil {
+		if files, err = FeatureFiles(feats, led.Agents); err != nil {
 			return UpdateResult{}, err
 		}
 	} else if files, err = Files(kind); err != nil {
@@ -162,6 +172,11 @@ func Update(dst string, kind Kind, opt UpdateOptions) (UpdateResult, error) {
 			}
 		}
 		if err := record(f.Path, f.Content); err != nil {
+			return res, err
+		}
+	}
+	if kind == KindHub && HasAgent(led.Agents, "codex") {
+		if err := updateCodex(dst, res.Features, &led, opt, &res); err != nil {
 			return res, err
 		}
 	}

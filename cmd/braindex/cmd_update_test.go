@@ -8,6 +8,41 @@ import (
 	"testing"
 )
 
+func TestUpdate_CodexHome(t *testing.T) {
+	home := initCodexTestHome(t)
+	hub := filepath.Join(t.TempDir(), "hub")
+	var so, se bytes.Buffer
+	if code := dispatch([]string{"init", "-agent", "codex", "-add", "conventions", hub}, &so, &se); code != 0 {
+		t.Fatalf("%d %s", code, &se)
+	}
+	so.Reset()
+	se.Reset()
+	if code := dispatch([]string{"update", hub}, &so, &se); code != 0 {
+		t.Fatalf("%d %s %s", code, &so, &se)
+	}
+	if !strings.Contains(so.String(), "そのまま(ホーム): ~/.agents/skills/record-lint/SKILL.md") || !strings.Contains(so.String(), "ホーム 4 件") {
+		t.Fatal(&so)
+	}
+	target := filepath.Join(home, ".agents/skills/record-lint/SKILL.md")
+	if err := os.WriteFile(target, []byte("user skill"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	so.Reset()
+	se.Reset()
+	if code := dispatch([]string{"update", hub}, &so, &se); code != 2 {
+		t.Fatalf("%d %s %s", code, &so, &se)
+	}
+	if !strings.Contains(so.String(), "保持(編集済み): ~/.agents/skills/record-lint/SKILL.md → ~/.agents/skills/record-lint/SKILL.md.new に今の版を置いた") {
+		t.Fatal(&so)
+	}
+	if b, err := os.ReadFile(target); err != nil || string(b) != "user skill" {
+		t.Fatalf("%s %v", b, err)
+	}
+	if _, err := os.Stat(target + ".new"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // initHub は雛形を展開した hub を返す(update の出発点)。
 func initHub(t *testing.T) string {
 	t.Helper()
