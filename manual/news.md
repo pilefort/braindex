@@ -48,7 +48,7 @@ keep は次のプロファイルの出典になるので、**選別がそのま�
 **設定例**（全部省略可。`init` が news 節を新しく書く際は、PATH に `claude` があれば `llm` を `claude-cli` にする。既存の節は変更しない）:
 
 ```json
-"news": { "dir": "news", "feeds": "news/feeds.json", "seen_days": 90, "profile_days": 14, "serendipity": 2,
+"news": { "dir": "news", "feeds": "news/feeds.json", "seen_days": 90, "profile_days": 14, "keep_months": 3, "serendipity": 2,
           "cap_per_layer": { "daily": 15, "weekly": 25, "general": 5 }, "show_min_score": 2,
           "llm": "off", "llm_model": "", "llm_timeout_sec": 120, "llm_budget_sec": 600 }
 ```

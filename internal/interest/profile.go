@@ -91,11 +91,11 @@ func Build(in Input) (Profile, error) {
 	}
 	days := in.Days
 	if days <= 0 {
-		days = 14
+		days = 14 // news.DefaultProfileDays と揃える(news の import は循環参照になる)。
 	}
 	months := in.KeepMonths
 	if months <= 0 {
-		months = 3
+		months = 3 // news.DefaultKeepMonths と揃える。
 	}
 	since := today.AddDate(0, 0, -days)
 	sinceDate := since.Format("2006-01-02")
