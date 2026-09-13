@@ -34,6 +34,7 @@ func TestRenderForm_Elements(t *testing.T) {
 		`data-title="設定ファイルの形式を JSON にするか TOML にするか"`,
 		`"nonce":"fixed-nonce"`, `fetch('/reply'`,
 		`<button id="send">決定を送信</button>`,
+		`<button id="fbcopy" type="button" class="copy" hidden>JSON をコピー</button>`, `fbc.hidden=false`, `navigator.clipboard.writeText(fb.value)`,
 		"CI の仕様が決まるまで",
 		"work/APPROVALS.md ／ 生成 2026-01-02 03:04",
 	} {
