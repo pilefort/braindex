@@ -213,3 +213,19 @@ func TestAddFeedsRevalidation(t *testing.T) {
 		t.Fatal("original changed")
 	}
 }
+
+func TestAddFeedsKeepsAmpersand(t *testing.T) {
+	// 検索フィードの URL の & を \u0026 にしない(利用者が手で書くファイルに合わせる。2026-09-13 の実物確認で見つけた)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "feeds.json")
+	if err := os.WriteFile(path, []byte("[]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := AddFeeds(path, Catalog(), []FeedRequest{{URL: SearchFeedURL("claude"), Query: "claude"}}, "daily", "2026-09-13"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	if bytes.Contains(b, []byte(`\u0026`)) || !bytes.Contains(b, []byte("&hl=")) {
+		t.Fatalf("& がエスケープされている:\n%s", b)
+	}
+}

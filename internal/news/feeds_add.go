@@ -69,18 +69,21 @@ func AddFeeds(path string, catalog []CatalogEntry, reqs []FeedRequest, layer str
 			continue
 		}
 		// layer が空でもキーを明示する。キー順は利用者向けの登録形式に固定する。
-		row, merr := json.Marshal(struct {
+		// json.Marshal は & を \u0026 にするので、手で書くファイルに合わせて Encoder で HTML エスケープを切る
+		var rowBuf bytes.Buffer
+		enc := json.NewEncoder(&rowBuf)
+		enc.SetEscapeHTML(false)
+		if merr := enc.Encode(struct {
 			Name     string `json:"name"`
 			URL      string `json:"url"`
 			Layer    string `json:"layer"`
 			Lang     string `json:"lang"`
 			Category string `json:"category"`
 			Note     string `json:"note"`
-		}{s.Name, s.URL, s.Layer, s.Lang, s.Category, s.Note})
-		if merr != nil {
+		}{s.Name, s.URL, s.Layer, s.Lang, s.Category, s.Note}); merr != nil {
 			return nil, msgs, merr
 		}
-		rows = append(rows, row)
+		rows = append(rows, bytes.TrimRight(rowBuf.Bytes(), "\n"))
 		added = append(added, s.Name)
 		urls[normalizeURL(s.URL)], names[s.Name] = true, true
 	}
