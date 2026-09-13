@@ -25,6 +25,7 @@ import (
 	"github.com/pilefort/braindex/internal/changehistory"
 	"github.com/pilefort/braindex/internal/config"
 	"github.com/pilefort/braindex/internal/fsutil"
+	"github.com/pilefort/braindex/internal/links"
 	"github.com/pilefort/braindex/internal/scan"
 )
 
@@ -168,6 +169,17 @@ func run(o options, stdout, stderr io.Writer) int {
 		return 1
 	}
 	fmt.Fprintf(stdout, "catalog 生成: %d 件 → %s\n", res.Entries, outPath)
+	linksPath := filepath.Join(filepath.Dir(outPath), links.FileName)
+	if err := fsutil.WriteAtomic(linksPath, res.LinksTSV, 0o644); err != nil {
+		warn("つながりの一覧を書けない: %v", err)
+	} else {
+		counts := map[links.Kind]int{}
+		for _, e := range res.Links {
+			counts[e.Kind]++
+		}
+		u := res.Unresolved
+		fmt.Fprintf(stdout, "つながり: %d 本（link %d・wiki %d・mention %d）・解決できず %d 本（link %d・wiki %d・mention %d） → %s\n", len(res.Links), counts[links.KindLink], counts[links.KindWiki], counts[links.KindMention], u.Link+u.Wiki+u.Mention, u.Link, u.Wiki, u.Mention, linksPath)
+	}
 	if herr == nil {
 		next, rep := changehistory.Update(prev, res.Notes, res.Coverage.Gaps, genDate)
 		if err := changehistory.Save(histPath, next); err != nil {

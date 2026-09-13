@@ -122,6 +122,7 @@ braindex init -add all              フル: 上の全部。learn（学習の提�
 |---|---|---|---|
 | `braindex` | `<root>/*/docs/notes/**/*.md`・`<root>/*/docs/decisions.md`（`*` はリポ。`repo_depth: 2` なら `*/*`） | `index/catalog.md`（先頭に走査の記録）・`index/changes.json`（本文の変更の記録） | [generate](manual/generate.md) |
 | `braindex search` | 各リポのノート本文（索引と同じ走査規則） | 語を含む行の「パス:行: 内容」と確認できなかった範囲（stdout・`-json`） | [search](manual/search.md) |
+| `braindex related` | いまのリポ・ISSUE・直近のセッション・引数の語、索引と links.tsv | 関連するノートを「このリポ」「他のリポ」に分けた一覧（stdout・`-json`） | [related](manual/related.md) |
 | `braindex diagnose` | 設定・いまの走査・保存済みの索引 | 何を見に行き、何が読めて、索引が何を取りこぼしているか（stdout・`-json`。索引もノートも書き換えない） | [diagnose](manual/diagnose.md) |
 | `braindex init` | 埋め込みのテンプレ | hub の骨格（既定は索引＋retro・news・schedule。`-add <機能>` で足す・`-repo` で各リポの骨格） | [init-update](manual/init-update.md) |
 | `braindex update` | 埋め込みのテンプレ・台帳 `.braindex/template.json` | 足した機能の分だけ追いついた雛形（編集済みは `<名前>.new`）と `index/catalog.md` | [init-update](manual/init-update.md) |
