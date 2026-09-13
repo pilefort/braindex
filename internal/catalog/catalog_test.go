@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"io/fs"
 	"os"
@@ -17,6 +18,34 @@ import (
 )
 
 var update = flag.Bool("update", false, "ゴールデンファイルを更新する")
+
+// 明示された手元の設定だけを読み、本文や索引を書き出さず件数を報告する。
+func TestBuild_LinksLocalHub(t *testing.T) {
+	p := os.Getenv("BRAINDEX_LINKS_CONFIG")
+	if p == "" {
+		t.Skip("手元の hub の設定は明示時だけ読む")
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fc scan.Config
+	if err := json.Unmarshal(bytes.TrimPrefix(b, []byte("\ufeff")), &fc); err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(fc.Root) {
+		fc.Root = filepath.Join(filepath.Dir(p), filepath.FromSlash(fc.Root))
+	}
+	res, err := Build(fc, "2026-09-13")
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int{}
+	for _, e := range res.Links {
+		counts[string(e.Kind)]++
+	}
+	t.Logf("notes=%d links=%d link=%d wiki=%d mention=%d unresolved=%+v warnings=%d", res.Entries, len(res.Links), counts["link"], counts["wiki"], counts["mention"], res.Unresolved, len(res.Warnings))
+}
 
 // e2e は internal/scan の合成 testdata を丸ごと索引化する設定。
 func e2eConfig() scan.Config {
@@ -144,16 +173,22 @@ func TestBuild_UnreadableDirIsGap(t *testing.T) {
 }
 
 func TestBuild_Deterministic(t *testing.T) {
-	a, err := Build(e2eConfig(), "2026-08-07")
+	cfg := e2eConfig()
+	cfg.Root = copyTree(t, cfg.Root)
+	addTestLink(t, cfg.Root)
+	a, err := Build(cfg, "2026-08-07")
 	if err != nil {
 		t.Fatalf("Build(1 回目): %v", err)
 	}
-	b, err := Build(e2eConfig(), "2026-08-07")
+	b, err := Build(cfg, "2026-08-07")
 	if err != nil {
 		t.Fatalf("Build(2 回目): %v", err)
 	}
 	if string(a.Catalog) != string(b.Catalog) {
 		t.Errorf("2 回生成でバイト不一致(決定性違反)")
+	}
+	if len(a.Links) == 0 || !bytes.Equal(a.LinksTSV, b.LinksTSV) {
+		t.Errorf("links.tsv が空または 2 回生成で不一致: %s", a.LinksTSV)
 	}
 }
 
@@ -220,6 +255,8 @@ func TestBuild_DeterministicAcrossMtime(t *testing.T) {
 	src := filepath.Join("..", "scan", "testdata", "root")
 	a := copyTree(t, src)
 	b := copyTree(t, src)
+	addTestLink(t, a)
+	addTestLink(t, b)
 	touchAll(t, a, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
 	touchAll(t, b, time.Date(2030, 6, 15, 12, 0, 0, 0, time.UTC))
 	guides := scan.ExtraRule{Repo: "ext", Path: "docs/guides", Kind: "guides"}
@@ -241,6 +278,36 @@ func TestBuild_DeterministicAcrossMtime(t *testing.T) {
 	}
 	if !bytes.Equal(ra.Catalog, rb.Catalog) {
 		t.Errorf("mtime が違うだけで出力が変わった(決定性違反):%s---%s", ra.Catalog, rb.Catalog)
+	}
+	if len(ra.Links) == 0 || !bytes.Equal(ra.LinksTSV, rb.LinksTSV) {
+		t.Errorf("mtime が違うと links.tsv が変わった、または辺が無い")
+	}
+}
+
+// 元の scan/testdata を変えず、一時コピーの本文末尾に相対リンクを足す。
+func addTestLink(t *testing.T, root string) {
+	t.Helper()
+	cfg := e2eConfig()
+	cfg.Root = root
+	sc, err := scan.Scan(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sc.Files) < 2 {
+		t.Fatal("two notes required")
+	}
+	rel, err := filepath.Rel(filepath.Dir(sc.Files[0].Abs), sc.Files[1].Abs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := sc.Files[0].Abs
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b = append(b, []byte("\n\n[関連]("+filepath.ToSlash(rel)+")\n")...)
+	if err := os.WriteFile(p, b, 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

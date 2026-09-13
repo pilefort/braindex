@@ -2,12 +2,58 @@ package main
 
 import (
 	"bytes"
+	"github.com/pilefort/braindex/internal/links"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestRun_LinksGeneratedAndCheckIgnoresLinks(t *testing.T) {
+	root := makeRoot(t)
+	writeFile(t, filepath.Join(root, "repo-a/docs/notes/b.md"), "# B\n\n[a](a.md)\n[[missing]]\n")
+	out := filepath.Join(t.TempDir(), "index/catalog.md")
+	so, _ := runOK(t, options{root: root, out: out, date: "2026-01-03"})
+	p := filepath.Join(filepath.Dir(out), links.FileName)
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edges, err := links.Parse(b)
+	if err != nil || len(edges) != 1 {
+		t.Fatalf("%s %v", b, err)
+	}
+	if !strings.Contains(so, "つながり: 1 本（link 1・wiki 0・mention 0）・解決できず 1 本（link 0・wiki 1・mention 0）") {
+		t.Fatal(so)
+	}
+	writeFile(t, p, "unrelated bytes")
+	var stdout, stderr bytes.Buffer
+	if code := run(options{root: root, out: out, date: "2026-01-03", check: true}, &stdout, &stderr); code != 0 {
+		t.Fatalf("code=%d %s", code, &stderr)
+	}
+	if b, err := os.ReadFile(p); err != nil || string(b) != "unrelated bytes" {
+		t.Fatalf("check wrote links: %q %v", b, err)
+	}
+}
+
+func TestRun_LinksWriteFailureWarns(t *testing.T) {
+	root := makeRoot(t)
+	out := filepath.Join(t.TempDir(), "index/catalog.md")
+	p := filepath.Join(filepath.Dir(out), links.FileName)
+	if err := os.MkdirAll(p, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var so, se bytes.Buffer
+	if code := run(options{root: root, out: out, date: "2026-01-03"}, &so, &se); code != 2 || !strings.Contains(se.String(), "つながりの一覧を書けない") {
+		t.Fatalf("code=%d %s", code, &se)
+	}
+	for _, p := range []string{out, filepath.Join(filepath.Dir(out), "changes.json")} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 func TestCheck_ReadOnly(t *testing.T) {
 	for _, tc := range []struct {
