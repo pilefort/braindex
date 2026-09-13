@@ -13,7 +13,7 @@ const ConfigPath = "braindex.json"
 
 // configKeyOrder は braindex.json の最上位キーの固定順。テンプレ(templates/hub/braindex.json)と同じ順で、
 // 節を足しても位置が揺れない(利用者の diff を小さく保つ)。ここに無いキーは末尾に名前順で並べる。
-var configKeyOrder = []string{"root", "notes_dirs", "extra", "review", "retro", "approvals", "news", "schedule"}
+var configKeyOrder = []string{"root", "notes_dirs", "extra", "review", "retro", "approvals", "news", "learn", "schedule"}
 
 // configSections はテンプレの braindex.json を最上位キーごとに切り出す。テンプレは「全機能を足した完成形」
 // 1 枚だけを正として持ち(決定 2026-09-03「設定の雛形はテンプレ 1 つ」 → manual/init-update.md「決めたこと」)、機能ごとの節はそこから取る。

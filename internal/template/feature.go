@@ -89,9 +89,9 @@ var features = map[Feature]featureSpec{
 		Sections: []string{"retro"},
 	},
 	FeatureNews: {
-		Summary:  "ニュースサジェスト(braindex news): news/feeds.example.json・.gitignore の news の行・設定の news 節",
+		Summary:  "ニュースサジェスト(braindex news): news/feeds.example.json・.gitignore の news の行・設定の news・learn 節",
 		Files:    []string{GitignorePath, "news/feeds.example.json"},
-		Sections: []string{"news"},
+		Sections: []string{"news", "learn"},
 	},
 	FeatureSchedule: {
 		Summary:  "定期実行(braindex schedule): 設定の schedule 節(jobs は review・retro・news のうち足した分)",

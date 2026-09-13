@@ -16,6 +16,7 @@ import (
 	"os"
 
 	"github.com/pilefort/braindex/internal/approvals"
+	"github.com/pilefort/braindex/internal/learn"
 	"github.com/pilefort/braindex/internal/news"
 	"github.com/pilefort/braindex/internal/retro"
 	"github.com/pilefort/braindex/internal/review"
@@ -29,6 +30,7 @@ const DefaultPath = "braindex.json"
 // Config は braindex.json の内容。
 type Config struct {
 	scan.Config
+	Learn     learn.Settings     `json:"learn"`     // 学習の提案(braindex learn)の節。省略可
 	Review    review.Settings    `json:"review"`    // 週次レビュー(braindex review)の節。省略可
 	Retro     retro.Settings     `json:"retro"`     // レトロスペクティブ(braindex retro)の節。省略可
 	News      news.Settings      `json:"news"`      // ニュースサジェスト(braindex news)の節。省略可
