@@ -14,7 +14,7 @@
 （`braindex init -agent codex`。導入・索引・規約・スキルまで）。セッションログを材料にする retro・news の関心・learn は
 Claude Code のログだけを読む（2026-09-13）。既定は利用者の置き場を変えない機能だけで、規約への乗り換えは選んだときだけ（[段階的な取り込み](#段階的な取り込み)）。
 
-コマンドごとの詳しい説明は [`manual/`](manual/README.md) にある。
+コマンドごとの詳しい説明は [`manual/`](manual/README.md)、版ごとの変更は [`CHANGELOG.md`](CHANGELOG.md) にある。入っている版は `braindex -version` で分かる。
 
 ## 画面
 
@@ -66,6 +66,7 @@ parent/                            ← braindex.json の root（既定 ".."＝hu
 │   ├── braindex.json              設定（root / notes_dirs / extra / repo_depth ＋ 足した機能の節）
 │   ├── index/catalog.md           ■ 索引：1 ノート 1 行（日付・種別・タイトル・要旨・パス）。先頭に走査の記録
 │   ├── index/changes.json         本文の変更の記録（内容ハッシュと観測日。索引の行が変わらない更新を見分ける）
+│   ├── index/links.tsv            ノート同士のつながり（related が読む）
 │   ├── news/                      ニュースの置き場（既定で入る。作業ファイルは .gitignore が除外）
 │   ├── .claude/skills/            判断を埋めるスキル（retro は既定。他は機能ごとに入る）
 │   ├── docs/  work/               hub 自身のノートと作業状態（-add conventions）
@@ -122,7 +123,7 @@ braindex init -add all              フル: 上の全部。learn（学習の提�
 
 | コマンド | 入力 | 出力 | 手引き |
 |---|---|---|---|
-| `braindex` | `<root>/*/docs/notes/**/*.md`・`<root>/*/docs/decisions.md`（`*` はリポ。`repo_depth: 2` なら `*/*`） | `index/catalog.md`（先頭に走査の記録）・`index/changes.json`（本文の変更の記録） | [generate](manual/generate.md) |
+| `braindex` | `<root>/*/docs/notes/**/*.md`・`<root>/*/docs/decisions.md`（`*` はリポ。`repo_depth: 2` なら `*/*`） | `index/catalog.md`（先頭に走査の記録）・`index/changes.json`（本文の変更の記録）・`index/links.tsv`（ノート同士のつながり） | [generate](manual/generate.md) |
 | `braindex search` | 各リポのノート本文（索引と同じ走査規則） | 語を含む行の「パス:行: 内容」と確認できなかった範囲（stdout・`-json`） | [search](manual/search.md) |
 | `braindex type` | ノートのタイトルとファイル名・承認済みのチェックリスト | 内容の種別（失敗・手順・観測）の候補と本文への反映。`search -type`・`scope -type` で絞れる | [type](manual/type.md) |
 | `braindex related` | いまのリポ・ISSUE・直近のセッション・引数の語、索引と links.tsv | 関連するノートを「このリポ」「他のリポ」に分けた一覧（stdout・`-json`） | [related](manual/related.md) |
@@ -137,7 +138,7 @@ braindex init -add all              フル: 上の全部。learn（学習の提�
 | `braindex approvals` | `work/APPROVALS.md` | ブラウザのフォーム → `docs/decisions.md` への追記 | [tools](manual/tools.md) |
 | `braindex answer` | Markdown 1 ファイル（`-append` なら話題ごとのスレッド） | 自己完結 HTML（一時置き場・既定ブラウザで開く） | [tools](manual/tools.md) |
 | `braindex explain` | 解説の Markdown 1 ファイルと、隣に置いた図の `.svg` | 目次・埋め込んだ図・表から描いたグラフつきの自己完結 HTML（一時置き場・既定ブラウザで開く） | [tools](manual/tools.md) |
-| `braindex verify` | GitHub リポ・arXiv ID・URL・逐語引用 | 照合の結果（stdout・`-json`） | [tools](manual/tools.md) |
+| `braindex verify` | GitHub リポ・arXiv ID・URL・逐語引用（`verify session` はセッションログと発言） | 照合の結果（stdout・`-json`）。`session` は「テストを通した」等の発言に対応するコマンドの実行があったか | [tools](manual/tools.md) |
 | `braindex scope` | `index/catalog.md`（`-dir` ならディレクトリ配下の `*.md`） | 矛盾検査の走査対象（chunk 分割・stdout・`-json`） | [tools](manual/tools.md) |
 | `braindex schedule` | 設定の `schedule` 節 | OS のスケジューラへの登録。macOS の hub は `~/Documents`・`~/Desktop`・`~/Downloads` の下を避け、ホーム直下の `~/<名前>/` などに置く | [schedule](manual/schedule.md) |
 
