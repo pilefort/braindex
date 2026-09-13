@@ -93,6 +93,21 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 	for _, p := range res.Merged {
 		fmt.Fprintln(stdout, "追記(無い節・行を足した):", p)
 	}
+	for _, p := range res.HomeCreated {
+		fmt.Fprintln(stdout, "作成(ホーム):", template.HomeDisplayPath(p))
+	}
+	for _, p := range res.HomeUpdated {
+		fmt.Fprintln(stdout, "更新(ホーム):", template.HomeDisplayPath(p))
+	}
+	for _, p := range res.HomeMerged {
+		fmt.Fprintln(stdout, "追記(ホーム):", template.HomeDisplayPath(p))
+	}
+	for _, p := range res.HomeSkipped {
+		fmt.Fprintln(stdout, "そのまま(ホーム):", template.HomeDisplayPath(p))
+	}
+	for _, c := range res.HomeConflicts {
+		fmt.Fprintf(stdout, "保持(編集済み): %s → %s に今の版を置いた\n", template.HomeDisplayPath(c.Path), template.HomeDisplayPath(c.New))
+	}
 	if len(res.Unknown) > 0 {
 		fmt.Fprintf(stderr, "braindex update: 警告: 台帳 %s に今の版が知らない機能 %s がある(新しい版の braindex が足したもの)。"+
 			"その機能は追従していない。先に `go install` で braindex を更新すること\n", template.LedgerPath, strings.Join(res.Unknown, ", "))
@@ -113,6 +128,9 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if kind == template.KindHub {
+		if res.AgentsInferred {
+			fmt.Fprintln(stdout, "対応先: 台帳に記録が無いので claude だけと推定")
+		}
 		names := template.FeatureNames(res.Features)
 		label := "台帳の記録"
 		if res.Inferred {
@@ -124,12 +142,13 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stdout, "追従した機能: %s(%s)\n", strings.Join(names, ", "), label)
 		}
 	}
-	fmt.Fprintf(stdout, "braindex update: 作成 %d・更新 %d・追記 %d・そのまま %d・編集済み %d(%s)\n",
-		len(res.Created), len(res.Updated), len(res.Merged), len(res.Unchanged), len(res.Conflicts), dir)
+	homeCount := len(res.HomeCreated) + len(res.HomeUpdated) + len(res.HomeMerged) + len(res.HomeSkipped) + len(res.HomeConflicts)
+	fmt.Fprintf(stdout, "braindex update: 作成 %d・更新 %d・追記 %d・そのまま %d・編集済み %d・ホーム %d 件(%s)\n",
+		len(res.Created), len(res.Updated), len(res.Merged), len(res.Unchanged), len(res.Conflicts), homeCount, dir)
 	if *dry {
 		fmt.Fprintln(stdout, "  -dry-run のため何も書いていない")
 	}
-	if len(res.Conflicts) > 0 {
+	if len(res.Conflicts)+len(res.HomeConflicts) > 0 {
 		fmt.Fprintln(stdout, "  .new は今の版。中身を見て、要るところだけ自分のファイルに取り込む(取り込んだら .new は消してよい)")
 	}
 
@@ -142,7 +161,7 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 	}
 
 	code := 0
-	if len(res.Conflicts) > 0 {
+	if len(res.Conflicts)+len(res.HomeConflicts) > 0 {
 		code = 2
 	}
 	if kind == template.KindRepo || *dry {

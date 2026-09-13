@@ -208,7 +208,7 @@ func FeatureNames(feats []Feature) []string {
 
 // FeatureFiles は feats の配布物を Path の昇順で返す。braindex.json は feats の節だけで組み立て、
 // .gitignore は news の行を持つ。core と依存は Resolve で足す(all もここで展開される)。
-func FeatureFiles(feats []Feature) ([]File, error) {
+func FeatureFiles(feats []Feature, agents ...[]string) ([]File, error) {
 	if err := checkFeatures(feats); err != nil {
 		return nil, err
 	}
@@ -225,6 +225,9 @@ func FeatureFiles(feats []Feature) ([]File, error) {
 	var out []File
 	for _, f := range feats {
 		for _, p := range features[f].Files {
+			if len(agents) > 0 && !HasAgent(agents[0], "claude") && (p == "CLAUDE.md" || strings.HasPrefix(p, ".claude/")) {
+				continue
+			}
 			if seen[p] {
 				continue
 			}
