@@ -50,5 +50,5 @@
 | 前回の判断の節が空のまま | `review` |
 | 残留したロックを外した・別の日の未完了が残っている | `news fetch`・`news apply` |
 
-3 を使うのは 3 つだけ: `retro check`（閾値超え）と、`approvals serve`・`approvals wait`（時間切れ）。
+3 を使うのは 4 つだけ: `braindex -check`（保存済み索引が古い）・`retro check`（閾値超え）・`approvals serve`・`approvals wait`（時間切れ）。
 フラグの要約は `braindex -h`、各コマンドは `braindex <コマンド> -h`。

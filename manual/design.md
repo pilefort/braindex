@@ -25,16 +25,22 @@ v0.1.0（2026-09-03）: 索引 CLI（Phase 1）を原型から移植して可搬
 週次レビューの集計 `braindex review`（Phase 2）・ISSUE の検査 `braindex lint`・訂正率トリガのレトロスペクティブ `braindex retro`（Phase 3）を足した。
 原型は作者の私用「第二の脳」で 2026-08-07 から運用しているもの（非公開・20 リポ 307 ノートを索引中）。
 
-タグの後（2026-09-03）に main へ入ったもの: ニュースサジェスト `braindex news`（Phase 4）・判断待ちのフォーム `braindex approvals`（Phase 5）・
+v0.2.0（2026-09-09）: ニュースサジェスト `braindex news`（Phase 4）・判断待ちのフォーム `braindex approvals`（Phase 5）・
 ノートの曖昧さ検査 `braindex lint -kind note` と走査対象の切り出し `braindex scope`（Phase 6）・回答の HTML 化 `braindex answer` と
-実在の照合 `braindex verify`（Phase 7）・定期実行の登録 `braindex schedule`。次のタグで出る。
+実在の照合 `braindex verify`（Phase 7）・定期実行の登録 `braindex schedule`。本文検索 `braindex search`・走査の診断 `braindex diagnose`・
+学習の候補 `braindex learn`・本文の変更の記録 `index/changes.json` もこのタグに入っている。公開に向けて `docs/`・`work/` を追跡対象から外した。
+
+タグの後（2026-09-11〜13）に main へ入ったもの: フォームの回答を待つ `approvals wait`・解説の HTML 化 `braindex explain`・
+索引が最新かを書かずに確かめる `braindex -check`・発話と実行記録の照合 `verify session`・ノート同士のつながり `links.tsv` と `braindex related`・
+内容の種別 `braindex type`（`search`／`scope` の絞り込み）・選別画面からの取材先の登録 `news suggest`／`news apply`・Codex 対応（`init -agent codex`）・
+`lint` の失効行の検査・`scope -topic` と `-repo` の併用・`news.llm_budget_sec`。次のタグで出る。
 
 ## リポジトリの地図
 
 | 場所 | 何が入るか |
 |---|---|
-| `cmd/braindex` | サブコマンドの登録とフラグ解析（`main.go`・`commands.go`・`cmd_*.go`） |
-| `internal/` | 索引の実装（`scan` → `extract` → `render` → `catalog`）と `config`・`template`（init）・`lint`・`review`・`sessions`／`retro`・`feed`／`interest`／`news`（ニュース）・`approvals`・`mdhtml`／`verify`（回答の HTML 化と照合）・`scope`・`schedule` |
+| `cmd/braindex` | サブコマンドの登録とフラグ解析（`main.go`・`commands.go`・`cmd_*.go`）と小さな共通部（`loc.go` タイムゾーン・`open.go` ブラウザ起動・`retro_note.go` 所見ノートの名前・`version.go` `-version` の 1 行） |
+| `internal/` | 索引の実装（`scan` → `extract` → `render` → `catalog`。`indexdata` は共通データ、`changehistory` は本文の変更の記録 `changes.json`、`links` は `links.tsv` と `related`、`notetype` は内容の種別、`textsearch` は `search`、`diagnose` は走査の診断）と `config`・`template`（init／update の配布物）・`lint`・`review`・`sessions`／`retro`／`learn`・`feed`／`interest`／`news`（ニュース）・`approvals`・`mdhtml`／`explain`／`verify`（回答と解説の HTML 化・照合）・`scope`・`schedule`。下回りは `fsutil`（原子的な書き込み）・`gitutil`・`textutil`・`textblock`・`weblink`（リンクの安全判定）・`screenshots`（README の画面の再生成） |
 | `.github/workflows/ci.yml` | CI。ubuntu と windows で gofmt／vet／test に加え、同じ入力から 2 回生成してバイト一致することを確かめる |
 | `manual/` | コマンドごとの手引き（この目次は [README.md](README.md)） |
 | `CONTRIBUTING.md` | 開発の決まり（テスト・決定性・持ち込まないもの） |
@@ -68,6 +74,7 @@ go test ./...   # 依存なし。CI は gofmt -l . と go vet ./... も回す
 
 ### 終了コードは 0 成功 / 1 失敗 / 2 警告つき完了に揃える（3 は retro check の閾値超えと approvals serve の時間切れだけ）
 
+一部失効: 2026-09-13 → tools.md「フックが開いたフォームの回答は、braindex approvals wait で待ち、届いたらアシスタントを起こす」と README「終了コード」節の `braindex -check`（3 を返す場面が `approvals wait` の時間切れと `-check` の「索引が古い」にも広がった。0／1／2 の規約はそのまま）
 記録日: 2026-09-03
 理由: 「2 なら結果は使える」が全コマンドで成り立てば、定期実行から一律に成否を判定できる。時間切れ（`approvals serve`）とスケジューラの失敗（`schedule`）は完了していないので 2 から外し、未反映がある `approvals apply` と、選別・統計を取り込めなかった `news fetch` を 2 に寄せた。却下: 現状維持／コマンド群ごとに別の規約を認める（規約の意味が薄まる）。
 根拠: 会話 2026-09-03（ユーザー判断・承認待ちフォームの回答）。実装は PR #5（控え: pr/5.md）4（控え: pr/54.md）。指摘の出どころは当時の PR #35・#36・#37・#49（控え: pr/35.md・pr/36.md・pr/37.md・pr/49.md）・#5（控え: pr/35.md・pr/36.md・pr/37.md・pr/49.md・pr/5.md）0（控え: pr/35.md・pr/36.md・pr/37.md・pr/49.md・pr/50.md） のレビュー記録（2026-09-03・除去済み。コードの読みで、実測ではない）。規約の文言は `cmd/braindex/main.go` のパッケージコメントと `docs/overview.md`
