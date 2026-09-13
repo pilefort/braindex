@@ -466,7 +466,7 @@ func TestVersionInRange(t *testing.T) {
 		{"下限ちょうど", MinKnownVersion, true},
 		{"上限ちょうど", MaxKnownVersion, true},
 		{"下限より古い", "2.1.257", false},
-		{"上限より新しい", "2.1.264", false},
+		{"上限より新しい", MaxKnownVersion + ".1", false},
 		{"メジャーが古い", "1.9.999", false},
 		{"メジャーが新しい", "3.0.0", false},
 		{"桁の違いを数値で比べる(2.1.9 は 2.1.10 より小さい)", "2.1.9", false},
