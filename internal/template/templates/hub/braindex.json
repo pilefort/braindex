@@ -28,7 +28,8 @@
     "profile_days": 14,
     "cap_per_layer": {
       "daily": 15,
-      "weekly": 25
+      "weekly": 25,
+      "general": 5
     },
     "show_min_score": 2,
     "llm": "off",

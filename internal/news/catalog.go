@@ -18,6 +18,45 @@ import (
 //go:embed catalog.json
 var catalogJSON []byte
 
+// SuggestInDigest は選別画面に出す候補の上限。
+const SuggestInDigest = 3
+
+// Lang は目録の日本語タグから言語を返す。
+func (e CatalogEntry) Lang() string {
+	for _, tag := range e.Tags {
+		if tag == "日本語" {
+			return "ja"
+		}
+	}
+	return "en"
+}
+
+// LookupCatalog は末尾スラッシュを無視して目録を引く。
+func LookupCatalog(catalog []CatalogEntry, url string) (CatalogEntry, bool) {
+	for _, e := range catalog {
+		if normalizeURL(e.URL) == normalizeURL(url) {
+			return e, true
+		}
+	}
+	return CatalogEntry{}, false
+}
+
+// IsGeneralNews は一般ニュースの二つのジャンルを判定する。
+func (e CatalogEntry) IsGeneralNews() bool {
+	return e.Genre == "一般ニュース（日本）" || e.Genre == "一般ニュース（海外）"
+}
+
+// CatalogKeywords は目録の全照合語の集合を返す。
+func CatalogKeywords(catalog []CatalogEntry) map[string]bool {
+	out := map[string]bool{}
+	for _, e := range catalog {
+		for _, word := range e.Keywords {
+			out[word] = true
+		}
+	}
+	return out
+}
+
 // CatalogEntry は取材先目録の 1 件。
 type CatalogEntry struct {
 	Genre    string   `json:"genre"`    // ジャンル(ノートの ### 見出し)

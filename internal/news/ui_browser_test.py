@@ -46,8 +46,28 @@ with sync_playwright() as p:
     expect(first.locator(".explain")).to_be_focused()
     # ファイル保存の成功と、その間に操作が変わった場合を検査。
     page.evaluate("() => {window.showSaveFilePicker=async()=>({name:'selection.json',createWritable:async()=>({write:async b=>{window.savedBody=b},close:async()=>{}})});}")
+    # 候補は閉じて始まり、記事の絞り込みでも消えない。
+    expect(page.locator("section.suggest")).to_be_visible()
+    assert page.locator("details.suggest").get_attribute("open") is None
+    page.locator("details.suggest > summary").click()
+    candidate = page.locator(".suggest-item:not(.query) .ba")
+    candidate.click()
     page.locator("#exp").click()
     expect(page.locator("#saveState")).to_contain_text("ファイル保存済み")
+    assert json.loads(page.evaluate("window.savedBody"))["add_feeds"] == [{"url":"https://example.com/rss"}]
+    candidate.click()
+    expect(page.locator("#saveState")).to_contain_text("保存後に変更")
+    page.locator("#exp").click()
+    assert json.loads(page.evaluate("window.savedBody"))["add_feeds"] == []
+    page.locator(".query .ba").click()
+    candidate.click()
+    page.locator("#exp").click()
+    feeds = json.loads(page.evaluate("window.savedBody"))["add_feeds"]
+    assert [f["url"] for f in feeds] == sorted(f["url"] for f in feeds)
+    assert feeds[1]["query"] == "unlistedword"
+    assert "q=unlistedword" in feeds[1]["url"]
+    assert "query" not in feeds[0]
+
     saved = json.loads(page.evaluate("window.savedBody"))
     assert len(saved["keeps"]) == 1 and saved["reading"][0]["status"] == "hold"
     assert len(saved["reading"][0]["questions"]) == 1
@@ -70,6 +90,8 @@ with sync_playwright() as p:
     print("save, cancellation and failure checks passed", flush=True)
     page.reload()
     expect(page.locator("#nK")).to_have_text("1")
+    expect(page.locator(".ba[aria-pressed=true]")).to_have_count(2)
+    expect(page.locator("#saveState")).to_contain_text("取り込みは未確認")
     expect(first.locator(".reading-status")).to_have_value("try")
     page.locator('[data-view="today"]').click()
     page.locator('[data-id="article-2"] .bd').click()
@@ -82,6 +104,7 @@ with sync_playwright() as p:
     expect(page.locator("#empty")).to_be_visible()
     page.locator('[data-view="today"]').click()
     page.locator('button[data-category="科学"]').click()
+    expect(page.locator("section.suggest")).to_be_visible()
     expect(page.locator(".item:visible")).to_have_count(1)
     # 「あとで読む」に入れた記事は、まとめて概要だけを頼める(詳しい解説は記事ごとのダイアログから)。
     page.locator('[data-id="article-3"] .bk').click()

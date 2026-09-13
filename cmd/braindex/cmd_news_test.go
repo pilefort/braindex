@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/pilefort/braindex/internal/feed"
+	"github.com/pilefort/braindex/internal/news"
 )
 
 func TestNewsFetch_HelpPartialWrite(t *testing.T) {
@@ -343,6 +346,9 @@ func TestNewsFetch_Scored(t *testing.T) {
 - 関心外と判定 1 件:
   - [記事2](https://example.com/2) ★0
 
+## 関心に合う取材先の候補
+1. **Go Blog** — 言語 — 当たった語: ゴルーチン — https://go.dev/blog/feed.atom
+
 ## 取得失敗
 - C: HTTP 404
 `
@@ -410,4 +416,66 @@ func TestNewsFetch_Serendipity(t *testing.T) {
 	if strings.Contains(so.String(), "もしかして興味あるかも") {
 		t.Errorf("serendipity=0 なのに拾い上げている:\n%s", so.String())
 	}
+}
+func TestNewsFetchSuggestions(t *testing.T) {
+	for _, noScore := range []bool{false, true} {
+		t.Run(fmt.Sprint(noScore), func(t *testing.T) {
+			hub, _ := newsHub(t)
+			writeFile(t, filepath.Join(hub, "news", "interests.md"), "docker\nunlistedword\n")
+			args := []string{"news", "fetch", "-config", filepath.Join(hub, "braindex.json"), "-date", "2026-09-13", "-layer", "weekly", "-no-open", "-sessions", filepath.Join(hub, "no-sessions")}
+			if noScore {
+				args = append(args, "-no-score")
+			}
+			var so, se bytes.Buffer
+			code := dispatch(args, &so, &se)
+			if code == 1 {
+				t.Fatalf("exit=%d %s", code, se.String())
+			}
+			h := readFile(t, filepath.Join(hub, "news", "digest_2026-09-13_weekly.html"))
+			if strings.Contains(h, `<section class="category suggest">`) == noScore {
+				t.Fatal("suggestions visibility")
+			}
+			if !noScore {
+				mustContain(t, "html", h, `data-query="unlistedword"`, "当たった語: docker")
+			}
+			so.Reset()
+			se.Reset()
+			code = dispatch(append(args, "-stdout", "-replay"), &so, &se)
+			if code == 1 || strings.Contains(so.String(), "## 関心に合う取材先の候補") == noScore {
+				t.Fatalf("stdout=%s err=%s", so.String(), se.String())
+			}
+		})
+	}
+}
+
+func TestNewsFetchAddsFeedsForNextFetch(t *testing.T) {
+	hub, _ := newsHub(t)
+	e := news.Catalog()[0]
+	writeFile(t, filepath.Join(hub, "news", "inbox", news.SelectionPrefix+"feeds.json"), `{"type":"braindex-news-selection","date":"2026-09-13","layer":"weekly","add_feeds":[{"url":"`+e.URL+`"}]}`)
+	orig := newsFetcher
+	fake := &onlyLocalNewsFetcher{delegate: orig}
+	newsFetcher = fake
+	t.Cleanup(func() { newsFetcher = orig })
+	code, so, se := newsFetch(t, hub, "-layer", "weekly")
+	if code != 0 || fake.calls != 1 {
+		t.Fatalf("exit=%d calls=%d %s", code, fake.calls, se)
+	}
+	mustContain(t, "stdout", so, "取材先 1 本を feeds.json に足した（次回の fetch から取る）")
+	ss, err := news.LoadFeeds(filepath.Join(hub, "news", "feeds.json"))
+	if err != nil || len(ss) != 4 {
+		t.Fatalf("feeds=%v %v", ss, err)
+	}
+}
+
+type onlyLocalNewsFetcher struct {
+	delegate news.Fetcher
+	calls    int
+}
+
+func (f *onlyLocalNewsFetcher) Fetch(ctx context.Context, u string) (feed.Document, error) {
+	if !strings.HasPrefix(u, "http://127.0.0.1:") {
+		return feed.Document{}, fmt.Errorf("unexpected external URL: %s", u)
+	}
+	f.calls++
+	return f.delegate.Fetch(ctx, u)
 }

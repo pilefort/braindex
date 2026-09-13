@@ -15,8 +15,15 @@ const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k)?o[k]:undefined;
 function selected(li){return own(records,li.dataset.id)?"keep":own(state,li.dataset.id)||null;}
 function reading(li){const id=li.dataset.id,a=own(records,id),d=own(draft.reading,id);const newer=d?.status_changed&&(!a?.updated||Date.parse(d.status_updated)>=Date.parse(a.updated));return {id,status:newer?d.status:a?.status||d?.status||"later",status_changed:!!d?.status_changed,status_updated:d?.status_updated||"",questions:questions(li)};}
 function questions(li){const id=li.dataset.id,a=own(records,id),d=own(draft.reading,id),q=new Map();for(const x of a?.questions||[])q.set(x.id,x);for(const x of d?.questions||[]){if(x&&typeof x.id==="string"&&!q.has(x.id))q.set(x.id,x);}return [...q.values()].sort((a,b)=>(a.created||"").localeCompare(b.created||"")||a.id.localeCompare(b.id));}
-function signature(){return JSON.stringify({state,reading:draft.reading});}
-function persist(){try{localStorage.setItem(LSKEY,JSON.stringify(state));localStorage.setItem(LSKEY+"-reading",JSON.stringify(draft));storageError=false;}catch{storageError=true;}showSaveState();}
+const suggestions=[...document.querySelectorAll("li.suggest-item")];
+let addFeeds=Object.create(null);
+const savedFeeds=load(LSKEY+"-feeds");
+for(const li of suggestions){const u=li.dataset.url,q=li.dataset.query;if(own(savedFeeds,u))addFeeds[u]=q?{url:u,query:q}:{url:u};}
+function paintFeeds(){for(const li of suggestions){const yes=!!own(addFeeds,li.dataset.url),b=li.querySelector(".ba");b.textContent=yes?"✓ 追加する · 取り消す":"＋ 追加する";b.setAttribute("aria-pressed",String(yes));}}
+for(const li of suggestions)li.querySelector(".ba").onclick=()=>{const u=li.dataset.url,q=li.dataset.query;if(own(addFeeds,u))delete addFeeds[u];else addFeeds[u]=q?{url:u,query:q}:{url:u};persist();paintFeeds();};
+paintFeeds();
+function signature(){return JSON.stringify({state,reading:draft.reading,addFeeds:Object.keys(addFeeds).sort().map(u=>addFeeds[u])});}
+function persist(){try{localStorage.setItem(LSKEY,JSON.stringify(state));localStorage.setItem(LSKEY+"-reading",JSON.stringify(draft));localStorage.setItem(LSKEY+"-feeds",JSON.stringify(addFeeds));storageError=false;}catch{storageError=true;}showSaveState();}
 function showSaveState(){
  const receipt=(ARCHIVE.receipts||{})[draft.exportKey||META.date+"_"+META.layer];
  let text="選択・相談はこのブラウザ内の下書きです。保存すると取り込みへ進めます。";
@@ -38,7 +45,7 @@ function paint(){
  li.hidden=view==="keep"?s!=="keep"||($("readingFilter").value!=="all"&&r.status!==$("readingFilter").value):view==="drop"?s!=="drop":s==="drop"||(category!==null&&li.dataset.cat!==category);
  if(!li.hidden)count++;
  }
- document.querySelectorAll(".feed-group,.category,.lowbox").forEach(g=>{g.hidden=![...g.querySelectorAll("li.item")].some(li=>!li.hidden);if(g.classList.contains("lowbox")&&view!=="today")g.open=true;});
+ document.querySelectorAll(".feed-group,.category:not(.suggest),.lowbox").forEach(g=>{g.hidden=![...g.querySelectorAll("li.item")].some(li=>!li.hidden);if(g.classList.contains("lowbox")&&view!=="today")g.open=true;});
  const bt=batchTargets().length,dp=deepTargets().length;
  $("nBatch").textContent=bt;$("batchExplain").disabled=bt===0;
  $("nDeep").textContent=dp;$("deepExplain").disabled=dp===0;
@@ -67,7 +74,7 @@ document.addEventListener("keydown",e=>{if($("explainDialog").open||e.ctrlKey||e
 
 function payload(now){const keeps=[],stats=Object.create(null),updates=[];for(const li of items){const s=selected(li),low=li.dataset.low==="1",f=li.dataset.feed;if(!LIBRARY){const st=stats[f]||(stats[f]={shown:0,kept:0,dropped:0,hidden:0,rescued:0});if(low)st.hidden++;else st.shown++;if(s==="keep"&&li.dataset.link){if(low)st.rescued++;else st.kept++;keeps.push({id:li.dataset.id,title:li.dataset.title,display_title:li.querySelector(".article-title").textContent,link:li.dataset.link,feed:f,category:li.dataset.cat,summary:li.dataset.summary,score:li.dataset.r,rescued:low});}else if(s==="drop"&&!low)st.dropped++;}if(s==="keep"){const r=reading(li);updates.push({...r,questions:r.questions.map(({id,mode,text,created})=>({id,mode,text,created}))});}}
  const day=LIBRARY?now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-"+String(now.getDate()).padStart(2,"0"):META.date;
- return {type:"braindex-news-selection",date:day,layer:META.layer,exported_at:now.toISOString(),keeps,feed_stats:stats,reading:updates,library:LIBRARY};}
+ return {type:"braindex-news-selection",date:day,layer:META.layer,exported_at:now.toISOString(),keeps,feed_stats:stats,reading:updates,library:LIBRARY,add_feeds:LIBRARY?[]:Object.keys(addFeeds).sort().map(u=>addFeeds[u])};}
 const exportSel=async()=>{const btn=$("exp"),now=new Date(),p=payload(now),sig=signature(),body=JSON.stringify(p,null,1),name="braindex-news-selection_"+p.date+"_"+p.layer.replace(/[^a-zA-Z0-9_-]/g,"_")+"_"+now.toISOString().replace(/[-:T.Z]/g,"")+".json";
  const done=download=>{draft.exportedAt=p.exported_at;draft.exportedSignature=sig;draft.exportKey=p.date+"_"+p.layer;draft.download=download;persist();};
  const fallback=()=>{const a=document.createElement("a"),url=URL.createObjectURL(new Blob([body],{type:"application/json"}));a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);done(true);};

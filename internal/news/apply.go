@@ -17,6 +17,7 @@ import (
 
 // Selection は HTML の「選別を書き出す」が出す JSON。
 type Selection struct {
+	AddFeeds   []FeedRequest        `json:"add_feeds,omitempty"`
 	Type       string               `json:"type"` // SelectionType
 	Date       string               `json:"date"`
 	Layer      string               `json:"layer"`
@@ -206,7 +207,7 @@ func checkFeedStats(in map[string]FeedStats, known map[string]bool) (map[string]
 // 移す前に止まれば次回また同じ JSON を読み、keep はリンクで重複を除き、統計は同じキーに同じ数を上書きするので
 // 同じ結果になる。逆順(移してから統計)だと、移した後に統計を書けずに止まったとき、その選別の数は二度と拾えない
 // (置き場から消えているので次回は読まない)。並行起動の排他は呼び出し側の Lock。
-func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string, err error) {
+func Ingest(newsDir string, dirs []string, known map[string]bool, feedsPath string, catalog []CatalogEntry) (msgs []string, err error) {
 	var paths []string
 	for _, d := range dirs {
 		// glob ではなく走査する: 置き場の名前に [ や * が入っていてもパターンとして解釈されない。
@@ -285,6 +286,39 @@ func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string
 		if err := st.Save(statsPath); err != nil {
 			return msgs, err
 		}
+		var added []string
+		feedsFailed := false
+		if len(sel.AddFeeds) > 0 && !sel.Library {
+			var feedMsgs []string
+			added, feedMsgs, err = AddFeeds(feedsPath, catalog, sel.AddFeeds, sel.Layer, sel.Date)
+			msgs = append(msgs, feedMsgs...)
+			if err != nil {
+				msgs = append(msgs, fmt.Sprintf("選別 JSON %s: 取材先を登録できない（次回再取り込み）: %v", filepath.Base(p), err))
+				feedsFailed = true
+			}
+			if len(added) > 0 {
+				msgs = append(msgs, fmt.Sprintf("取材先 %d 本を feeds.json に足した（次回の fetch から取る）", len(added)))
+				for _, e := range catalog {
+					if !e.IsGeneralNews() {
+						continue
+					}
+					generalAdded := false
+					for _, name := range added {
+						if name == e.Name {
+							generalAdded = true
+							break
+						}
+					}
+					if generalAdded {
+						msgs = append(msgs, "一般ニュースは層 general に入れた。定期実行に `-layer general` の行を足すか、`-layer all` で取る")
+						break
+					}
+				}
+			}
+		}
+		if feedsFailed {
+			continue
+		}
 		if err := reading.Save(newsDir); err != nil {
 			return msgs, err
 		}
@@ -300,8 +334,10 @@ func Ingest(newsDir string, dirs []string, known map[string]bool) (msgs []string
 		}
 		if sel.Library {
 			msgs = append(msgs, fmt.Sprintf("取り込み: %s（読書状態と相談を反映）", filepath.Base(p)))
-		} else {
+		} else if len(sel.AddFeeds) == 0 {
 			msgs = append(msgs, fmt.Sprintf("取り込み: %s（残す %d 件）", filepath.Base(p), kept))
+		} else {
+			msgs = append(msgs, fmt.Sprintf("取り込み: %s（残す %d 件・取材先 %d 本を追加）", filepath.Base(p), kept, len(added)))
 		}
 	}
 	return msgs, nil

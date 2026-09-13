@@ -223,17 +223,19 @@ func TakeSerendipity(low []feed.Entry, picks map[string]bool) (rest, picked []fe
 
 // DigestOptions はダイジェストの体裁。
 type DigestOptions struct {
-	Layer       string               // 層の名前(見出し)
-	Today       string               // 日付(見出し)
-	Cap         int                  // 1 フィードあたりの表示上限(主要・関心外それぞれ)
-	Ranking     Ranking              // 採点。nil なら一段(全件を主要)
-	MinScore    int                  // 主要に入れる最低の関心度(Ranking が nil なら使わない)
-	Totals      map[string]FeedStats // 選別の累積(フィード別)。HTML の脚注に出す。nil なら出さない
-	Annotations Annotations          // LLM 補助の注釈(訳)。nil なら訳を出さない
-	Reading     *Reading             // 記事の相談・回答・取り込み確認。
-	Library     bool                 // 日付をまたぐ保存記事の一覧。
-	LibraryHref string               // 生成先から読書一覧への相対URL（CLIが組む）。
-	Serendipity map[string]bool      // 関心外から拾い上げる記事の ID(PickSerendipity)。nil なら枠を出さない
+	Suggestions     []Suggestion         // 未登録の取材先の候補。
+	QueryCandidates []string             // 承認して登録できる検索語の候補。
+	Layer           string               // 層の名前(見出し)
+	Today           string               // 日付(見出し)
+	Cap             int                  // 1 フィードあたりの表示上限(主要・関心外それぞれ)
+	Ranking         Ranking              // 採点。nil なら一段(全件を主要)
+	MinScore        int                  // 主要に入れる最低の関心度(Ranking が nil なら使わない)
+	Totals          map[string]FeedStats // 選別の累積(フィード別)。HTML の脚注に出す。nil なら出さない
+	Annotations     Annotations          // LLM 補助の注釈(訳)。nil なら訳を出さない
+	Reading         *Reading             // 記事の相談・回答・取り込み確認。
+	Library         bool                 // 日付をまたぐ保存記事の一覧。
+	LibraryHref     string               // 生成先から読書一覧への相対URL（CLIが組む）。
+	Serendipity     map[string]bool      // 関心外から拾い上げる記事の ID(PickSerendipity)。nil なら枠を出さない
 }
 
 // Digest は新着のダイジェスト(Markdown・LF)を組む。
@@ -287,6 +289,16 @@ func Digest(results []Result, o DigestOptions) []byte {
 		fmt.Fprintf(&sb, "## %s（%d 件）\n", SerendipityLabel, len(lucky))
 		sb.WriteString("関心の外と判定した記事から、日替わりで選びました。\n")
 		writeTier(&sb, lucky, o, "")
+		sb.WriteString("\n")
+	}
+	if !o.Library && (len(o.Suggestions) > 0 || len(o.QueryCandidates) > 0) {
+		sb.WriteString("## 関心に合う取材先の候補\n")
+		for i, s := range o.Suggestions {
+			fmt.Fprintf(&sb, "%d. **%s** — %s — 当たった語: %s — %s\n", i+1, s.Name, s.Genre, strings.Join(s.Matched, ", "), s.URL)
+		}
+		for _, q := range o.QueryCandidates {
+			fmt.Fprintf(&sb, "- 検索語の候補: 「%s」 — %s\n", q, SearchFeedURL(q))
+		}
 		sb.WriteString("\n")
 	}
 	if failed := Failed(results); len(failed) > 0 {
