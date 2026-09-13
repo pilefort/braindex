@@ -26,7 +26,7 @@ var (
 	fn8Re = regexp.MustCompile(`20\d{6}`)
 	// 要旨の候補にしない行(日付だけの行)。「結論を先頭に」の規約では日付行が結論の前に来ることがあり、
 	// そのまま拾うと索引の要旨が全部「記録日: …」になる
-	dateLineRe = regexp.MustCompile(`^(記録日|日付|更新日|作成日|Date)\s*[:：]`)
+	dateLineRe = regexp.MustCompile(`^(記録日|日付|更新日|作成日|Date|種別)\s*[:：]`)
 	// decisions.md の各決定に付く記録日の行
 	recordDateRe = regexp.MustCompile(`^記録日\s*[:：]`)
 )

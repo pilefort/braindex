@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/pilefort/braindex/internal/extract"
+	"github.com/pilefort/braindex/internal/notetype"
 	"github.com/pilefort/braindex/internal/render"
 	"github.com/pilefort/braindex/internal/review"
 )
@@ -23,6 +24,7 @@ const DefaultChunkSize = 12
 
 // Entry は走査対象の 1 件(索引の 1 行と同じ列)。
 type Entry struct {
+	Type    string `json:"type"`
 	Repo    string `json:"repo"`
 	Date    string `json:"date"`
 	Kind    string `json:"kind"`
@@ -33,14 +35,17 @@ type Entry struct {
 
 // Result は Build の結果。
 type Result struct {
-	Mode    string    `json:"mode"` // full / topic:<語> / repo:<名> / topic:<語>+repo:<名> / dir:<パス>
-	Entries int       `json:"n_entries"`
-	NChunks int       `json:"n_chunks"`
-	Chunks  [][]Entry `json:"chunks"`
+	Warnings []string  `json:"-"`
+	Mode     string    `json:"mode"` // full / topic:<語> / repo:<名> / topic:<語>+repo:<名> / dir:<パス>
+	Entries  int       `json:"n_entries"`
+	NChunks  int       `json:"n_chunks"`
+	Chunks   [][]Entry `json:"chunks"`
 }
 
 // Options は絞り込みの指定。Topic と Repo は併用可。Dir は単独指定(全部空なら全件)。
 type Options struct {
+	Type  string
+	Root  string // 索引の root 相対パスを開く起点
 	Topic string // タイトル・要旨・パスの部分一致(大小無視)
 	Repo  string // H2 見出し(リポ名)の完全一致
 	Dir   string // 索引を使わず、このディレクトリ配下の *.md を列挙する
@@ -71,6 +76,10 @@ func fromRender(r render.Entry) Entry {
 // ただし起点の dir 自身には掛けない。掛けると archive やドットディレクトリを直接渡したときに全件消えるため。
 // 索引も置き場の中の archive・ドットで始まるディレクトリを除外する。
 func EnumerateDir(dir string) ([]Entry, error) {
+	return enumerateDir(dir, false)
+}
+
+func enumerateDir(dir string, keepUnreadable bool) ([]Entry, error) {
 	fi, err := os.Stat(dir)
 	if err != nil {
 		return nil, err
@@ -101,7 +110,7 @@ func EnumerateDir(dir string) ([]Entry, error) {
 			return rerr
 		}
 		content, rerr := os.ReadFile(p)
-		if rerr != nil {
+		if rerr != nil && !keepUnreadable {
 			return rerr
 		}
 		m := extract.Extract(d.Name(), content, "dir")
@@ -151,11 +160,17 @@ func Chunk(entries []Entry, size int) [][]Entry {
 
 // Build は catalog(索引の内容。Dir 指定時は使わない)から走査対象を作る。
 func Build(catalog []byte, o Options) (Result, error) {
+	value, err := notetype.Normalize(o.Type)
+	if err != nil {
+		return Result{}, err
+	}
+	if value != "" && o.Dir == "" && o.Root == "" {
+		return Result{}, fmt.Errorf("-type には root が要る（-root か設定の root）")
+	}
 	var entries []Entry
-	var err error
 	mode := "full"
 	if o.Dir != "" {
-		entries, err = EnumerateDir(o.Dir)
+		entries, err = enumerateDir(o.Dir, value != "")
 		mode = "dir:" + filepath.ToSlash(o.Dir)
 	} else {
 		entries, err = ParseCatalog(catalog)
@@ -173,8 +188,30 @@ func Build(catalog []byte, o Options) (Result, error) {
 		}
 	}
 	entries = Filter(entries, o.Topic, o.Repo)
+	var warnings []string
+	if value != "" {
+		kept := make([]Entry, 0, len(entries))
+		for _, e := range entries {
+			p := e.Path
+			if o.Dir == "" {
+				p = filepath.Join(o.Root, filepath.FromSlash(p))
+			}
+			content, readErr := os.ReadFile(p)
+			if readErr == nil {
+				e.Type, _, readErr = notetype.Parse(content)
+			}
+			if readErr != nil {
+				e.Type = ""
+				warnings = append(warnings, fmt.Sprintf("%s: %v（未記入扱い）", e.Path, readErr))
+			}
+			if notetype.Matches(value, e.Type) {
+				kept = append(kept, e)
+			}
+		}
+		entries = kept
+	}
 	chunks := Chunk(entries, o.Size)
-	return Result{Mode: mode, Entries: len(entries), NChunks: len(chunks), Chunks: chunks}, nil
+	return Result{Mode: mode, Entries: len(entries), NChunks: len(chunks), Chunks: chunks, Warnings: warnings}, nil
 }
 
 // Render は結果を人が読む Markdown にする。chunk ごとにパス・タイトル・日付の一覧。
@@ -191,7 +228,11 @@ func Render(r Result) []byte {
 					meta = append(meta, s)
 				}
 			}
-			fmt.Fprintf(&b, "- [%s] %s  —  %s\n", strings.Join(meta, " "), e.Title, e.Path)
+			suffix := ""
+			if e.Type != "" {
+				suffix = " ［" + e.Type + "］"
+			}
+			fmt.Fprintf(&b, "- [%s] %s  —  %s%s\n", strings.Join(meta, " "), e.Title, e.Path, suffix)
 		}
 		b.WriteString("\n")
 	}

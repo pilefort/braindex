@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/pilefort/braindex/internal/extract"
+	"github.com/pilefort/braindex/internal/notetype"
 )
 
 // ノート(docs/notes・docs/decisions.md・work のメモ)の曖昧さ検査。
@@ -28,6 +29,8 @@ const (
 // 種別(JSON の kind。表示の見出しは kindLabel)。
 const (
 	KindVagueQuantifier = "vague_quantifier"
+	KindTypeValue       = "type_value"
+	KindTypeLate        = "type_late"
 	KindNoDate          = "no_date"
 	KindUncitedFigure   = "uncited_figure"
 	KindBareHedge       = "bare_hedge"
@@ -40,6 +43,8 @@ const (
 )
 
 var kindLabel = map[string]string{
+	KindTypeValue:       "種別の値",
+	KindTypeLate:        "種別行の位置",
 	KindVagueQuantifier: "曖昧な数量詞",
 	KindNoDate:          "日付なし",
 	KindUncitedFigure:   "出典なき数字(候補)",
@@ -199,6 +204,15 @@ func CheckNote(path string, content []byte, o NoteOptions) []Warning {
 			Path: path, Line: line, Kind: kind, Severity: severity,
 			Msg: "[" + kindLabel[kind] + "] " + fmt.Sprintf(format, a...),
 		})
+	}
+
+	for _, field := range notetype.Fields(content) {
+		if !notetype.Valid(field.Value) {
+			add(field.Line, KindTypeValue, SeverityWarn, "種別の値 %q は失敗・手順・観測のいずれでもない", field.Value)
+		}
+		if field.Line > 10 {
+			add(field.Line, KindTypeLate, SeverityWarn, "種別行は先頭 10 行以内に書く（検索が読まない位置）")
+		}
 	}
 
 	// 曖昧な数量詞(warn)。語の途中で当たったものは除く(isWordBoundaryMatch 参照)。

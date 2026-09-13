@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/pilefort/braindex/internal/notetype"
 	"github.com/pilefort/braindex/internal/scan"
 	"github.com/pilefort/braindex/internal/scope"
 )
@@ -28,10 +29,12 @@ func runScope(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("braindex scope", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var o options
-	var catalog, topic, repo, dir string
+	var catalog, topic, repo, dir, noteType string
 	var full, asJSON bool
 	var size int
 	fs.StringVar(&o.config, "config", "", "設定ファイルのパス(既定: カレントの braindex.json)。索引の場所の取得に使う")
+	fs.StringVar(&o.root, "root", "", "内容の種別を読むルート（設定の root より優先）")
+	fs.StringVar(&noteType, "type", "", "内容の種別 失敗|手順|観測|未記入（failure|howto|observation|none も可）で追加の絞り込み")
 	fs.StringVar(&catalog, "catalog", "", "索引(catalog.md)のパス(既定: 設定ファイルと同じディレクトリの index/catalog.md)")
 	fs.StringVar(&topic, "topic", "", "タイトル・要旨・パスにこの語を含む行だけ(大小無視)")
 	fs.StringVar(&repo, "repo", "", "この見出し(リポ名)の行だけ")
@@ -73,6 +76,20 @@ func runScope(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	normalized, typeErr := notetype.Normalize(noteType)
+	if typeErr != nil {
+		fmt.Fprintln(stderr, "braindex scope:", typeErr)
+		return 1
+	}
+	root := ""
+	if normalized != "" && dir == "" {
+		cfg, _, _, err := resolve(o)
+		if err != nil {
+			fmt.Fprintf(stderr, "braindex scope: -type には root が要る（-root か設定の root）: %v\n", err)
+			return 1
+		}
+		root = cfg.Root
+	}
 	var content []byte
 	if dir == "" {
 		if catalog == "" {
@@ -90,7 +107,7 @@ func runScope(args []string, stdout, stderr io.Writer) int {
 		}
 		content = b
 	}
-	res, err := scope.Build(content, scope.Options{Topic: topic, Repo: repo, Dir: dir, Size: size})
+	res, err := scope.Build(content, scope.Options{Topic: topic, Repo: repo, Dir: dir, Size: size, Type: normalized, Root: root})
 	if err != nil {
 		fmt.Fprintln(stderr, "braindex scope:", err)
 		return 1
@@ -105,8 +122,14 @@ func runScope(args []string, stdout, stderr io.Writer) int {
 	} else {
 		stdout.Write(scope.Render(res))
 	}
+	for _, w := range res.Warnings {
+		fmt.Fprintln(stderr, "braindex scope: 警告:", w)
+	}
 	if res.Entries < 2 {
 		fmt.Fprintf(stderr, "braindex scope: 対象が %d 件で突き合わせられない(2 件以上要る)。話題・範囲を広げる\n", res.Entries)
+		return 2
+	}
+	if len(res.Warnings) > 0 {
 		return 2
 	}
 	return 0
@@ -115,9 +138,7 @@ func runScope(args []string, stdout, stderr io.Writer) int {
 // scopeCatalogPath は -catalog が無いときの索引の場所を返す。設定ファイルがあればそのディレクトリ、
 // 無ければカレント基準の index/catalog.md。
 //
-// resolve() を使わないのは、scope が root を使わないため。resolve() は root が無いと
-// 「-root を渡すか、設定ファイルに root を書く」と案内するが、scope は -root を受け付けないので
-// 利用者が行き止まりになる(索引がその場にあっても読めない)。
+// -type の無い scope は root を使わないので、ここでは resolve() を使わない。
 func scopeCatalogPath(o options) (string, error) {
 	cfgPath, explicit := o.config, o.config != ""
 	if !explicit {
