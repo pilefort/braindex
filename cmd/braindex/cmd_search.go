@@ -33,7 +33,7 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 	var asJSON bool
 	fs.StringVar(&o.config, "config", "", "設定ファイルのパス(既定: カレントの braindex.json。無ければフラグだけで動き、-root が必須)")
 	fs.StringVar(&o.root, "root", "", "走査のルート(設定ファイルの root より優先)")
-	fs.StringVar(&q.Repo, "repo", "", "このリポ(root 直下のディレクトリ名)だけを読む")
+	fs.StringVar(&q.Repo, "repo", "", "このリポだけを読む(索引の見出しと同じリポ名。repo_depth が 2 なら group/name)")
 	fs.StringVar(&q.Kind, "kind", "", "この種別だけを読む(完全一致か「種別/」で始まるもの。notes は notes/common も含む)")
 	fs.StringVar(&q.Type, "type", "", "内容の種別 失敗|手順|観測|未記入（failure|howto|observation|none も可）。ノート先頭 10 行の「種別:」行で絞る")
 	fs.BoolVar(&q.Any, "any", false, "どれか 1 語を含む行を当たりにする(既定: 全部の語を含む行だけ)")

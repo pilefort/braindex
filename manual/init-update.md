@@ -196,7 +196,7 @@ braindex update                                               # 2. 雛形の追�
 理由: 「段階的に取り込める」を既定の振る舞いにするには、最初の 1 手が梯子の段 0 でなければならない。今の `init` は `docs/`・`work/`・skill 5 本・全節入りの
 `braindex.json` を一括で配り、索引だけ欲しい人にも規約の乗り換えを迫る。`-add review|retro|news|learn|schedule`（と `-add all` で従来の 1 手）で機能ごとに
 設定の節・skill・置き場を足し、`update` は足した分だけ追従させる。却下: 一括のまま README で「使わない設定は消してよい」と案内（最初に触った人が離脱する）／
-`-minimal` を足すだけ（既定が一括のままで「段階的」が既定にならない）
+`-minimal` を足すだけ（既定が一括のままで「段階的」が既定にならない）（`learn` は配布物が無いため機能名にしなかった。実装は `internal/template/feature.go`）
 根拠: 会話 2026-09-05（ユーザー判断・承認フォームの回答 A）／梯子の定義は README「段階的な取り込み」／設計は `work/SPEC-adoption.md`
 
 ### 足した機能は台帳 `.braindex/template.json` の `features` に記録し、`update` はその分だけ追従する。記録の無い hub は存在するファイルから推定する
