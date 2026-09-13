@@ -15,7 +15,7 @@ import (
 // 上げ方は manual/retro.md「確認済みの版」に書いてある。
 const (
 	MinKnownVersion = "2.1.258" // パッケージのコメントで確認した版(2026-09-02)
-	MaxKnownVersion = "2.1.263" // 2026-09-06 に実ログで確認(type・isSidechain・timestamp・cwd・version・content のブロック種)
+	MaxKnownVersion = "2.1.270" // 2026-09-13 に実ログで確認(2.1.264〜2.1.270・111 ファイル。type・isSidechain・timestamp・cwd・version・content のブロック種)
 )
 
 // VersionInRange は v が確認済みの範囲に入るか。
