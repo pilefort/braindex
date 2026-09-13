@@ -35,7 +35,9 @@ func (c Command) Display() string {
 // (2026-09-03 実測: 同じ行が 264 バイト / 228 文字)。
 // ルーン数でも BMP 内なら一致するが、絵文字などの非 BMP 文字は 1 ルーン＝2 コード単位なので、
 // ルーン数だと過小に数えて「上限内と判定したのに schtasks に切られる」側へ倒れる。危険な向きを避ける。
-// (261 という値そのものが「文字数」か「バイト数」かは一次ソース未確認・既存の前提を引き継いでいる)
+// 上限の出典: Microsoft Learn「schtasks create」の /tr の説明「The path name must not exceed 262 characters」
+// (https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/schtasks-create 。2026-09-13 確認)。
+// 単位は「文字」。261 は 262 より 1 だけ厳しい側で、既存の値を据え置く。
 const maxTR = 261
 
 // IsWindows は goos が Windows かを返す(呼び出し側は runtime.GOOS を渡す)。
