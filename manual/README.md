@@ -30,7 +30,7 @@
 | 段 | コマンド |
 |---|---|
 | 安定 | 索引の生成（`braindex`）・`init`・`update`・`review`・`approvals`・`answer` |
-| 試用中 | `retro`・`news`・`learn`・`schedule`・`verify`・`scope`・`search`・`diagnose`・`lint -kind note` |
+| 試用中 | `retro`・`news`・`learn`・`schedule`・`verify`・`scope`・`search`・`diagnose`・`lint -kind note`・`type`・`related`・`explain` |
 
 `lint`（ISSUE の形の検査）は規約のテンプレ（`-add conventions`）と対で、規約の形が変われば指摘も変わる。
 
