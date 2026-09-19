@@ -31,8 +31,9 @@ func runApprovalsWait(args []string, stdout, stderr io.Writer) int {
 	f.bind(fs)
 	timeoutSec := fs.Float64("timeout", approvalsHookDefaultTimeout, "回答を待つ秒数(0 で無期限)。過ぎたら終了コード 3。既定は hook が開くフォームの待ち時間と同じ")
 	intervalSec := fs.Float64("interval", 1, "回答 JSON を見に行く間隔(秒)")
+	next := fs.Bool("next", false, "フォームより先に待つ。起動時に残っている前回の回答を除外する")
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "使い方: braindex approvals wait [-config braindex.json] [-file work/APPROVALS.md] [-dir <置き場>] [-timeout 秒] [-interval 秒]")
+		fmt.Fprintln(stderr, "使い方: braindex approvals wait [-config braindex.json] [-file work/APPROVALS.md] [-dir <置き場>] [-timeout 秒] [-interval 秒] [-next]")
 		fmt.Fprintln(stderr, "  hook が開いたフォームの回答を待ち、届いたら要約を出して終わる。アシスタントがバックグラウンドで起動し、")
 		fmt.Fprintln(stderr, "  終わったことを「回答が届いた」知らせとして受け取る。同じ回答は 2 回知らせない。")
 		fmt.Fprintln(stderr, "  終了コード: 0 回答が反映された / 1 失敗 / 2 回答は届いたが未反映 / 3 時間切れ")
@@ -68,6 +69,24 @@ func runApprovalsWait(args []string, stdout, stderr io.Writer) int {
 
 	statePath := approvalsHookStatePath(p)
 	since, reported := waitBaseline(statePath, time.Now())
+	type answerID struct{ nonce, receivedAt string }
+	previous := map[answerID]bool{}
+	// 差し戻し後はまだ新しいフォームの印がない。古い opened を使わず、
+	// 起動時に残っている回答も除外する（同じ秒に受信した回答でも取り違えない）。
+	// 通常の待機では、フォームを開いてから wait 起動までに届いた回答を引き続き拾う。
+	if *next {
+		since = time.Now().Truncate(time.Second)
+		reported = time.Time{}
+		for _, path := range []string{p.Applied, p.Reply} {
+			if rep, ok := newAnswer(path, time.Time{}, time.Time{}); ok {
+				previous[answerID{rep.Nonce, rep.ReceivedAt}] = true
+			}
+		}
+	}
+	readAnswer := func(path string) (approvals.Reply, bool) {
+		rep, ok := newAnswer(path, since, reported)
+		return rep, ok && !previous[answerID{rep.Nonce, rep.ReceivedAt}]
+	}
 	var deadline time.Time
 	if timeout > 0 {
 		deadline = time.Now().Add(timeout)
@@ -77,7 +96,7 @@ func runApprovalsWait(args []string, stdout, stderr io.Writer) int {
 	grace := 10 * interval
 	var replySeen time.Time
 	for {
-		if rep, ok := newAnswer(p.Applied, since, reported); ok {
+		if rep, ok := readAnswer(p.Applied); ok {
 			markReported(statePath, rep.ReceivedAt)
 			if rep.Result != nil && len(rep.Result.Warnings) > 0 {
 				fmt.Fprintf(stdout, "回答は届いたが未反映の項目がある: %s\n", p.Applied)
@@ -97,7 +116,7 @@ func runApprovalsWait(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stdout, "next: %s の追記を読み、決定に沿って続ける\n", p.Decisions)
 			return 0
 		}
-		if rep, ok := newAnswer(p.Reply, since, reported); ok {
+		if rep, ok := readAnswer(p.Reply); ok {
 			if replySeen.IsZero() {
 				replySeen = time.Now()
 			} else if time.Since(replySeen) >= grace {

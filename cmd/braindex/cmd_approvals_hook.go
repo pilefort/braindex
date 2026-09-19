@@ -33,6 +33,14 @@ const approvalsHookReason = "判断待ちのフォームを既定ブラウザで
 	"回答が届いたら続きに戻れるよう、発話を終える前に %s をバックグラウンドで起動してください" +
 	"(回答が届くと要約を出して終わります)。"
 
+// approvalsHookBounceReason は記載漏れを直させる指示。-reason では上書きしない。
+const approvalsHookBounceReason = "判断待ちに記載漏れがあります。\n%s" +
+	"判断待ちのファイル %s を書き直してください。" +
+	"各項目の 5 欄（決めたいこと／なぜ今決めるか／選択肢／私の案／決めないとどうなるか）を埋め、" +
+	"選択肢は A/B… で 2 つ以上、各案の得失つきで列挙してください。" +
+	"書き直したあと、発話を終える前に %s をバックグラウンドで起動してください。" +
+	"次の停止ではフォームを開きますが、待つコマンドの起動指示は返しません。"
+
 // approvalsHookStdin と approvalsHookSpawn はテストで差し替える。
 var (
 	approvalsHookStdin io.Reader = os.Stdin
@@ -84,6 +92,7 @@ func runApprovalsHook(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "  stdin の JSON(cwd / stop_hook_active)を読み、判断待ちが残っていれば")
 		fmt.Fprintln(stderr, "  approvals serve -apply を切り離して起動する。エディタの停止フックから呼ぶ。")
 		fmt.Fprintln(stderr, "  同じ内容では一度しか開かない。終了コードは常に 0(会話を止めない)。")
+		fmt.Fprintln(stderr, "  記載漏れはフォームを開く前に一度だけ差し戻す。stop_hook_active が真なら開く。")
 		fmt.Fprintln(stderr, "  アシスタントへの指示には、回答を待つ approvals wait の起動を含める。")
 		fmt.Fprintln(stderr)
 		fs.PrintDefaults()
@@ -112,6 +121,23 @@ func runApprovalsHook(args []string, stdout, stderr io.Writer) int {
 	if hookAlreadyOpened(statePath, sha) {
 		return 0
 	}
+	var warnings strings.Builder
+	n := 0
+	for _, it := range doc.Items {
+		for _, w := range it.Warnings {
+			fmt.Fprintf(&warnings, "[%d] %s: %s\n", it.N, it.Title, w)
+			n++
+		}
+	}
+	if n > 0 && !in.StopHookActive {
+		out := hookOutput{
+			Decision:      "block",
+			SystemMessage: fmt.Sprintf("判断待ちに記載漏れ %d 件。フォームを開く前に書き直させます", n),
+			Reason:        fmt.Sprintf(approvalsHookBounceReason, warnings.String(), p.Approvals, approvalsWaitCommand(p, true)),
+		}
+		_ = json.NewEncoder(stdout).Encode(out)
+		return 0
+	}
 
 	pid, err := approvalsHookSpawn(p, *timeout, *noOpen)
 	if err != nil {
@@ -125,7 +151,7 @@ func runApprovalsHook(args []string, stdout, stderr io.Writer) int {
 		out.Decision = "block"
 		out.Reason = *reason
 		if out.Reason == "" {
-			out.Reason = fmt.Sprintf(approvalsHookReason, len(doc.Items), approvalsWaitCommand(p))
+			out.Reason = fmt.Sprintf(approvalsHookReason, len(doc.Items), approvalsWaitCommand(p, false))
 		}
 	}
 	b, err := json.Marshal(out)
@@ -143,10 +169,13 @@ func runApprovalsHook(args []string, stdout, stderr io.Writer) int {
 // 置き場は -file(と既定以外の -dir)で明示し、アシスタントのカレントに依らず同じ回答を待たせる。
 // パスはすべて / 区切りにする。Git Bash では引用符の外の \ が消えてコマンド名が見つからなくなるため
 // (Go は Windows でも / 区切りのパスを受け付ける)。
-func approvalsWaitCommand(p approvals.Paths) string {
+func approvalsWaitCommand(p approvals.Paths, next bool) string {
 	cmd := quoteIfSpace(filepath.ToSlash(os.Args[0])) + ` approvals wait -file "` + filepath.ToSlash(p.Approvals) + `"`
 	if dir := filepath.Dir(p.Reply); dir != approvals.DefaultDir() {
 		cmd += ` -dir "` + filepath.ToSlash(dir) + `"`
+	}
+	if next {
+		cmd += " -next"
 	}
 	return "`" + cmd + "`"
 }
