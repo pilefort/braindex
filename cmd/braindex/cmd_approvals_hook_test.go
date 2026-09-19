@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,7 +137,7 @@ func TestApprovalsHook_ChangedContentOpensAgain(t *testing.T) {
 	h.write(sampleApprovals)
 	h.run()
 
-	h.write(sampleApprovals + "\n## 2. 二件目の判断\n\n**決めたいこと:** 何か\n")
+	h.write(sampleApprovals + strings.Replace(sampleApprovals, "## 1. 設定ファイルの形式", "## 2. 二件目の判断", 1))
 	out := h.run()
 	if out == nil {
 		t.Fatal("内容が変わったのに開かなかった")
@@ -145,6 +146,62 @@ func TestApprovalsHook_ChangedContentOpensAgain(t *testing.T) {
 		t.Errorf("起動回数=%d", len(h.spawned))
 	}
 	mustContain(t, "systemMessage", out.SystemMessage, "2 件")
+}
+
+func TestApprovalsHook_WarningsBounceBeforeOpening(t *testing.T) {
+	h := newHookHarness(t)
+	body := "## 1. 最初の判断\n\n## 2. 次の判断\n"
+	h.write(body)
+	out := h.run("-reason", "フォーム用の上書き")
+	if out == nil || out.Decision != "block" || len(h.spawned) != 0 {
+		t.Fatalf("起動せず差し戻す必要がある: 出力=%+v 起動=%d", out, len(h.spawned))
+	}
+	p, err := approvals.Resolve(h.file, h.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(approvalsHookStatePath(p)); !os.IsNotExist(err) {
+		t.Fatalf("開いた印を作ってはいけない: %v", err)
+	}
+	var warnings strings.Builder
+	n := 0
+	for _, it := range approvals.Parse([]byte(body)).Items {
+		for _, w := range it.Warnings {
+			fmt.Fprintf(&warnings, "[%d] %s: %s\n", it.N, it.Title, w)
+			n++
+		}
+	}
+	mustContain(t, "差し戻し", out.Reason, warnings.String(), h.file, "5 欄", "A/B", "2 つ以上", "得失", "書き直", "発話を終える前", "バックグラウンド", approvalsWaitCommand(p, true))
+	mustContain(t, "件数", out.SystemMessage, fmt.Sprintf("記載漏れ %d 件", n))
+	if strings.Contains(out.Reason, "フォーム用の上書き") {
+		t.Fatal("差し戻しに -reason が効いた")
+	}
+}
+
+func TestApprovalsHook_WarningsOpenWhenStopHookActive(t *testing.T) {
+	h := newHookHarness(t)
+	h.write("## 1. 判断\n")
+	in, _ := json.Marshal(hookInput{CWD: h.hub, StopHookActive: true})
+	out := h.runWithInput(string(in))
+	if out == nil || len(h.spawned) != 1 || out.Decision != "" || out.Reason != "" {
+		t.Fatalf("再差し戻しせず開く必要がある: %+v 起動=%d", out, len(h.spawned))
+	}
+	if out := h.run(); out != nil {
+		t.Fatalf("開いた内容を差し戻した: %+v", out)
+	}
+}
+
+func TestApprovalsHook_OpensAfterWarningsCorrected(t *testing.T) {
+	h := newHookHarness(t)
+	h.write("## 1. 判断\n")
+	if out := h.run(); out == nil || out.Decision != "block" || len(h.spawned) != 0 {
+		t.Fatalf("差し戻しに失敗: %+v 起動=%d", out, len(h.spawned))
+	}
+	h.write(sampleApprovals)
+	in, _ := json.Marshal(hookInput{CWD: h.hub, StopHookActive: true})
+	if out := h.runWithInput(string(in)); out == nil || len(h.spawned) != 1 {
+		t.Fatalf("修正後に開かなかった: %+v 起動=%d", out, len(h.spawned))
+	}
 }
 
 func TestApprovalsHook_StopHookActiveDoesNotBlock(t *testing.T) {

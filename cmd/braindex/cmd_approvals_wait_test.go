@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -46,6 +47,34 @@ func (h *waitHarness) opened(at time.Time) {
 	writeFile(h.t, approvalsHookStatePath(h.p), string(b))
 }
 
+func TestApprovalsWait_BeforeNextFormIgnoresPreviousAnswer(t *testing.T) {
+	for _, reported := range []bool{false, true} {
+		t.Run(fmt.Sprintf("通知済み=%t", reported), func(t *testing.T) {
+			h := newWaitHarness(t)
+			now := time.Now().Add(time.Second) // 秒の境界をまたいでも同秒の識別を検証する
+			h.opened(now.Add(-time.Minute))
+			h.answer(h.p.Applied, now, "A")
+			if reported {
+				markReported(approvalsHookStatePath(h.p), now.Format(time.RFC3339))
+			}
+			writeFile(t, h.file, sampleApprovals+"\n## 2. 次の判断\n")
+			ch := h.start("-next", "-timeout", "3")
+			select {
+			case r := <-ch:
+				t.Fatalf("前回の回答で終了した: %+v", r)
+			case <-time.After(100 * time.Millisecond):
+			}
+			// 別フォームの回答は同じ秒でも拾う。フォームごとに nonce が異なる。
+			h.answer(h.p.Applied, now, "B")
+			r := h.finish(ch)
+			if r.code != 0 {
+				t.Fatalf("新しい回答を拾わない: %+v", r)
+			}
+			mustContain(t, "新しい回答", r.stdout, "→ B")
+		})
+	}
+}
+
 // answer は回答 JSON を path(p.Reply か p.Applied)に置く。
 func (h *waitHarness) answer(path string, at time.Time, choice string) {
 	h.t.Helper()
@@ -55,7 +84,7 @@ func (h *waitHarness) answer(path string, at time.Time, choice string) {
 // answerWithResult は apply が書き足す反映の結果つきで回答 JSON を置く。
 func (h *waitHarness) answerWithResult(path string, at time.Time, choice string, res *approvals.AppliedResult) {
 	h.t.Helper()
-	rep := approvals.Reply{Nonce: "n", ReceivedAt: at.Format(time.RFC3339),
+	rep := approvals.Reply{Nonce: "フォーム-" + choice, ReceivedAt: at.Format(time.RFC3339),
 		Items: []approvals.ReplyItem{{N: 1, Title: "設定ファイルの形式", Choice: choice}}, Result: res}
 	b, err := json.Marshal(rep)
 	if err != nil {
