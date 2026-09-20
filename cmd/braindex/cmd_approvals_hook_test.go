@@ -250,3 +250,99 @@ func TestApprovalsHook_FileFlagWinsOverCwd(t *testing.T) {
 		t.Errorf("cwd 側のファイルを作ってはいけない")
 	}
 }
+
+func TestApprovalsHook_UnqueuedQuestion(t *testing.T) {
+	assistant := func(body string, sidechain bool) string {
+		b, err := json.Marshal(map[string]any{
+			"type": "assistant", "isSidechain": sidechain,
+			"message": map[string]any{"content": []map[string]string{{"type": "text", "text": body}}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b) + "\n"
+	}
+	for _, tt := range []struct {
+		name, transcript, pathMode       string
+		missing, active, disabled, block bool
+	}{
+		{name: "phrase", transcript: assistant("判断待ちへ記載する予定です。", false), block: true},
+		{name: "polite", transcript: assistant("進めてよいでしょうか。", false), block: true},
+		{name: "bold", transcript: assistant("**どうしますか？**", false), block: true},
+		{name: "fourth line", transcript: assistant("選びますか？\n作業一\n\n作業二\n作業三", false)},
+		{name: "third line", transcript: assistant("選びますか？\n作業一\n\n作業二", false), block: true},
+		{name: "code fence", transcript: assistant("例です。\n```text\n判断待ち？\n```", false)},
+		{name: "inline code", transcript: assistant("例です。`判断待ち？`", false)},
+		{name: "quote", transcript: assistant("完了しました。\n> 判断待ち？", false)},
+		{name: "completed", transcript: assistant("処理が完了しました。", false)},
+		{name: "missing approvals", missing: true, transcript: assistant("続けますか", false), block: true},
+		{name: "active", active: true, transcript: assistant("続けますか？", false)},
+		{name: "disabled", disabled: true, transcript: assistant("続けますか？", false)},
+		{name: "empty path", pathMode: "empty"},
+		{name: "missing transcript", pathMode: "missing"},
+		{name: "unreadable transcript", pathMode: "directory"},
+		{name: "no body", transcript: "{\"type\":\"user\"}\ninvalid\n"},
+		{name: "skip sidechain", transcript: assistant("続けますか？", false) + assistant("完了しました。", true), block: true},
+		{name: "sidechain question", transcript: assistant("完了しました。", false) + assistant("続けますか？", true)},
+		{name: "last nonempty", transcript: assistant("続けますか？", false) + assistant("", false), block: true},
+		{name: "last body", transcript: assistant("続けますか？", false) + assistant("完了しました。", false)},
+		{name: "large line", transcript: assistant(strings.Repeat("x", 128*1024)+"\n続けますか？", false), block: true},
+		{name: "text parts", transcript: `{"type":"assistant","message":{"content":[{"type":"text","text":"続けますか？"},{"type":"tool_use","text":"無視"},{"type":"text","text":"補足です。"}]}}`, block: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHookHarness(t)
+			if !tt.missing {
+				h.write("# 判断待ち\n\nなし\n")
+			}
+			path := filepath.Join(t.TempDir(), "transcript.jsonl")
+			switch tt.pathMode {
+			case "empty":
+				path = ""
+			case "missing":
+			case "directory":
+				path = t.TempDir()
+			default:
+				writeFile(t, path, tt.transcript)
+			}
+			in, err := json.Marshal(map[string]any{"cwd": h.hub, "transcript_path": path, "stop_hook_active": tt.active})
+			if err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"-reason", "フォーム専用の文"}
+			if tt.disabled {
+				args = append(args, "-no-question-check")
+			}
+			approvalsHookStdin = bytes.NewReader(in)
+			var so, se bytes.Buffer
+			args = append([]string{"-dir", h.dir}, args...)
+			if code := runApprovalsHook(args, &so, &se); code != 0 || se.Len() != 0 {
+				t.Fatalf("code=%d stderr=%q", code, se.String())
+			}
+			if tt.block {
+				var out hookOutput
+				if err := json.Unmarshal(so.Bytes(), &out); err != nil {
+					t.Fatalf("block がない: %q (%v)", so.String(), err)
+				}
+				if out.Decision != "block" || out.SystemMessage == "" {
+					t.Fatalf("出力=%+v", out)
+				}
+				mustContain(t, "reason", out.Reason, h.file, "5 欄", "判断待ち", "問い", "自分で", "調べれば")
+				if strings.Contains(out.Reason, "フォーム専用の文") {
+					t.Fatal("-reason が検査に効いた")
+				}
+			} else if so.Len() != 0 {
+				t.Fatalf("出力=%q", so.String())
+			}
+			if len(h.spawned) != 0 {
+				t.Fatal("フォームを起動した")
+			}
+			p, err := approvals.Resolve(h.file, h.dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(approvalsHookStatePath(p)); !os.IsNotExist(err) {
+				t.Fatalf("開いた印を作った: %v", err)
+			}
+		})
+	}
+}
