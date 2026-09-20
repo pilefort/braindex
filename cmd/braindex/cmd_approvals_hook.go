@@ -55,6 +55,7 @@ var (
 // 指示を返さない(返すと終わりのない往復になる)。
 type hookInput struct {
 	CWD            string `json:"cwd"`
+	TranscriptPath string `json:"transcript_path"`
 	StopHookActive bool   `json:"stop_hook_active"`
 }
 
@@ -87,6 +88,7 @@ func runApprovalsHook(args []string, stdout, stderr io.Writer) int {
 	timeout := fs.Float64("timeout", approvalsHookDefaultTimeout, "起動するフォームが回答を待つ秒数(0 で無期限)")
 	reason := fs.String("reason", "", "フォームを開いたときにアシスタントへ返す指示(既定は組み込みの文)")
 	noOpen := fs.Bool("no-open", false, "ブラウザを開かずに起動する(動作確認・画面の無い環境向け)")
+	noQuestionCheck := fs.Bool("no-question-check", false, "判断待ちに積んでいない問いかけの検査を行わない")
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "使い方: braindex approvals hook [フラグ]")
 		fmt.Fprintln(stderr, "  stdin の JSON(cwd / stop_hook_active)を読み、判断待ちが残っていれば")
@@ -94,6 +96,8 @@ func runApprovalsHook(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "  同じ内容では一度しか開かない。終了コードは常に 0(会話を止めない)。")
 		fmt.Fprintln(stderr, "  記載漏れはフォームを開く前に一度だけ差し戻す。stop_hook_active が真なら開く。")
 		fmt.Fprintln(stderr, "  アシスタントへの指示には、回答を待つ approvals wait の起動を含める。")
+		fmt.Fprintln(stderr, "  判断待ちが空・読めないときは transcript_path の本文を検査し、積まずに問いかけた発話を一度だけ差し戻す。")
+		fmt.Fprintln(stderr, "  -no-question-check で本文の検査を無効にする。")
 		fmt.Fprintln(stderr)
 		fs.PrintDefaults()
 	}
@@ -106,10 +110,10 @@ func runApprovalsHook(args []string, stdout, stderr io.Writer) int {
 
 	doc, p, err := loadApprovals(ff)
 	if err != nil {
-		return 0 // 判断待ちのファイルが無い hub でも黙って通す
+		return checkUnqueuedQuestion(in, ff, p.Approvals, *noQuestionCheck, stdout)
 	}
 	if len(doc.Items) == 0 {
-		return 0
+		return checkUnqueuedQuestion(in, ff, p.Approvals, *noQuestionCheck, stdout)
 	}
 	body, err := os.ReadFile(p.Approvals)
 	if err != nil {

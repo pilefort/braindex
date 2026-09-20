@@ -19,6 +19,7 @@
 - **sessions** — uuid・parentUuid・usage・ツール呼び出しの結果・サブエージェントのログを読む。確認済みの Claude Code の版を 2.1.270 まで上げた
 
 ### 変えたもの
+- `approvals hook`: 判断待ちが空・読めないとき、会話記録の本文に「判断待ち」や末尾の問いかけがあれば一度だけ差し戻す（`-no-question-check` で無効化）
 - `approvals hook`: 記載漏れはフォームを開く前に一度だけ差し戻し、`approvals wait -next` で前回の回答を除外して待つ
 - 走査: `extra` の `exclude` を他の規則で拾ったファイルにも効かせ、末尾スラッシュ（`drafts/`）も効く。置き場の中のドットのフォルダは索引に載せない
 - `scope`: `-topic` と `-repo` を一緒に使える。結果の JSON に `n_chunks`
