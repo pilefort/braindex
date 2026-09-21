@@ -14,6 +14,7 @@
 | [内容の種別](type.md) | `braindex type`（suggest・apply）・`search -type`・`scope -type` |
 | [振り返り](retro.md) | `braindex retro`（訂正率の計測） |
 | [ニュース](news.md) | `braindex news`（fetch・profile・apply・suggest。途中で止まったときの立て直し） |
+| [TypeSafe にニュースの採点を任せる](braindex-typesafe.md) | `braindex-typesafe`（任意導入の外部採点プログラム） |
 | [学習の提案](learn.md) | `braindex learn`（候補・本文照合）・`learn answer`／`learn answers`（候補への回答） |
 | [関連するノート](related.md) | `braindex related`（いまの作業に関連するノートを索引と `index/links.tsv` から並べる） |
 | [判断・HTML・照合・走査対象](tools.md) | `braindex approvals`・`answer`・`explain`・`verify`・`scope` |

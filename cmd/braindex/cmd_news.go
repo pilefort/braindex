@@ -36,6 +36,9 @@ var saveSeen = news.Seen.Save
 // newNewsAnnotator は LLM 補助(news.llm = claude-cli)の呼び出し側を作る。claude CLI が PATH に無ければ news.ErrNoClaudeCLI。
 // テストで差し替える(CLI を呼ばないため)。
 var newNewsAnnotator = func(s news.Settings) (news.Annotator, error) {
+	if s.LLM == news.LLMCommand {
+		return news.Command{Argv: s.LLMCommand, Timeout: time.Duration(s.LLMTimeoutSec) * time.Second}, nil
+	}
 	c := news.ClaudeCLI{Model: s.LLMModel, Timeout: time.Duration(s.LLMTimeoutSec) * time.Second}
 	if err := c.Available(); err != nil {
 		return nil, err
@@ -324,12 +327,15 @@ func runNewsFetch(args []string, stdout, stderr io.Writer) int {
 		for _, t := range p.Terms {
 			profileTerms = append(profileTerms, t.Word)
 		}
+		if s.LLM == news.LLMCommand {
+			profileTerms = p.CommandTerms()
+		}
 	}
 
 	// LLM 補助(opt-in)。翻訳と関心度を語の点に重ねる。失敗はその分を語の点のままにして警告に数える
 	var annotations news.Annotations
 	llmWarnings := 0
-	if s.LLM == news.LLMClaudeCLI && !o.noLLM && !o.noScore { // -no-score は「採点しない」なので LLM の採点も止める
+	if (s.LLM == news.LLMClaudeCLI || s.LLM == news.LLMCommand) && !o.noLLM && !o.noScore { // -no-score は外部の採点も止める
 		ann, ws, err := annotateWithLLM(s, newsDir, results, profileTerms, progress)
 		if err != nil {
 			return fail(err)
@@ -498,30 +504,41 @@ func annotateWithLLM(s news.Settings, newsDir string, results []news.Result, ter
 	if err != nil {
 		return cache, []string{fmt.Sprintf("%v(キャッシュ済みの分と語の一致の点で続ける。設定 news.llm を off にすれば出なくなる)", err)}, nil
 	}
-	keeps, err := readKeeps(newsDir)
-	if err != nil {
-		return nil, nil, err
-	}
-	examples := make([]string, 0, len(keeps))
-	for _, k := range keeps {
-		examples = append(examples, k.Title)
+	var examples []string
+	if s.LLM != news.LLMCommand {
+		keeps, err := readKeeps(newsDir)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, k := range keeps {
+			examples = append(examples, k.Title)
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.WithDefaults().LLMBudgetSec)*time.Second)
 	defer cancel()
 	rep := news.Annotate(ctx, a, results, cache, news.AnnotateOptions{
+		Command:  s.LLM == news.LLMCommand,
 		Terms:    terms,
 		Examples: examples,
 	})
 	var ws []string
 	if rep.Failed > 0 {
-		ws = append(ws, fmt.Sprintf("%d バッチ失敗(その分は語の一致の点のまま): %s", rep.Failed, strings.Join(rep.Errors, " / ")))
+		if s.LLM == news.LLMCommand {
+			ws = append(ws, rep.Errors...)
+		} else {
+			ws = append(ws, fmt.Sprintf("%d バッチ失敗(その分は語の一致の点のまま): %s", rep.Failed, strings.Join(rep.Errors, " / ")))
+		}
 	}
 	if rep.Requested > 0 {
 		retried := ""
 		if rep.Retried > 0 {
 			retried = fmt.Sprintf("・訳が返らず %d 件を聞き直し", rep.Retried)
 		}
-		fmt.Fprintf(progress, "LLM 補助: %d 件を聞いて %d 件に注釈%s(キャッシュ合計 %d 件)\n", rep.Requested, rep.Annotated, retried, len(cache))
+		label := "LLM 補助"
+		if s.LLM == news.LLMCommand {
+			label = "外部採点"
+		}
+		fmt.Fprintf(progress, "%s: %d 件を聞いて %d 件に注釈%s(キャッシュ合計 %d 件)\n", label, rep.Requested, rep.Annotated, retried, len(cache))
 	}
 	if err := cache.Save(cachePath); err != nil {
 		ws = append(ws, fmt.Sprintf("キャッシュを書けない(次回も同じ記事を聞く): %v", err))

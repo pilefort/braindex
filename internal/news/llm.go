@@ -30,10 +30,12 @@ const LLMCacheFile = ".llm_cache.json"
 // NoTitle は「日本語の記事でないのに訳が返らず、聞き直しても空だった」印。これが無いと、
 // 訳が落ちた記事を毎回聞き直して費用だけが増える。
 type Annotation struct {
-	Title   string `json:"t"`
-	Summary string `json:"s"`
-	Score   *int   `json:"r"`
-	NoTitle bool   `json:"nt,omitempty"`
+	Title    string `json:"t"`
+	Summary  string `json:"s"`
+	Score    *int   `json:"r"`
+	NoTitle  bool   `json:"nt,omitempty"`
+	Tag      string `json:"tag,omitempty"`
+	External bool   `json:"external,omitempty"`
 }
 
 // Annotations は記事 ID → 注釈。
@@ -145,6 +147,7 @@ func firstLine(s string) string {
 // annotationItem はプロンプトに載せる 1 記事(JSON のキーは原型と同じ短い名前)。
 type annotationItem struct {
 	ID      string `json:"id"`
+	Feed    string `json:"feed,omitempty"`
 	Lang    string `json:"lang"`
 	Title   string `json:"t"`
 	Summary string `json:"s"`
@@ -152,6 +155,7 @@ type annotationItem struct {
 
 // AnnotateOptions は Annotate の範囲。
 type AnnotateOptions struct {
+	Command  bool     // 外部プログラムの JSON プロトコル。翻訳を要求しない。
 	Pool     int      // 1 フィードあたり採点する新着の上限(記載順の先頭)。0 なら DefaultAnnotatePool
 	Batch    int      // 1 回の呼び出しに載せる記事数。0 なら DefaultAnnotateBatch
 	Terms    []string // 関心プロファイルの語(重み降順)。プロンプトに載せる
@@ -187,6 +191,7 @@ func Annotate(ctx context.Context, a Annotator, results []Result, cache Annotati
 		o.Batch = DefaultAnnotateBatch
 	}
 	var todo []annotationItem
+	commandIDs := map[string]bool{}
 	for _, r := range results {
 		if r.Err != nil {
 			continue
@@ -199,10 +204,19 @@ func Annotate(ctx context.Context, a Annotator, results []Result, cache Annotati
 			if i >= o.Pool {
 				break
 			}
-			if c, ok := cache[e.ID]; ok && c.Score != nil && !needTranslation(c, lang) {
+			if c, ok := cache[e.ID]; ok && c.Score != nil && (o.Command || !needTranslation(c, lang)) {
 				continue
 			}
+			if o.Command {
+				if commandIDs[e.ID] {
+					continue
+				}
+				commandIDs[e.ID] = true
+			}
 			todo = append(todo, annotationItem{ID: e.ID, Lang: lang, Title: e.Title, Summary: truncateRunes(e.Summary, annotateSummaryLimit)})
+			if o.Command {
+				todo[len(todo)-1].Feed = r.Source.Name
+			}
 		}
 	}
 	rep := AnnotateReport{Requested: len(todo)}
@@ -210,7 +224,7 @@ func Annotate(ctx context.Context, a Annotator, results []Result, cache Annotati
 	// 訳が落ちた記事だけを、半分のまとまりでもう一度聞く(1 回だけ)。それでも空なら印を付けて次回から聞かない。
 	var retry []annotationItem
 	for _, it := range todo {
-		if c, ok := cache[it.ID]; ok && needTranslation(c, it.Lang) {
+		if c, ok := cache[it.ID]; !o.Command && ok && needTranslation(c, it.Lang) {
 			retry = append(retry, it)
 		}
 	}
@@ -254,15 +268,45 @@ func askInBatches(ctx context.Context, a Annotator, todo []annotationItem, cache
 		if end > len(todo) {
 			end = len(todo)
 		}
-		out, err := a.Annotate(ctx, BuildAnnotationPrompt(todo[i:end], o.Terms, o.Examples))
+		prompt := ""
+		if o.Command {
+			terms := o.Terms
+			if terms == nil {
+				terms = []string{}
+			}
+			if len(terms) > 30 {
+				terms = terms[:30]
+			}
+			b, _ := json.Marshal(struct {
+				Version int              `json:"version"`
+				Terms   []string         `json:"terms"`
+				Items   []annotationItem `json:"items"`
+			}{1, terms, todo[i:end]})
+			prompt = string(b)
+		} else {
+			prompt = BuildAnnotationPrompt(todo[i:end], o.Terms, o.Examples)
+		}
+		out, err := a.Annotate(ctx, prompt)
 		if ctx.Err() != nil {
 			rep.Failed++
+			if o.Command && err != nil {
+				rep.Errors = append(rep.Errors, err.Error())
+			}
 			rep.Errors = append(rep.Errors, "LLM 補助全体の時間上限: "+ctx.Err().Error())
 			return
 		}
 		if err != nil {
 			rep.Failed++
 			rep.Errors = append(rep.Errors, err.Error())
+			continue
+		}
+		if o.Command {
+			got, warnings := parseCommandResponse(out, todo[i:end])
+			rep.Failed += len(warnings)
+			rep.Errors = append(rep.Errors, warnings...)
+			for id, v := range got {
+				cache[id] = v
+			}
 			continue
 		}
 		got := ParseAnnotationResponse(out)
@@ -428,7 +472,7 @@ func ApplyAnnotations(rk Ranking, results []Result, ann Annotations) Ranking {
 		for _, e := range r.New {
 			if a, ok := ann[e.ID]; ok && a.Score != nil {
 				matched := append([]string(nil), rk[e.ID].Matched...)
-				out[e.ID] = interest.Score{Value: *a.Score, LLM: true, Matched: matched}
+				out[e.ID] = interest.Score{Value: *a.Score, LLM: true, External: a.External, Tag: a.Tag, Matched: matched}
 				continue
 			}
 			if v, ok := rk[e.ID]; ok {

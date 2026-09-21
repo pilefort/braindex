@@ -157,9 +157,12 @@ braindex init -add all              フル: 上の全部。learn（学習の提�
 3. **寿命で分ける。** 蓄積するもの（`docs/`）と揮発するもの（`work/`）を混ぜない。索引は前者だけを見る。
 
 やらないこと: 意味検索・ベクトル DB（recall 失敗の実例が出るまで入れない）／LLM による索引の要旨生成・索引更新／
-ノート本文・セッション内容の外部送信（ニュースの取得は GET のみ）／ネタ帳（索引・レビュー・ニュースとは独立した機能で、テンプレの核ではない）。
+ノート本文・セッション内容の外部送信（本体によるニュースの取得は GET のみ。採点用の外部 API も本体からは呼ばない）／ネタ帳（索引・レビュー・ニュースとは独立した機能で、テンプレの核ではない）。
 
 どの機能が安定していて、どれが試用中（既定値・辞書・閾値を試用後に見直す前提）かは [manual/README.md の安定度](manual/README.md#安定度)。
+ニュースの採点は、明示設定した外部プログラムにも任せられる。TypeSafe API を使う場合は、利用者が別途
+[`braindex-typesafe`](manual/braindex-typesafe.md) を導入する。API へ送る情報と費用は同ページを参照。
+
 Karpathy の LLM wiki 型との対応・リポジトリの地図・版の状態は [manual/design.md](manual/design.md)。
 理由と却下案は作者の設計メモ `docs/decisions.md`、開発の決まりは [`CONTRIBUTING.md`](CONTRIBUTING.md)。
 

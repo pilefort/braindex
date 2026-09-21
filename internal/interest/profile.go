@@ -39,6 +39,35 @@ type Profile struct {
 	Terms   []Term         `json:"terms"`
 }
 
+// CommandTerms は外部採点に渡せる keep・extra 由来の語だけを返す。
+// index・sessions の回数や重みは、語の選択にも順序にも使わない。
+func (p Profile) CommandTerms() []string {
+	var terms []Term
+	for _, t := range p.Terms {
+		if t.Counts[SourceKeep] > 0 || t.Counts[SourceExtra] > 0 {
+			terms = append(terms, t)
+		}
+	}
+	sort.Slice(terms, func(i, j int) bool {
+		a, b := terms[i], terms[j]
+		if a.Counts[SourceKeep] != b.Counts[SourceKeep] {
+			return a.Counts[SourceKeep] > b.Counts[SourceKeep]
+		}
+		if a.Counts[SourceExtra] != b.Counts[SourceExtra] {
+			return a.Counts[SourceExtra] > b.Counts[SourceExtra]
+		}
+		return a.Word < b.Word
+	})
+	words := make([]string, 0, 30)
+	for i, t := range terms {
+		if i == 30 {
+			break
+		}
+		words = append(words, t.Word)
+	}
+	return words
+}
+
 // Weight は語の重み。無ければ 0。
 func (p Profile) Weight(word string) float64 {
 	for _, t := range p.Terms {

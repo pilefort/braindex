@@ -189,6 +189,14 @@ func RenderHTML(results []Result, o DigestOptions) []byte {
 			determinism = "取得・既読は規則ベース、採点に LLM 補助あり"
 		}
 	}
+	for _, r := range results {
+		for _, e := range r.New {
+			if o.Ranking[e.ID].External {
+				scoring = fmt.Sprintf("関心度は語の一致に外部採点（バッジは外部）を重ねたもの。%d 以上を主要表示", o.MinScore)
+				determinism = "取得・既読は規則ベース、外部プログラムの採点あり"
+			}
+		}
+	}
 	foot = append(foot, fmt.Sprintf("生成: %s / braindex news fetch（%s。%s）", esc(o.Today), determinism, scoring))
 
 	title := fmt.Sprintf("ニュースダイジェスト %s（%s 層・新着 %d 件・主要 %d 件）", o.Today, o.Layer, totalNew, totalMain)
@@ -259,6 +267,13 @@ func itemHTML(e feed.Entry, r Result, o DigestOptions, low bool) string {
 		score = fmt.Sprint(s.Value)
 		if s.LLM {
 			reason = "LLM 採点"
+			if s.External {
+				reason = "外部 採点"
+				badge += `<span class="tag">外部</span>`
+			}
+		}
+		if s.Tag != "" {
+			badge += `<span class="tag">` + esc(s.Tag) + `</span>`
 		}
 		if len(s.Matched) > 0 {
 			if reason != "" {

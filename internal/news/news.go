@@ -37,17 +37,19 @@ type Settings struct {
 	SessionsDir  string         `json:"sessions_dir"`   // セッションログの置き場。空なら retro.sessions_dir → ~/.claude/projects
 	ShowMinScore *int           `json:"show_min_score"` // この関心度(0〜interest.MaxScore)以上を主要表示。未満は「関心外と判定」に折りたたむ。
 	// ポインタなのは 0(全件を主要表示)と未設定(既定 2)を区別するため。他のキーのように 0 を未設定とみなすと、0 を設定できない
-	Serendipity   *int   `json:"serendipity"`     // 関心外から拾い上げて「もしかして興味あるかも」に出す件数。既定 2・0 で出さない。ポインタなのは 0(出さない)と未設定(既定 2)を区別するため
-	LLM           string `json:"llm"`             // LLM 補助(翻訳＋採点)。"off"(既定)か "claude-cli"(claude CLI のヘッドレス呼び出し・opt-in)
-	LLMModel      string `json:"llm_model"`       // claude CLI に渡すモデル名(--model)。空なら CLI の既定
-	LLMTimeoutSec int    `json:"llm_timeout_sec"` // 1 バッチの待ち時間(秒)。既定 120
-	LLMBudgetSec  int    `json:"llm_budget_sec"`  // LLM 補助全体の待ち時間(秒)。既定 600
+	Serendipity   *int     `json:"serendipity"`           // 関心外から拾い上げて「もしかして興味あるかも」に出す件数。既定 2・0 で出さない。ポインタなのは 0(出さない)と未設定(既定 2)を区別するため
+	LLM           string   `json:"llm"`                   // 採点方式。off(既定) / claude-cli(翻訳も行う) / command(外部採点)
+	LLMCommand    []string `json:"llm_command,omitempty"` // 外部採点プログラムの argv。command のときだけ使う。
+	LLMModel      string   `json:"llm_model"`             // claude CLI に渡すモデル名(--model)。空なら CLI の既定
+	LLMTimeoutSec int      `json:"llm_timeout_sec"`       // 1 バッチの待ち時間(秒)。既定 120
+	LLMBudgetSec  int      `json:"llm_budget_sec"`        // LLM 補助全体の待ち時間(秒)。既定 600
 }
 
 // LLM 補助の値。
 const (
 	LLMOff               = "off"
 	LLMClaudeCLI         = "claude-cli"
+	LLMCommand           = "command"
 	DefaultLLMTimeoutSec = 120
 	DefaultLLMBudgetSec  = 600
 )
@@ -162,9 +164,12 @@ func (s Settings) Validate() error {
 		}
 	}
 	switch s.LLM {
-	case "", LLMOff, LLMClaudeCLI:
+	case "", LLMOff, LLMClaudeCLI, LLMCommand:
 	default:
-		return fmt.Errorf("設定 news.llm: %q か %q(既定 %q・LLM を呼ばない): %q", LLMOff, LLMClaudeCLI, LLMOff, s.LLM)
+		return fmt.Errorf("設定 news.llm: off / claude-cli / command のいずれか: %q", s.LLM)
+	}
+	if s.LLM == LLMCommand && (len(s.LLMCommand) == 0 || s.LLMCommand[0] == "") {
+		return fmt.Errorf("設定 news.llm_command: command のときはプログラムの argv が必要")
 	}
 	if s.LLMTimeoutSec < 0 {
 		return fmt.Errorf("設定 news.llm_timeout_sec: 0 以上(0 は既定 %d): %d", DefaultLLMTimeoutSec, s.LLMTimeoutSec)
