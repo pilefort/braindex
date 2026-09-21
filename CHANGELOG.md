@@ -6,6 +6,8 @@
 ## 未リリース（v0.2.0 以降・2026-09-11〜2026-09-13）
 
 ### 足したもの
+- **news の外部採点** — `news.llm = "command"` と `llm_command` で任意のプログラムに採点を任せる。渡す語は keep・extra 由来の上位 30 語。外部採点のバッジと分野タグを表示する
+- **`braindex-typesafe`** — 任意導入の別実行ファイル。見出し・フィード名・関心語を TypeSafe に送り、点と分野を返す。送信せず本文を確かめる `-dry-run`、概要を追加する `-summary`、しきい値・分野の指定、利用量ログに対応
 - **`braindex related`** — いまのリポ・ISSUE・直近のセッション・引数の語から、関連するノートを「このリポ」「他のリポ」に分けて並べる。索引の生成が `index/links.tsv`（ノート同士のつながり）を一緒に書くようになった
 - **`braindex type`（suggest・apply）** — ノート本文の「種別:」1 行（失敗・手順・観測）を後付けし、`search -type`・`scope -type` で絞れる
 - **`braindex explain`** — 解説の Markdown と隣の `.svg` から、目次・図・表から描いたグラフつきの自己完結 HTML を作る

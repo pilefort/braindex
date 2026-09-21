@@ -333,10 +333,17 @@ func writeTier(sb *strings.Builder, entries []feed.Entry, o DigestOptions, inden
 			fmt.Fprintf(sb, " ★%d", s.Value)
 			words := s.Matched
 			if s.LLM {
-				words = append([]string{"LLM"}, words...)
+				label := "LLM"
+				if s.External {
+					label = "外部"
+				}
+				words = append([]string{label}, words...)
 			}
 			if len(words) > 0 {
 				fmt.Fprintf(sb, "（%s）", strings.Join(words, "・"))
+			}
+			if s.Tag != "" {
+				fmt.Fprintf(sb, " %s", escapeTitle(s.Tag))
 			}
 		}
 		if tr := o.Annotations.translation(e.ID); tr != "" {

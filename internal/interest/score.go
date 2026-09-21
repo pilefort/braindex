@@ -4,9 +4,11 @@ import "sort"
 
 // Score は記事の関心度 0〜3 と、当たった語(プロファイルの重み降順)。
 type Score struct {
-	Value   int      `json:"value"`
-	LLM     bool     `json:"llm,omitempty"` // LLM が付けた点なら true。
-	Matched []string `json:"matched,omitempty"`
+	Value    int      `json:"value"`
+	LLM      bool     `json:"llm,omitempty"`      // LLM が付けた点なら true。
+	External bool     `json:"external,omitempty"` // 外部プログラムが付けた点。
+	Tag      string   `json:"tag,omitempty"`
+	Matched  []string `json:"matched,omitempty"`
 }
 
 // MaxScore は関心度の上限。原型の LLM 採点(0〜3)と同じ尺度にして、LLM 補助(news.llm)と差し替えられるようにする。
