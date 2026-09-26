@@ -36,6 +36,28 @@ func TestSearch_Basic(t *testing.T) {
 	}
 }
 
+func TestSearch_Worktrees(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "wt", "docs", "notes", "a.md"), "# Note\n\nworktree-keyword\n")
+	writeFile(t, filepath.Join(root, "wt", ".git"), "gitdir: ../main/.git/worktrees/wt\n")
+	for _, include := range []bool{false, true} {
+		raw, err := json.Marshal(map[string]any{"root": root, "include_worktrees": include})
+		if err != nil {
+			t.Fatal(err)
+		}
+		configPath := filepath.Join(t.TempDir(), "braindex.json")
+		writeFile(t, configPath, string(raw))
+		var so, se bytes.Buffer
+		code := dispatch([]string{"search", "-config", configPath, "worktree-keyword"}, &so, &se)
+		if code != 0 {
+			t.Fatalf("exit=%d stdout=%s stderr=%s", code, &so, &se)
+		}
+		if got := strings.Contains(so.String(), "wt/docs/notes/a.md:"); got != include {
+			t.Errorf("include=%v stdout=%s", include, &so)
+		}
+	}
+}
+
 // 一致なしでも走査した範囲を全部確認できていれば 0 で、その旨を出す。
 func TestSearch_NoMatchComplete(t *testing.T) {
 	var so, se bytes.Buffer

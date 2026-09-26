@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pilefort/braindex/internal/catalog"
 	"github.com/pilefort/braindex/internal/scan"
 	"github.com/pilefort/braindex/internal/scan/scantest"
 )
@@ -25,6 +26,34 @@ func mustContain(t *testing.T, what, s string, subs ...string) {
 	for _, sub := range subs {
 		if !strings.Contains(s, sub) {
 			t.Errorf("%s に %q が無い:\n%s", what, sub, s)
+		}
+	}
+}
+
+func TestBuild_WorktreeIsOutOfScope(t *testing.T) {
+	root, hub := t.TempDir(), t.TempDir()
+	writeFile(t, filepath.Join(root, "wt", "docs", "notes", "a.md"), "# Note\n\n記録日: 2026-01-01\n")
+	writeFile(t, filepath.Join(root, "wt", ".git"), "gitdir: ../main/.git/worktrees/wt\n")
+	cfg := scan.Config{Root: root, IncludeWorktrees: true}
+	previous, err := catalog.Build(cfg, "2026-09-25")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(hub, "index", "catalog.md"), string(previous.Catalog))
+	for _, include := range []bool{false, true} {
+		cfg.IncludeWorktrees = include
+		res, err := Build(Input{Today: "2026-09-26", Since: "2026-09-25", SinceNote: "テスト", Cfg: cfg, HubDir: hub, CatalogRel: "index/catalog.md"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := string(res.Report)
+		if !include {
+			mustContain(t, "下書き", got, "削除 0", "対象外 1", "- 対象外: wt/docs/notes/a.md")
+		} else if strings.Contains(got, "- 対象外: wt/") {
+			t.Errorf("include_worktrees でも対象外: %s", got)
+		}
+		if strings.Contains(got, "- 削除: wt/") {
+			t.Errorf("worktree を削除に分類: %s", got)
 		}
 	}
 }

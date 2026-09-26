@@ -75,7 +75,7 @@ func Build(cfg scan.Config, genDate string) (Result, error) {
 		res.Links = append(res.Links, e)
 	}
 	res.LinksTSV = links.Marshal(res.Links)
-	res.Coverage = Coverage{Known: true, Gaps: scan.SortGaps(gaps)}
+	res.Coverage = Coverage{Known: true, Gaps: scan.SortGaps(gaps), ExcludedWorktrees: sc.ExcludedWorktrees}
 	res.Catalog = withCoverage(render.Render(entries, genDate), res.Coverage)
 	res.Records = make([]indexdata.Entry, len(entries))
 	for i, e := range entries {

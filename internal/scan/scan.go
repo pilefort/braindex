@@ -7,6 +7,7 @@
 //   - D/docs/decisions.md があれば 1 エントリ(種別 decisions。notes_dirs に含まれていても decisions が勝つ)
 //   - root 相対パスのセグメントに archive を含むものは除外(root 自身のパスは見ない)
 //   - docs/ を持たないディレクトリは自然にスキップ
+//   - リポ直下の .git が gitdir: で始まる通常ファイルなら worktree として除外(include_worktrees: true で含める)
 //
 // 例外規則(braindex.json の extra): 指定リポの起点から *.md を収集(リポ直下・research/・projects/ 等の規約外の置き場)。
 //
@@ -30,10 +31,11 @@ import (
 
 // Config は braindex.json の内容。
 type Config struct {
-	Root      string      `json:"root"`
-	RepoDepth int         `json:"repo_depth"` // root から何段下のディレクトリをリポとみなすか。0 または省略で 1(root 直下)。2 なら group/name がリポ名
-	NotesDirs []string    `json:"notes_dirs"` // 各リポのノート置き場(リポ相対・スラッシュ区切り)。複数可。空なら ["docs/notes"]
-	Extra     []ExtraRule `json:"extra"`
+	IncludeWorktrees bool        `json:"include_worktrees"` // true のときだけ git worktree も走査する
+	Root             string      `json:"root"`
+	RepoDepth        int         `json:"repo_depth"` // root から何段下のディレクトリをリポとみなすか。0 または省略で 1(root 直下)。2 なら group/name がリポ名
+	NotesDirs        []string    `json:"notes_dirs"` // 各リポのノート置き場(リポ相対・スラッシュ区切り)。複数可。空なら ["docs/notes"]
+	Extra            []ExtraRule `json:"extra"`
 }
 
 // DefaultRepoDepth は repo_depth 未指定時の段数(root 直下をリポとみなす)。
@@ -154,9 +156,10 @@ func (g Gap) Covers(rel string) bool {
 
 // Result は Scan の結果。
 type Result struct {
-	Files    []File   // 見つけたファイル(走査順)
-	Gaps     []Gap    // 読めなかった範囲(Rel 昇順・重複なし)。空なら、走査した範囲は全部確認できた
-	Warnings []string // 飛ばしたものの説明(Gaps の分も含む)。無言スキップにしない
+	ExcludedWorktrees []string // 対象外にした git worktree のリポ名(昇順)。Gaps とは区別する
+	Files             []File   // 見つけたファイル(走査順)
+	Gaps              []Gap    // 読めなかった範囲(Rel 昇順・重複なし)。空なら、走査した範囲は全部確認できた
+	Warnings          []string // 飛ばしたものの説明(Gaps の分も含む)。無言スキップにしない
 }
 
 // DefaultNotesDir は notes_dirs 未指定時のノート置き場。
@@ -228,7 +231,30 @@ func Scan(cfg Config) (Result, error) {
 	for _, g := range gaps {
 		c.addGap(g)
 	}
+	var excludedWorktrees []string
+	blocked := map[string]bool{}
+	checked := map[string]bool{}
+	checkWorktree := func(repo string) {
+		if checked[repo] || hasDotSeg(repo) {
+			return
+		}
+		checked[repo] = true
+		excluded, err := ExcludesWorktree(cfg, repo)
+		if err != nil {
+			c.addGap(Gap{Rel: repo, Dir: true, Reason: ".git の判定: " + DescribeErr(err)})
+			blocked[repo] = true
+		} else if excluded {
+			excludedWorktrees = append(excludedWorktrees, repo)
+			blocked[repo] = true
+		}
+	}
 	for _, r := range repos {
+		checkWorktree(r.Name)
+	}
+	for _, r := range repos {
+		if blocked[r.Name] {
+			continue
+		}
 		name, repoDir := r.Name, r.Dir
 
 		// docs/decisions.md(notes_dirs より先に拾い、種別 decisions を優先する)
@@ -265,6 +291,10 @@ func Scan(cfg Config) (Result, error) {
 
 	// 例外規則。自動規則で拾い済みのファイルは載せない(重複排除)
 	for _, ex := range cfg.Extra {
+		checkWorktree(ex.Repo)
+		if blocked[ex.Repo] {
+			continue
+		}
 		for _, f := range collectExtra(rootAbs, ex, c) {
 			if seen[f.Abs] {
 				continue
@@ -277,11 +307,12 @@ func Scan(cfg Config) (Result, error) {
 	// 収集元にかかわらず、重なる extra の除外を優先する。
 	kept := files[:0]
 	for _, f := range files {
-		if Covers(cfg, f.Rel) {
+		if coversPath(cfg, f.Rel) {
 			kept = append(kept, f)
 		}
 	}
-	return Result{Files: kept, Gaps: SortGaps(c.gaps), Warnings: c.warnings}, nil
+	sort.Strings(excludedWorktrees)
+	return Result{Files: kept, Gaps: SortGaps(c.gaps), Warnings: c.warnings, ExcludedWorktrees: excludedWorktrees}, nil
 }
 
 // collector は走査中の警告と読めなかった範囲を集める。
@@ -326,13 +357,24 @@ func SortGaps(gaps []Gap) []Gap {
 	return out[:w]
 }
 
-// Covers は cfg の走査規則が rel(root 相対・スラッシュ区切り)を対象に含むかを返す。ファイルの有無は見ない。
+// Covers は cfg の走査規則が rel(root 相対・スラッシュ区切り)を対象に含むかを返す。ノートの有無は見ない。
 //
 // 前回の索引にあって今回無い行を「削除」と呼ぶ前に、今の設定がそのパスをそもそも見に行くかを確かめるのに使う。
 // notes_dirs や extra を設定から外した・exclude を足した・archive の下へ移した行は「対象外」であって削除ではない。
 // 判定は Scan と同じ規則(ドットで始まるリポは見ない・archive セグメントは除外・拡張子は .md・extra の exclude は
-// ファイル名とディレクトリの枝に掛かる)を、ファイルシステムを見ずにパスだけで再現する。
+// ファイル名とディレクトリの枝に掛かる)。worktree の判定には cfg.Root 下の .git を読む。
+// .git を読めない場合は対象外と断定しない。呼び出し側は Scan の Gaps を先に判定する。
 func Covers(cfg Config, rel string) bool {
+	if !coversPath(cfg, rel) {
+		return false
+	}
+	repo, _, _ := SplitRepo(cfg, rel)
+	excluded, _ := ExcludesWorktree(cfg, repo)
+	return !excluded
+}
+
+// coversPath はファイルシステムを参照しない走査規則。Scan はリポ単位の判定後に使う。
+func coversPath(cfg Config, rel string) bool {
 	rel = strings.Trim(filepath.ToSlash(rel), "/")
 	if rel == "" || !isMarkdown(rel) || hasArchiveSeg(rel) {
 		return false
