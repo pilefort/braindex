@@ -21,6 +21,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -50,6 +51,7 @@ type Report struct {
 
 // ConfigInfo は解決済みの設定(情報源)。
 type ConfigInfo struct {
+	IncludeWorktrees bool        `json:"include_worktrees"`
 	File             string      `json:"file"` // 設定ファイルの絶対パス。"" なら無し
 	Root             string      `json:"root"` // root の絶対パス(スラッシュ区切り)
 	NotesDirs        []string    `json:"notes_dirs"`
@@ -79,11 +81,12 @@ type ScanInfo struct {
 
 // RepoInfo は 1 リポの走査結果。
 type RepoInfo struct {
-	Name    string      `json:"name"`
-	Entries int         `json:"entries"`
-	Kinds   []KindCount `json:"kinds"`
-	Places  []PlaceInfo `json:"places"` // docs/decisions.md と notes_dirs の各置き場
-	Gaps    int         `json:"gaps"`   // このリポの中の読めなかった範囲の数
+	Excluded string      `json:"excluded,omitempty"` // 対象外の理由。対象なら空
+	Name     string      `json:"name"`
+	Entries  int         `json:"entries"`
+	Kinds    []KindCount `json:"kinds"`
+	Places   []PlaceInfo `json:"places"` // docs/decisions.md と notes_dirs の各置き場
+	Gaps     int         `json:"gaps"`   // このリポの中の読めなかった範囲の数
 }
 
 // KindCount は種別ごとの件数。
@@ -108,14 +111,15 @@ type GapInfo struct {
 
 // SavedInfo は保存済みの索引の状態。
 type SavedInfo struct {
-	File      string    `json:"file"`
-	Status    string    `json:"status"` // ok | missing | unreadable | invalid
-	Error     string    `json:"error,omitempty"`
-	Generated string    `json:"generated,omitempty"` // 先頭「生成:」行の日付
-	Entries   int       `json:"entries"`
-	Coverage  string    `json:"coverage,omitempty"` // complete | gaps | unknown(記録を持たない版で生成)
-	Gaps      []GapInfo `json:"gaps"`
-	Diff      *DiffInfo `json:"diff,omitempty"` // Status が ok のときだけ
+	ExcludedWorktrees []string  `json:"excluded_worktrees,omitempty"`
+	File              string    `json:"file"`
+	Status            string    `json:"status"` // ok | missing | unreadable | invalid
+	Error             string    `json:"error,omitempty"`
+	Generated         string    `json:"generated,omitempty"` // 先頭「生成:」行の日付
+	Entries           int       `json:"entries"`
+	Coverage          string    `json:"coverage,omitempty"` // complete | gaps | unknown(記録を持たない版で生成)
+	Gaps              []GapInfo `json:"gaps"`
+	Diff              *DiffInfo `json:"diff,omitempty"` // Status が ok のときだけ
 }
 
 // DiffInfo は保存済みの索引といまの走査との差(パスで突き合わせる。中身の変化は見ない)。
@@ -194,6 +198,7 @@ func Build(in Input) (Report, error) {
 // configInfo は解決済みの設定(情報源)を組み立てる。res は走査していなければ zero 値(extra の件数は 0 になる)。
 func configInfo(in Input, rootAbs string, notesDirs []string, res catalog.Result) ConfigInfo {
 	return ConfigInfo{
+		IncludeWorktrees: in.Cfg.IncludeWorktrees,
 		File:             absSlash(in.ConfigFile),
 		Root:             filepath.ToSlash(rootAbs),
 		NotesDirs:        notesDirs,
@@ -288,6 +293,8 @@ func extraInfos(cfg scan.Config, rootAbs string, res catalog.Result) []ExtraInfo
 		baseRel := path.Join(ex.Repo, base)
 		ei := ExtraInfo{Repo: ex.Repo, Path: ex.Path, Recursive: ex.Recursive, Kind: ex.Kind, Exclude: append([]string{}, ex.Exclude...)}
 		switch {
+		case slices.Contains(res.Coverage.ExcludedWorktrees, ex.Repo):
+			ei.Status = "worktree"
 		case hasArchiveSeg(baseRel):
 			ei.Status = "archive"
 		case isGapDir(res.Coverage.Gaps, baseRel):
@@ -343,6 +350,11 @@ func scanInfo(cfg scan.Config, rootAbs string, notesDirs []string, res catalog.R
 	for _, rp := range repos {
 		name := rp.Name
 		ri := RepoInfo{Name: name, Entries: len(byRepo[name]), Kinds: []KindCount{}, Places: []PlaceInfo{}}
+		if slices.Contains(res.Coverage.ExcludedWorktrees, name) {
+			ri.Excluded = "git worktree"
+			si.Repos = append(si.Repos, ri)
+			continue
+		}
 		kinds := map[string]int{}
 		for _, e := range byRepo[name] {
 			kinds[e.Kind]++
@@ -426,6 +438,7 @@ func savedInfo(catalogPath string, cfg scan.Config, res *catalog.Result) (SavedI
 		si.Coverage = "gaps"
 	}
 	si.Gaps = gapInfos(cov.Gaps)
+	si.ExcludedWorktrees = cov.ExcludedWorktrees
 	if res != nil {
 		d := Compare(entries, res.Records, res.Coverage, cfg)
 		si.Diff = &d
@@ -468,7 +481,7 @@ func generatedDate(b []byte) string {
 
 // Compare は保存済みの索引の行(saved)と、いまの走査で索引に載る行(current)をパスで突き合わせる。
 // 前回にあって今回無い行は、そのまま「無い」にしない: 今回読めなかった範囲(cov)の中なら確認不能、
-// いまの設定(cfg)が見に行かない場所なら対象外、残りだけが「無い」。純関数で、同じ入力からは同じ結果を返す。
+// いまの設定(cfg)が見に行かない場所なら対象外、残りだけが「無い」。worktree の判定では cfg.Root を参照する。
 func Compare(saved, current []indexdata.Entry, cov catalog.Coverage, cfg scan.Config) DiffInfo {
 	d := DiffInfo{NotIndexed: []string{}, Unconfirmed: []DiffEntry{}, OutOfScope: []DiffEntry{}, Gone: []string{}}
 	savedSet := make(map[string]bool, len(saved))
@@ -568,6 +581,11 @@ func WhichRule(cfg scan.Config, notesDirs []string, rel string) string {
 // 判定そのものは Covers に任せ、ここは理由のラベルだけを付ける(理由を細かく分けるのは読み手のため)。
 func WhyNotCovered(cfg scan.Config, rel string) string {
 	rel = strings.Trim(filepath.ToSlash(rel), "/")
+	if repo, _, ok := scan.SplitRepo(cfg, rel); ok {
+		if excluded, _ := scan.ExcludesWorktree(cfg, repo); excluded {
+			return "git worktree"
+		}
+	}
 	if rel == "" {
 		return "パスが空"
 	}

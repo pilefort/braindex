@@ -3,6 +3,7 @@ package catalog
 import (
 	"bytes"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/pilefort/braindex/internal/scan"
@@ -16,8 +17,9 @@ import (
 // 載っていないだけで、あるかどうかは分からない。読み手(週次レビュー・後続の機能)が「削除」と「確認不能」を
 // 分けられるよう、索引の先頭に記録し、ここで読み戻す(設計レビュー補足 2026-09-06)。
 type Coverage struct {
-	Known bool       // false なら記録が無い(この記録を書く前の版で生成した索引)。完全性は不明
-	Gaps  []scan.Gap // 読めなかった範囲(Rel 昇順)。Known で空なら、走査した範囲は全部確認できた
+	ExcludedWorktrees []string   // 対象外にした git worktree のリポ名(昇順)
+	Known             bool       // false なら記録が無い(この記録を書く前の版で生成した索引)。完全性は不明
+	Gaps              []scan.Gap // 読めなかった範囲(Rel 昇順)。Known で空なら、走査した範囲は全部確認できた
 }
 
 // Complete は「記録があり、読めなかった範囲が無い」。
@@ -52,6 +54,8 @@ const (
 	coverageNote   = "（この範囲のノートは載っていない。無いのか読めないのかは分からない）"
 	gapPrefix      = "- 読めなかった: "
 	gapSep         = " — "
+	worktreePrefix = "- 対象外: "
+	worktreeSuffix = " — git worktree"
 )
 
 // coverageLines は走査の記録の行(末尾に改行)。
@@ -75,6 +79,11 @@ func coverageLines(gaps []scan.Gap) string {
 // withCoverage は render が書いた catalog.md の先頭(説明行の直後)に走査の記録を差し込む。
 func withCoverage(md []byte, cov Coverage) []byte {
 	lines := []byte(coverageLines(cov.Gaps))
+	repos := append([]string(nil), cov.ExcludedWorktrees...)
+	sort.Strings(repos)
+	for _, repo := range repos {
+		lines = append(lines, []byte(worktreePrefix+repo+worktreeSuffix+"\n")...)
+	}
 	// 説明行と最初のリポ見出しの間の空行の直前に入れる。リポが 1 つも無ければ末尾
 	idx := bytes.Index(md, []byte("\n\n## "))
 	if idx < 0 {
@@ -102,6 +111,14 @@ func ParseCoverage(b []byte) (Coverage, error) {
 			break // 記録は先頭の説明行の中にある
 		}
 		t := strings.TrimRight(line, " \t")
+		if cov.Known && strings.HasPrefix(t, worktreePrefix) {
+			repo, ok := strings.CutSuffix(strings.TrimPrefix(t, worktreePrefix), worktreeSuffix)
+			if !ok || repo == "" {
+				return Coverage{}, fmt.Errorf("catalog %d 行目: 対象外の記録を読めない: %q", i+1, t)
+			}
+			cov.ExcludedWorktrees = append(cov.ExcludedWorktrees, repo)
+			continue
+		}
 		if strings.HasPrefix(t, coveragePrefix) {
 			if cov.Known {
 				return Coverage{}, fmt.Errorf("catalog %d 行目: 走査の記録が 2 回ある", i+1)

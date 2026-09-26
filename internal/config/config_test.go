@@ -70,6 +70,18 @@ func TestLoad_Fields(t *testing.T) {
 	}
 }
 
+func TestLoad_IncludeWorktrees(t *testing.T) {
+	for raw, want := range map[string]bool{`{}`: false, `{"include_worktrees":false}`: false, `{"include_worktrees":true}`: true} {
+		cfg, found, err := Load(write(t, raw))
+		if err != nil || !found || cfg.IncludeWorktrees != want {
+			t.Errorf("%s: include_worktrees=%v found=%v err=%v", raw, cfg.IncludeWorktrees, found, err)
+		}
+	}
+	if _, _, err := Load(write(t, `{"include_worktrees":"true"}`)); err == nil {
+		t.Error("文字列の true を受け入れた")
+	}
+}
+
 // 未知のキーはエラー(打ち間違いを無言で無視しない)。
 func TestLoad_UnknownKey(t *testing.T) {
 	p := write(t, `{"root": "..", "notes_dir": "wiki"}`)

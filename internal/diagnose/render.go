@@ -34,6 +34,9 @@ func Render(r Report) []byte {
 		nd += "（既定）"
 	}
 	b.WriteString("- notes_dirs: " + nd + "\n")
+	if r.Config.IncludeWorktrees {
+		b.WriteString("- include_worktrees: true（git worktree も走査する）\n")
+	}
 	if len(r.Config.Extra) == 0 {
 		b.WriteString("- extra: なし\n")
 	} else {
@@ -60,6 +63,9 @@ func Render(r Report) []byte {
 	case "invalid":
 		b.WriteString("- 状態: braindex の書く形でない（手で編集された）: " + r.Saved.Error + "\n")
 	default:
+		for _, repo := range r.Saved.ExcludedWorktrees {
+			b.WriteString("- 対象外: " + repo + " — git worktree\n")
+		}
 		gen := r.Saved.Generated
 		if gen == "" {
 			gen = "不明"
@@ -170,6 +176,8 @@ func extraLine(ex ExtraInfo) string {
 	}
 	var status string
 	switch ex.Status {
+	case "worktree":
+		status = "対象外（git worktree）"
 	case "ok":
 		status = fmt.Sprintf("起点あり・この起点の下で索引に載る %d 件", ex.Entries)
 	case "missing":
@@ -189,6 +197,9 @@ func extraLine(ex ExtraInfo) string {
 // repoLine は 1 リポを「名前: N 件（種別 n・…）— 置き場の状態。読めなかった範囲 N」の形にする。
 // 置き場の状態は、ノートが 1 件も無いリポでは全部、あるリポでは問題のある置き場だけを書く。
 func repoLine(ri RepoInfo) string {
+	if ri.Excluded != "" {
+		return ri.Name + ": 対象外（" + ri.Excluded + "）"
+	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%s: %d 件", ri.Name, ri.Entries)
 	if len(ri.Kinds) > 0 {

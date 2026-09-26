@@ -60,6 +60,8 @@ Claude Code のログだけを読む（2026-09-13）。既定は利用者の置�
 （`<group>/<name>` のように 1 段はさんで並べているなら、設定に `"repo_depth": 2` を書く）。
 hub が持つのは索引と週次レビューだけで、知識の正本は各リポに残る。
 
+git worktree は既定で走査対象外とし、リポ名と理由を索引先頭の走査記録に残す。含める場合は `braindex.json` に `"include_worktrees": true` を書く（[走査規則](manual/generate.md)）。
+
 ```text
 parent/                            ← braindex.json の root（既定 ".."＝hub の親）
 ├── hub/                           ← 索引を置くリポ。braindex はここで実行する
